@@ -9,3 +9,5 @@
 | 2026-11-09 | Point d'arrêt Tuya avant tout développement du Worker | Le risque n°1 est un câble non pilotable par l'API |
 | 2026-11-09 | Service limité à deux actions, jeton + limite d'appels | Le CORS n'est pas une protection ; limiter ce qu'un jeton volé permet |
 | 2026-11-09 | Compte Smart Life principal lié au projet Tuya (pas de compte dédié pour l'instant) | Simplicité de démarrage ; risque accepté : une fuite des clés exposerait tous les appareils du compte. À reconsidérer avant un usage durable |
+| 2026-11-09 | Police système à la place de Google Fonts | Hors ligne complet sans fichier de police à embarquer ; validé par Mathieu |
+| 2026-11-09 | Défauts de saisie relevés à l'extraction (champ vide → NaN, plan périmé copié, cible non atteinte sans message, prix vide = 0) traités après la phase 1 | Ne pas mêler correction et extraction ; aucun cas de référence concerné |

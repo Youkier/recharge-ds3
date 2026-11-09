@@ -6,11 +6,11 @@ Chaque phase se termine par des critères d'acceptation vérifiés par `testeur-
 
 ## Phase 0 – Mise en place (Mathieu, avec la session principale)
 
-- [ ] Dépôt GitHub public `recharge-ds3` créé, kit copié, premier commit
-- [ ] Claude Code lancé dans le dossier, `CLAUDE.md` lu
-- [ ] `node --version` ≥ 20 disponible
-- [ ] Double authentification activée sur le compte GitHub
-- [ ] Sur le dépôt : Settings → Code security → *Secret scanning* et *Push protection* activés
+- [x] Dépôt GitHub public `recharge-ds3` créé, kit copié, premier commit
+- [x] Claude Code lancé dans le dossier, `CLAUDE.md` lu
+- [x] `node --version` ≥ 20 disponible
+- [x] Double authentification activée sur le compte GitHub
+- [x] Sur le dépôt : Settings → Code security → *Secret scanning* et *Push protection* activés
 
 **Fin de phase :** le chef de projet résume le plan et liste ce qu'il attend de Mathieu.
 
