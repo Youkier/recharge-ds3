@@ -2,7 +2,7 @@
 #
 # Ce que fait ce workflow :
 #   1. à chaque push sur main (ou lancement à la main depuis l'onglet Actions),
-#      il lance les tests de référence du calcul : node --test tests/ ;
+#      il lance les tests de référence du calcul : node --test "tests/**/*.test.mjs" ;
 #   2. si, et seulement si, les tests passent, il publie le dossier site/
 #      (et rien d'autre) sur GitHub Pages.
 #
@@ -47,7 +47,7 @@ jobs:
           node-version: 24
 
       - name: Lancer les tests
-        run: node --test tests/
+        run: node --test "tests/**/*.test.mjs"
 
   deploy:
     name: Publier site/

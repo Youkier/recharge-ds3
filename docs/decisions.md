@@ -13,3 +13,4 @@
 | 2026-11-09 | Défauts de saisie relevés à l'extraction (champ vide → NaN, plan périmé copié, cible non atteinte sans message, prix vide = 0) traités après la phase 1 | Ne pas mêler correction et extraction ; aucun cas de référence concerné |
 | 2026-11-09 | Service worker « réseau d'abord, repli sur le cache » (délai 4 s) | Page minuscule ouverte une fois par soir : la fraîcheur prime ; nouvelle version visible dès la 1re ouverture en ligne |
 | 2026-11-09 | Publication par GitHub Actions : tests puis déploiement de site/, actions épinglées par empreinte | Rien n'est publié si un cas de référence casse |
+| 2026-11-09 | Tests lancés avec le motif `node --test "tests/**/*.test.mjs"` en CI | Node 24 ne parcourt pas un dossier passé en argument (MODULE_NOT_FOUND), Node 26 oui ; le motif marche sur les deux |
