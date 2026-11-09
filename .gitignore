@@ -1,0 +1,9 @@
+# Secrets : ne jamais versionner
+tools/.env
+worker/.dev.vars
+.env
+.wrangler/
+
+# Divers
+node_modules/
+.DS_Store

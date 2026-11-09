@@ -1,0 +1,413 @@
+{
+  "_source": "Calculé avec la fonction plan() de site/index.html (version validée du 08/11/2026). Toute réimplémentation doit reproduire exactement ces sorties.",
+  "_tolerances": {
+    "energie_kwh": 0.05,
+    "cout_eur": 0.005,
+    "autres": "égalité stricte"
+  },
+  "cas": [
+    {
+      "nom": "Cas nominal : 38 % → 80 %",
+      "entree": {
+        "cap": 46,
+        "soh": 92,
+        "target": 80,
+        "dep": "07:30",
+        "hcStart": "22:00",
+        "hcEnd": "06:00",
+        "amp": 16,
+        "volt": 230,
+        "eff": 90,
+        "pre": 30,
+        "pHC": 0.146688,
+        "pHP": 0.196476,
+        "mode": "end",
+        "deduct": false,
+        "soc": 38
+      },
+      "attendu": {
+        "statut": "ok",
+        "allumage": "00:35",
+        "extinction": "06:00",
+        "duree_min": 325,
+        "hors_hc_min": 0,
+        "batterie_estimee_pct": 80,
+        "energie_kwh": 19.9,
+        "cout_eur": 2.92,
+        "preconditionnement": "07:00-07:30"
+      }
+    },
+    {
+      "nom": "Petit besoin : 75 % → 80 %",
+      "entree": {
+        "cap": 46,
+        "soh": 92,
+        "target": 80,
+        "dep": "07:30",
+        "hcStart": "22:00",
+        "hcEnd": "06:00",
+        "amp": 16,
+        "volt": 230,
+        "eff": 90,
+        "pre": 30,
+        "pHC": 0.146688,
+        "pHP": 0.196476,
+        "mode": "end",
+        "deduct": false,
+        "soc": 75
+      },
+      "attendu": {
+        "statut": "ok",
+        "allumage": "05:20",
+        "extinction": "06:00",
+        "duree_min": 40,
+        "hors_hc_min": 0,
+        "batterie_estimee_pct": 80,
+        "energie_kwh": 2.5,
+        "cout_eur": 0.36,
+        "preconditionnement": "07:00-07:30"
+      }
+    },
+    {
+      "nom": "Aucune charge : 85 %",
+      "entree": {
+        "cap": 46,
+        "soh": 92,
+        "target": 80,
+        "dep": "07:30",
+        "hcStart": "22:00",
+        "hcEnd": "06:00",
+        "amp": 16,
+        "volt": 230,
+        "eff": 90,
+        "pre": 30,
+        "pHC": 0.146688,
+        "pHP": 0.196476,
+        "mode": "end",
+        "deduct": false,
+        "soc": 85
+      },
+      "attendu": {
+        "statut": "none",
+        "allumage": null,
+        "extinction": null,
+        "duree_min": 0,
+        "hors_hc_min": 0,
+        "batterie_estimee_pct": 85,
+        "energie_kwh": 0,
+        "cout_eur": 0,
+        "preconditionnement": "07:00-07:30"
+      }
+    },
+    {
+      "nom": "Juste à la cible : 80 %",
+      "entree": {
+        "cap": 46,
+        "soh": 92,
+        "target": 80,
+        "dep": "07:30",
+        "hcStart": "22:00",
+        "hcEnd": "06:00",
+        "amp": 16,
+        "volt": 230,
+        "eff": 90,
+        "pre": 30,
+        "pHC": 0.146688,
+        "pHP": 0.196476,
+        "mode": "end",
+        "deduct": false,
+        "soc": 80
+      },
+      "attendu": {
+        "statut": "none",
+        "allumage": null,
+        "extinction": null,
+        "duree_min": 0,
+        "hors_hc_min": 0,
+        "batterie_estimee_pct": 80,
+        "energie_kwh": 0,
+        "cout_eur": 0,
+        "preconditionnement": "07:00-07:30"
+      }
+    },
+    {
+      "nom": "Heures creuses insuffisantes : 5 % → 80 %",
+      "entree": {
+        "cap": 46,
+        "soh": 92,
+        "target": 80,
+        "dep": "07:30",
+        "hcStart": "22:00",
+        "hcEnd": "06:00",
+        "amp": 16,
+        "volt": 230,
+        "eff": 90,
+        "pre": 30,
+        "pHC": 0.146688,
+        "pHP": 0.196476,
+        "mode": "end",
+        "deduct": false,
+        "soc": 5
+      },
+      "attendu": {
+        "statut": "short",
+        "allumage": "20:25",
+        "extinction": "06:00",
+        "duree_min": 575,
+        "hors_hc_min": 95,
+        "batterie_estimee_pct": 80,
+        "energie_kwh": 35.3,
+        "cout_eur": 5.46,
+        "preconditionnement": "07:00-07:30"
+      }
+    },
+    {
+      "nom": "Batterie vide vers 100 %",
+      "entree": {
+        "cap": 46,
+        "soh": 92,
+        "target": 100,
+        "dep": "07:30",
+        "hcStart": "22:00",
+        "hcEnd": "06:00",
+        "amp": 16,
+        "volt": 230,
+        "eff": 90,
+        "pre": 30,
+        "pHC": 0.146688,
+        "pHP": 0.196476,
+        "mode": "end",
+        "deduct": false,
+        "soc": 0
+      },
+      "attendu": {
+        "statut": "short",
+        "allumage": "17:10",
+        "extinction": "06:00",
+        "duree_min": 770,
+        "hors_hc_min": 290,
+        "batterie_estimee_pct": 100,
+        "energie_kwh": 47.2,
+        "cout_eur": 7.81,
+        "preconditionnement": "07:00-07:30"
+      }
+    },
+    {
+      "nom": "Placement en début d'heures creuses",
+      "entree": {
+        "cap": 46,
+        "soh": 92,
+        "target": 80,
+        "dep": "07:30",
+        "hcStart": "22:00",
+        "hcEnd": "06:00",
+        "amp": 16,
+        "volt": 230,
+        "eff": 90,
+        "pre": 30,
+        "pHC": 0.146688,
+        "pHP": 0.196476,
+        "mode": "start",
+        "deduct": false,
+        "soc": 38
+      },
+      "attendu": {
+        "statut": "ok",
+        "allumage": "22:00",
+        "extinction": "03:25",
+        "duree_min": 325,
+        "hors_hc_min": 0,
+        "batterie_estimee_pct": 80,
+        "energie_kwh": 19.9,
+        "cout_eur": 2.92,
+        "preconditionnement": "07:00-07:30"
+      }
+    },
+    {
+      "nom": "Déduction du préconditionnement",
+      "entree": {
+        "cap": 46,
+        "soh": 92,
+        "target": 80,
+        "dep": "07:30",
+        "hcStart": "22:00",
+        "hcEnd": "06:00",
+        "amp": 16,
+        "volt": 230,
+        "eff": 90,
+        "pre": 30,
+        "pHC": 0.146688,
+        "pHP": 0.196476,
+        "mode": "end",
+        "deduct": true,
+        "soc": 38
+      },
+      "attendu": {
+        "statut": "ok",
+        "allumage": "00:50",
+        "extinction": "06:00",
+        "duree_min": 310,
+        "hors_hc_min": 0,
+        "batterie_estimee_pct": 80,
+        "energie_kwh": 19,
+        "cout_eur": 2.79,
+        "preconditionnement": "07:00-07:30"
+      }
+    },
+    {
+      "nom": "Charge à 10 A : 50 % → 80 %",
+      "entree": {
+        "cap": 46,
+        "soh": 92,
+        "target": 80,
+        "dep": "07:30",
+        "hcStart": "22:00",
+        "hcEnd": "06:00",
+        "amp": 10,
+        "volt": 230,
+        "eff": 90,
+        "pre": 30,
+        "pHC": 0.146688,
+        "pHP": 0.196476,
+        "mode": "end",
+        "deduct": false,
+        "soc": 50
+      },
+      "attendu": {
+        "statut": "ok",
+        "allumage": "23:50",
+        "extinction": "06:00",
+        "duree_min": 370,
+        "hors_hc_min": 0,
+        "batterie_estimee_pct": 80,
+        "energie_kwh": 14.2,
+        "cout_eur": 2.08,
+        "preconditionnement": "07:00-07:30"
+      }
+    },
+    {
+      "nom": "SOH 100 % : 38 % → 80 %",
+      "entree": {
+        "cap": 46,
+        "soh": 100,
+        "target": 80,
+        "dep": "07:30",
+        "hcStart": "22:00",
+        "hcEnd": "06:00",
+        "amp": 16,
+        "volt": 230,
+        "eff": 90,
+        "pre": 30,
+        "pHC": 0.146688,
+        "pHP": 0.196476,
+        "mode": "end",
+        "deduct": false,
+        "soc": 38
+      },
+      "attendu": {
+        "statut": "ok",
+        "allumage": "00:05",
+        "extinction": "06:00",
+        "duree_min": 355,
+        "hors_hc_min": 0,
+        "batterie_estimee_pct": 81,
+        "energie_kwh": 21.8,
+        "cout_eur": 3.19,
+        "preconditionnement": "07:00-07:30"
+      }
+    },
+    {
+      "nom": "Départ à 06h00 (préconditionnement dans les HC)",
+      "entree": {
+        "cap": 46,
+        "soh": 92,
+        "target": 80,
+        "dep": "06:00",
+        "hcStart": "22:00",
+        "hcEnd": "06:00",
+        "amp": 16,
+        "volt": 230,
+        "eff": 90,
+        "pre": 30,
+        "pHC": 0.146688,
+        "pHP": 0.196476,
+        "mode": "end",
+        "deduct": false,
+        "soc": 38
+      },
+      "attendu": {
+        "statut": "ok",
+        "allumage": "00:05",
+        "extinction": "05:30",
+        "duree_min": 325,
+        "hors_hc_min": 0,
+        "batterie_estimee_pct": 80,
+        "energie_kwh": 19.9,
+        "cout_eur": 2.92,
+        "preconditionnement": "05:30-06:00"
+      }
+    },
+    {
+      "nom": "Heures creuses 23h–07h, départ 07h30",
+      "entree": {
+        "cap": 46,
+        "soh": 92,
+        "target": 80,
+        "dep": "07:30",
+        "hcStart": "23:00",
+        "hcEnd": "07:00",
+        "amp": 16,
+        "volt": 230,
+        "eff": 90,
+        "pre": 30,
+        "pHC": 0.146688,
+        "pHP": 0.196476,
+        "mode": "end",
+        "deduct": false,
+        "soc": 38
+      },
+      "attendu": {
+        "statut": "ok",
+        "allumage": "01:35",
+        "extinction": "07:00",
+        "duree_min": 325,
+        "hors_hc_min": 0,
+        "batterie_estimee_pct": 80,
+        "energie_kwh": 19.9,
+        "cout_eur": 2.92,
+        "preconditionnement": "07:00-07:30"
+      }
+    },
+    {
+      "nom": "Début des HC + insuffisant : 5 % → 80 %",
+      "entree": {
+        "cap": 46,
+        "soh": 92,
+        "target": 80,
+        "dep": "07:30",
+        "hcStart": "22:00",
+        "hcEnd": "06:00",
+        "amp": 16,
+        "volt": 230,
+        "eff": 90,
+        "pre": 30,
+        "pHC": 0.146688,
+        "pHP": 0.196476,
+        "mode": "start",
+        "deduct": false,
+        "soc": 5
+      },
+      "attendu": {
+        "statut": "short",
+        "allumage": "20:25",
+        "extinction": "06:00",
+        "duree_min": 575,
+        "hors_hc_min": 95,
+        "batterie_estimee_pct": 80,
+        "energie_kwh": 35.3,
+        "cout_eur": 5.46,
+        "preconditionnement": "07:00-07:30"
+      }
+    }
+  ]
+}
