@@ -4,9 +4,11 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Recharge DS 3 de nuit</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@500;600;700&family=Source+Sans+3:wght@400;600&display=swap" rel="stylesheet">
+<meta name="theme-color" content="#f3f5f9" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0f1420" media="(prefers-color-scheme: dark)">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <style>
 /* Plan : outil mobile une colonne. Résultat du soir en haut, frise de la nuit, paramètres, réglage Smart Life. Nuit bleu encre, accent ambre = heures creuses. */
 :root {
@@ -22,8 +24,8 @@
   --ok: #1f7a4a; --ok-bg: #e1f3e8;
   --warn: #9a5b00; --warn-bg: #fdf0d9;
   --bad: #b3261e; --bad-bg: #fbe3e1;
-  --font-display: "Barlow Semi Condensed", "Arial Narrow", sans-serif;
-  --font-body: "Source Sans 3", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-display: "Roboto Condensed", sans-serif-condensed, "Arial Narrow", "Segoe UI", system-ui, -apple-system, Roboto, sans-serif;
+  --font-body: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   color-scheme: light;
 }
 @media (prefers-color-scheme: dark) {
@@ -341,6 +343,14 @@ import { plan, hm, fmt, fdur, fr, eur } from "./calc.js";
 
   load(); render();
 })();
+</script>
+<script>
+// Script classique séparé : le service worker s'enregistre même si le module échoue.
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", function () {
+    navigator.serviceWorker.register("./sw.js").catch(function () {});
+  });
+}
 </script>
 </body>
 </html>
