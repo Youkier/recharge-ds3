@@ -38,11 +38,11 @@ Chaque phase se termine par des critères d'acceptation vérifiés par `testeur-
 
 ### Critères d'acceptation
 
-- [ ] `node --test tests/` passe, tous les cas de référence reproduits
-- [ ] Page accessible à `https://<compte>.github.io/recharge-ds3/`
-- [ ] Sur le Pixel : Chrome propose « Installer l'application » ou « Ajouter à l'écran d'accueil », l'icône s'ouvre en plein écran
-- [ ] Paramètres modifiés, appli fermée puis rouverte : les paramètres sont conservés
-- [ ] Mode avion : la page s'ouvre et calcule
+- [x] `node --test tests/` passe, tous les cas de référence reproduits
+- [x] Page accessible à `https://youkier.github.io/recharge-ds3/`
+- [x] Sur le Pixel : Chrome propose « Installer l'application » ou « Ajouter à l'écran d'accueil », l'icône s'ouvre en plein écran
+- [x] Paramètres modifiés, appli fermée puis rouverte : les paramètres sont conservés
+- [x] Mode avion : la page s'ouvre et calcule
 - [ ] Une nouvelle version publiée apparaît sur le téléphone après au plus deux ouvertures
 
 ---
