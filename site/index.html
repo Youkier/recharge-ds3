@@ -101,6 +101,21 @@ ol { margin: 0; padding-left: 1.3em; display: flex; flex-direction: column; gap:
 li { max-width: 65ch; }
 .prog { font-variant-numeric: tabular-nums; font-weight: 600; }
 .tag { font-size: .78rem; font-weight: 600; padding: 1px 7px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); margin-left: 4px; }
+[hidden] { display: none !important; }
+main { padding-bottom: calc(96px + env(safe-area-inset-bottom, 0px)); }
+.view { display: flex; flex-direction: column; gap: 16px; }
+h2:focus { outline: none; }
+.tabbar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 10; background: var(--surface); border-top: 1px solid var(--line); padding-bottom: env(safe-area-inset-bottom, 0px); }
+.tabbar ul { list-style: none; margin: 0 auto; padding: 0; max-width: 560px; display: grid; grid-template-columns: repeat(3, 1fr); }
+.tabbar li { max-width: none; }
+.tabbar a { display: flex; align-items: center; justify-content: center; min-height: 60px; padding: 8px 4px; color: var(--muted); text-decoration: none; font-weight: 600; font-size: 1rem; border-top: 3px solid transparent; }
+.tabbar a[aria-current="page"] { color: var(--charge); border-top-color: var(--charge); }
+.tabbar a:focus-visible { outline: 2px solid var(--accent); outline-offset: -4px; }
+button:disabled { opacity: .45; cursor: not-allowed; }
+input[aria-invalid="true"] { border-color: var(--bad); }
+.msg a { color: inherit; font-weight: 600; }
+.help h3 { font-family: var(--font-display); font-size: 1.05rem; margin: 0; }
+.help p { margin: 0; max-width: 65ch; }
 @media (max-width: 400px) {
   .facts { grid-template-columns: 1fr 1fr; }
   .time-box .v { font-size: 2rem; }
@@ -115,8 +130,10 @@ li { max-width: 65ch; }
     <p class="sub">Saisissez la batterie à l'arrivée, puis réglez l'heure indiquée dans Smart Life.</p>
   </header>
 
+  <!-- Vue 1 : calcul (accueil) -->
+  <div class="view" id="v-calcul">
   <section aria-labelledby="t-soir">
-    <h2 id="t-soir">Ce soir</h2>
+    <h2 id="t-soir" tabindex="-1">Ce soir</h2>
     <div class="soc-row">
       <div>
         <label for="socRange">Batterie restante</label>
@@ -128,7 +145,9 @@ li { max-width: 65ch; }
       </div>
     </div>
 
-    <span id="status" class="pill ok">Plan prêt</span>
+    <span id="status" class="pill ok" role="status">Plan prêt</span>
+
+    <p class="msg bad" id="invalid" hidden></p>
 
     <div class="times">
       <div class="time-box on"><div class="k" id="k1">Allumer la prise à</div><div class="v" id="tStart">--:--</div></div>
@@ -150,6 +169,7 @@ li { max-width: 65ch; }
     <div class="pre-line"><span class="dot" style="background:var(--pre)"></span><span id="preText">Préconditionnement</span></div>
 
     <p class="msg warn" id="msg" hidden></p>
+    <p class="msg bad" id="unreached" hidden></p>
     <p class="msg bad" id="ampWarn" hidden></p>
 
     <div>
@@ -166,24 +186,28 @@ li { max-width: 65ch; }
       <button type="button" id="copyBtn">Copier le plan</button>
       <span id="copied" role="status"></span>
     </div>
+    <p class="hint">Réglage à faire à la main dans Smart Life : voir l'onglet <a href="#aide" data-nav="aide">Aide</a>.</p>
   </section>
+  </div>
 
+  <!-- Vue 2 : paramètres (#parametres) -->
+  <div class="view" id="v-parametres" hidden>
   <section aria-labelledby="t-param">
-    <h2 id="t-param">Paramètres</h2>
+    <h2 id="t-param" tabindex="-1">Paramètres</h2>
     <p class="hint">Enregistrés dans ce navigateur. Les valeurs de départ correspondent à une DS 3 Crossback E-Tense (50 kWh brut, environ 46 kWh utiles).</p>
     <div class="grid">
-      <div><label for="cap">Capacité utile (kWh)</label><input type="number" id="cap" step="0.1" value="46"></div>
-      <div><label for="soh">SOH (%)</label><input type="number" id="soh" step="1" value="92"></div>
-      <div><label for="target">Batterie visée (%)</label><input type="number" id="target" step="1" value="80"></div>
+      <div><label for="cap">Capacité utile (kWh)</label><input type="number" id="cap" step="0.1" value="46" inputmode="decimal"></div>
+      <div><label for="soh">SOH (%)</label><input type="number" id="soh" step="1" value="92" inputmode="decimal"></div>
+      <div><label for="target">Batterie visée (%)</label><input type="number" id="target" step="1" value="80" inputmode="decimal"></div>
       <div><label for="dep">Heure de départ</label><input type="time" id="dep" value="07:30"></div>
       <div><label for="hcStart">Début heures creuses</label><input type="time" id="hcStart" value="22:00"></div>
       <div><label for="hcEnd">Fin heures creuses</label><input type="time" id="hcEnd" value="06:00"></div>
-      <div><label for="amp">Courant de charge (A)</label><input type="number" id="amp" step="1" value="16"></div>
-      <div><label for="volt">Tension (V)</label><input type="number" id="volt" step="1" value="230"></div>
-      <div><label for="eff">Rendement de charge (%)</label><input type="number" id="eff" step="1" value="90"></div>
-      <div><label for="pre">Prise rallumée avant départ (min)</label><input type="number" id="pre" step="5" value="30"></div>
-      <div><label for="pHC">Prix heures creuses (€/kWh)</label><input type="number" id="pHC" step="0.000001" value="0.146688"></div>
-      <div><label for="pHP">Prix heures pleines (€/kWh)</label><input type="number" id="pHP" step="0.000001" value="0.196476"></div>
+      <div><label for="amp">Courant de charge (A)</label><input type="number" id="amp" step="1" value="16" inputmode="decimal"></div>
+      <div><label for="volt">Tension (V)</label><input type="number" id="volt" step="1" value="230" inputmode="decimal"></div>
+      <div><label for="eff">Rendement de charge (%)</label><input type="number" id="eff" step="1" value="90" inputmode="decimal"></div>
+      <div><label for="pre">Prise rallumée avant départ (min)</label><input type="number" id="pre" step="5" value="30" inputmode="decimal"></div>
+      <div><label for="pHC">Prix heures creuses (€/kWh)</label><input type="number" id="pHC" step="0.000001" value="0.146688" inputmode="decimal"></div>
+      <div><label for="pHP">Prix heures pleines (€/kWh)</label><input type="number" id="pHP" step="0.000001" value="0.196476" inputmode="decimal"></div>
       <div class="full">
         <label for="mode">Placement de la charge</label>
         <select id="mode">
@@ -193,56 +217,162 @@ li { max-width: 65ch; }
       </div>
       <label class="check full" for="deduct"><input type="checkbox" id="deduct"> Déduire ce que la voiture recharge pendant le préconditionnement (on compte la moitié de la puissance, le reste part dans la clim ou le chauffage)</label>
     </div>
+    <p class="msg bad" id="paramErr" hidden></p>
     <div class="btns"><button type="button" class="ghost" id="resetBtn">Revenir aux valeurs de départ</button></div>
   </section>
+  <!--
+    Phase 2c (ne pas implémenter avant) : section « Service de programmation »
+    avec les champs « Adresse du service » et « Jeton d'accès ».
+    Le jeton est saisi par l'utilisateur et stocké localement ; il ne doit jamais
+    apparaître dans le code, les journaux ni l'URL.
+  -->
+  </div>
 
-  <section aria-labelledby="t-sl">
-    <h2 id="t-sl">Réglage Smart Life, une seule fois</h2>
-    <ol id="steps"></ol>
-    <p class="hint">Les programmations de l'appareil (onglet Programmation ou Minuterie de la prise) sont en général stockées dans la prise elle-même et s'exécutent même si internet coupe, contrairement aux automatisations. Vérifiez ce point une fois sur votre modèle.</p>
+  <!-- Vue 3 : aide au réglage manuel dans Smart Life (#aide) -->
+  <div class="view" id="v-aide" hidden>
+  <section aria-labelledby="t-aide" class="help">
+    <h2 id="t-aide" tabindex="-1">Aide : régler la prise à la main</h2>
+    <p class="hint">Ce mode d'emploi reste lisible sans internet. Les noms exacts des écrans et des boutons peuvent différer selon la version de Smart Life : cherchez la fonction décrite plutôt que le libellé.</p>
+
+    <h3>1. Dans la voiture, une seule fois</h3>
+    <p>Désactivez la charge différée de la voiture (sinon elle peut bloquer la charge quand le câble s'allume) et programmez le préconditionnement pour <span class="prog" data-fill="dep">07:30</span>.</p>
+
+    <h3>2. Chaque soir : la plage de charge du câble</h3>
+    <p>Lisez la batterie dans MyDS, saisissez-la sur l'accueil, puis ouvrez le câble dans Smart Life. Dans l'écran du câble, repérez la fonction de charge différée (une seule plage horaire) et réglez :</p>
+    <ol>
+      <li id="aideDebut"></li>
+      <li id="aideFin"></li>
+    </ol>
+    <p>Enregistrez, puis vérifiez que la plage est bien activée. Si l'accueil indique « Pas de charge nécessaire », désactivez la plage pour cette nuit.</p>
+
+    <h3>3. Une seule fois : le préconditionnement</h3>
+    <p>Dans Smart Life, créez une programmation répétée tous les jours qui <b>allume</b> le câble à <span class="prog" data-fill="preS">07:00</span>, soit <span data-fill="pre">30</span> minutes avant le départ de <span class="prog" data-fill="dep">07:30</span>. Elle ne change pas d'un soir à l'autre. Si vous avez déjà une programmation qui éteint le câble après le départ, gardez-la pour l'instant : on ne sait pas encore si la charge différée démarre quand le câble a été éteint ainsi (à vérifier lors des tests de la phase 2a).</p>
+
+    <h3>4. Tester une fois</h3>
+    <p>Branchez la voiture et vérifiez que la charge démarre au début de la plage et s'arrête à la fin. Le matin, vérifiez que le câble se rallume pour le préconditionnement.</p>
+
+    <p class="hint">À confirmer sur votre câble : la plage de charge différée et les programmations sont en général enregistrées dans le câble lui-même et continuent même sans internet. Ce point n'est pas encore vérifié sur votre modèle.</p>
   </section>
+  </div>
 </main>
+
+<nav class="tabbar" aria-label="Navigation principale">
+  <ul>
+    <li><a href="#accueil" data-nav="calcul">Calcul</a></li>
+    <li><a href="#parametres" data-nav="parametres">Paramètres</a></li>
+    <li><a href="#aide" data-nav="aide">Aide</a></li>
+  </ul>
+</nav>
 
 <script type="module">
 import { plan, hm, fmt, fdur, fr, eur } from "./calc.js";
 
 (function () {
   var DEFAULTS = { cap: 46, soh: 92, target: 80, dep: "07:30", hcStart: "22:00", hcEnd: "06:00", amp: 16, volt: 230, eff: 90, pre: 30, pHC: 0.146688, pHP: 0.196476, mode: "end", deduct: false, soc: 38 };
-  var KEY = "recharge-ds3-v1";
+  var KEY = "recharge-ds3-v1"; // clé inchangée depuis la phase 1 : aucun paramètre perdu
   var ids = ["cap", "soh", "target", "dep", "hcStart", "hcEnd", "amp", "volt", "eff", "pre", "pHC", "pHP", "mode"];
+  var NUMS = ["cap", "soh", "target", "amp", "volt", "eff", "pre", "pHC", "pHP"];
   var $ = function (id) { return document.getElementById(id); };
+
+  // Dernières valeurs valides de chaque champ : sert à l'enregistrement et à l'aide.
+  var cur = Object.assign({}, DEFAULTS);
 
   function load() {
     var s = null;
     try { s = JSON.parse(localStorage.getItem(KEY) || "null"); } catch (e) { s = null; }
-    var p = Object.assign({}, DEFAULTS, s || {});
+    var p = Object.assign({}, DEFAULTS);
+    if (s && typeof s === "object") Object.keys(DEFAULTS).forEach(function (k) { if (s[k] !== null && s[k] !== undefined) p[k] = s[k]; });
     ids.forEach(function (k) { $(k).value = p[k]; });
     $("deduct").checked = !!p.deduct;
     $("soc").value = p.soc; $("socRange").value = p.soc;
   }
   function save(p) { try { localStorage.setItem(KEY, JSON.stringify(p)); } catch (e) {} }
 
+  var LABELS = { cap: "Capacité utile", soh: "SOH", target: "Batterie visée", dep: "Heure de départ", hcStart: "Début heures creuses", hcEnd: "Fin heures creuses", amp: "Courant de charge", volt: "Tension", eff: "Rendement de charge", pre: "Prise rallumée avant départ", pHC: "Prix heures creuses", pHP: "Prix heures pleines", soc: "Batterie restante" };
+  var TIME_RE = /^\d{1,2}:\d{2}$/;
+  function okNum(k, v) {
+    if (!isFinite(v)) return false;
+    if (k === "soc" || k === "target") return v >= 0 && v <= 100;
+    if (k === "soh" || k === "eff") return v > 0 && v <= 100;
+    if (k === "pre") return v >= 0 && v <= 600;
+    return v > 0; // cap, amp, volt, pHC, pHP : vide ou 0 = invalide, jamais traité comme 0
+  }
+
+  // Lit les champs. Un champ vide ou hors limites est signalé et n'entre pas dans le plan.
   function read() {
-    var p = {};
+    var p = {}, bad = [];
     ids.forEach(function (k) { p[k] = $(k).value; });
-    ["cap", "soh", "target", "amp", "volt", "eff", "pre", "pHC", "pHP"].forEach(function (k) { p[k] = parseFloat(p[k]); });
+    NUMS.forEach(function (k) {
+      var raw = String($(k).value).trim();
+      var v = raw === "" ? NaN : Number(raw);
+      p[k] = v;
+      if (!okNum(k, v)) bad.push(k);
+    });
+    ["dep", "hcStart", "hcEnd"].forEach(function (k) {
+      if (!TIME_RE.test(p[k])) bad.push(k);
+    });
+    if (p.mode !== "start" && p.mode !== "end") p.mode = "end";
     p.deduct = $("deduct").checked;
-    p.soc = Math.max(0, Math.min(100, parseFloat($("soc").value) || 0));
-    return p;
+    var rawSoc = String($("soc").value).trim();
+    p.soc = rawSoc === "" ? NaN : Number(rawSoc);
+    if (!okNum("soc", p.soc)) bad.push("soc");
+    return { p: p, bad: bad };
+  }
+
+  function mark(bad) {
+    NUMS.concat(["dep", "hcStart", "hcEnd", "soc"]).forEach(function (k) {
+      $(k).setAttribute("aria-invalid", bad.indexOf(k) >= 0 ? "true" : "false");
+    });
+  }
+
+  var lastText = null; // texte du plan affiché ; null tant que la saisie est invalide
+
+  function clearResults() {
+    ["tStart", "tEnd"].forEach(function (i) { $(i).textContent = "--:--"; });
+    ["fArr", "fDur", "fKwh", "fOff", "fCost"].forEach(function (i) { $(i).textContent = "–"; });
+    $("fCostD").textContent = "";
+    $("preText").textContent = "Préconditionnement";
+    $("timeline").innerHTML = ""; $("ticks").innerHTML = "";
+    ["msg", "unreached", "ampWarn"].forEach(function (i) { $(i).hidden = true; });
   }
 
   function render() {
-    var p = read(); save(p);
-    var r = plan(p);
-    var st = $("status"), msg = $("msg");
-    msg.hidden = true;
-    if (r.status === "err") {
-      st.className = "pill warn"; st.textContent = "Paramètres incomplets";
-      msg.hidden = false; msg.textContent = "Vérifiez la capacité, le SOH, le courant, la tension et le rendement : ils doivent être supérieurs à zéro.";
+    lastText = null;
+    $("copyBtn").disabled = true;
+    var rd = read(), p = rd.p, bad = rd.bad;
+    mark(bad);
+    // Enregistre uniquement les champs valides : les autres gardent leur dernière valeur valide.
+    ids.forEach(function (k) { if (bad.indexOf(k) < 0) cur[k] = p[k]; });
+    cur.deduct = p.deduct;
+    if (bad.indexOf("soc") < 0) cur.soc = p.soc;
+    save(cur);
+    drawAide();
+
+    var st = $("status"), msg = $("msg"), inv = $("invalid"), pe = $("paramErr");
+    msg.hidden = true; inv.hidden = true; pe.hidden = true;
+
+    if (bad.length) {
+      clearResults();
+      var pbad = bad.filter(function (k) { return k !== "soc"; });
+      st.className = "pill warn"; st.textContent = "Saisie incomplète";
+      inv.hidden = false;
+      inv.textContent = "Aucun plan calculé. À corriger : " + bad.map(function (k) { return LABELS[k]; }).join(", ") + ". ";
+      if (pbad.length) {
+        var a = document.createElement("a"); a.href = "#parametres"; a.setAttribute("data-nav", "parametres"); a.textContent = "Ouvrir les paramètres";
+        inv.appendChild(a);
+        pe.hidden = false;
+        pe.textContent = "Valeur manquante ou impossible : " + pbad.map(function (k) { return LABELS[k]; }).join(", ") + ". Le calcul reste en attente tant qu'elle n'est pas corrigée.";
+      }
       return;
     }
-    $("k1").textContent = p.mode === "start" ? "Allumer la prise à" : "Allumer la prise à";
-    $("k2").textContent = "Éteindre à";
+
+    var r = plan(p);
+    if (r.status === "err") {
+      clearResults();
+      st.className = "pill warn"; st.textContent = "Paramètres incomplets";
+      inv.hidden = false; inv.textContent = "Vérifiez la capacité, le SOH, le courant, la tension et le rendement : ils doivent être supérieurs à zéro.";
+      return;
+    }
     if (r.status === "none") {
       st.className = "pill none"; st.textContent = "Pas de charge nécessaire";
       $("tStart").textContent = "—"; $("tEnd").textContent = "—";
@@ -262,11 +392,17 @@ import { plan, hm, fmt, fdur, fr, eur } from "./calc.js";
 
     if (r.status === "short") {
       msg.hidden = false;
-      msg.textContent = "Les heures creuses ne suffisent pas pour atteindre " + p.target + " %. La charge commence donc à " + fmt(r.start) + " : " + fdur(r.offMin) + " en heures pleines (de " + fmt(r.start) + " à " + fmt(r.hcS) + "), soit environ " + fr(r.offMin / 60 * r.P, 1) + " kWh au tarif plein. Réglez la programmation « Démarrage » sur " + fmt(r.start) + " ce soir.";
+      msg.textContent = "Les heures creuses ne suffisent pas pour atteindre " + p.target + " %. La charge commence donc à " + fmt(r.start) + " : " + fdur(r.offMin) + " en heures pleines (de " + fmt(r.start) + " à " + fmt(r.hcS) + "), soit environ " + fr(r.offMin / 60 * r.P, 1) + " kWh au tarif plein. Réglez le début de la plage de charge sur " + fmt(r.start) + " ce soir.";
     } else if (r.status === "none") {
       msg.hidden = false;
-      msg.textContent = "Désactivez la programmation « Démarrage » pour cette nuit. La prise se rallumera quand même à " + fmt(r.preS) + " pour le préconditionnement.";
+      msg.textContent = "Désactivez la charge différée du câble pour cette nuit. Il se rallumera quand même à " + fmt(r.preS) + " pour le préconditionnement.";
     }
+
+    var un = $("unreached");
+    if (r.status !== "none" && r.arrival < p.target - 0.05) {
+      un.hidden = false;
+      un.textContent = "Cible non atteinte : la batterie sera d'environ " + Math.round(r.arrival) + " % au lieu de " + p.target + " %, même en démarrant au plus tôt (" + fmt(r.start) + ").";
+    } else un.hidden = true;
 
     var aw = $("ampWarn");
     if (p.amp > 16) {
@@ -275,8 +411,8 @@ import { plan, hm, fmt, fdur, fr, eur } from "./calc.js";
     } else aw.hidden = true;
 
     drawTimeline(r);
-    drawSteps(p, r);
     lastText = buildText(p, r);
+    $("copyBtn").disabled = false;
   }
 
   function drawTimeline(r) {
@@ -298,50 +434,95 @@ import { plan, hm, fmt, fdur, fr, eur } from "./calc.js";
     tk.innerHTML = t;
   }
 
-  function drawSteps(p, r) {
-    var varStart = p.mode !== "start";
-    var preS = fmt(r.preS), off = fmt(r.dep + 30), hcS = fmt(r.hcS), hcE = fmt(hm(p.hcEnd));
-    var items = [
-      "Dans la voiture : <b>désactivez la charge différée</b> (sinon elle bloque la charge quand la prise s'allume) et programmez le préconditionnement pour " + p.dep + ".",
-      "Dans Smart Life, ouvrez la prise puis Programmation (ou Minuterie), et créez ces programmations répétées tous les jours :" +
-        '<ol style="margin-top:6px">' +
-        (varStart
-          ? "<li><span class=\"prog\">Démarrage : allumer à [heure du soir]</span><span class=\"tag\">à modifier chaque soir</span></li>" +
-            "<li><span class=\"prog\">Fin des heures creuses : éteindre à " + hcE + "</span></li>"
-          : "<li><span class=\"prog\">Démarrage : allumer à " + hcS + "</span></li>" +
-            "<li><span class=\"prog\">Arrêt : éteindre à [heure du soir]</span><span class=\"tag\">à modifier chaque soir</span></li>" +
-            "<li><span class=\"prog\">Sécurité : éteindre à " + hcE + "</span></li>") +
-        "<li><span class=\"prog\">Préconditionnement : allumer à " + preS + "</span></li>" +
-        "<li><span class=\"prog\">Après le départ : éteindre à " + off + "</span> (la prise est ainsi éteinte quand vous rebranchez le soir)</li>" +
-        "</ol>",
-      "Chaque soir : lisez la batterie dans MyDS, saisissez-la ici, puis changez seulement l'heure de la programmation marquée. Si aucune charge n'est nécessaire, désactivez-la pour la nuit.",
-      "Testez une fois : branchez la voiture prise éteinte, puis allumez la prise. La charge doit démarrer seule. Faites de même au matin pour vérifier qu'elle reprend au moment du préconditionnement."
-    ];
-    $("steps").innerHTML = items.map(function (s) { return "<li>" + s + "</li>"; }).join("");
+  // Aide : heures issues des dernières valeurs valides (lisible hors ligne, sans calcul du soir).
+  function drawAide() {
+    var dep = hm(cur.dep), preS = dep - cur.pre;
+    var fills = { dep: fmt(dep), preS: fmt(preS), pre: String(cur.pre) };
+    Array.prototype.forEach.call(document.querySelectorAll("[data-fill]"), function (el) { el.textContent = fills[el.getAttribute("data-fill")]; });
+    var hcS = fmt(hm(cur.hcStart)), hcE = fmt(hm(cur.hcEnd));
+    var d = $("aideDebut"), f = $("aideFin");
+    if (cur.mode === "start") {
+      d.innerHTML = '<b>Début</b> : <span class="prog">' + hcS + '</span> (début des heures creuses, fixe).';
+      f.innerHTML = '<b>Fin</b> : l\'heure « Éteindre à » affichée sur l\'accueil <span class="tag">change chaque soir</span>';
+    } else {
+      d.innerHTML = '<b>Début</b> : l\'heure « Allumer la prise à » affichée sur l\'accueil <span class="tag">change chaque soir</span>';
+      f.innerHTML = '<b>Fin</b> : <span class="prog">' + hcE + '</span> (fin des heures creuses, fixe).';
+    }
   }
 
-  var lastText = "";
   function buildText(p, r) {
-    if (r.status === "none") return "Ce soir (" + p.soc + " %) : pas de charge, désactiver le démarrage. Préconditionnement " + fmt(r.preS) + "–" + fmt(r.dep) + ". Batterie estimée " + Math.round(r.arrival) + " %. Coût estimé " + eur(r.cost) + ".";
+    if (r.status === "none") return "Ce soir (" + p.soc + " %) : pas de charge, désactiver la charge différée. Préconditionnement " + fmt(r.preS) + "–" + fmt(r.dep) + ". Batterie estimée " + Math.round(r.arrival) + " %. Coût estimé " + eur(r.cost) + ".";
     return "Ce soir (" + p.soc + " %) : allumer à " + fmt(r.start) + ", éteindre à " + fmt(r.end) + " (" + fdur(r.chargeMin) + (r.offMin > 0 ? ", dont " + fdur(r.offMin) + " hors heures creuses" : "") + "). Préconditionnement " + fmt(r.preS) + "–" + fmt(r.dep) + ". Batterie estimée " + Math.round(r.arrival) + " %. Coût estimé " + eur(r.cost) + ".";
   }
 
   $("socRange").addEventListener("input", function () { $("soc").value = this.value; render(); });
-  $("soc").addEventListener("input", function () { $("socRange").value = this.value; render(); });
+  $("soc").addEventListener("input", function () { if ($("soc").value !== "") $("socRange").value = $("soc").value; render(); });
   ids.concat(["deduct"]).forEach(function (k) { $(k).addEventListener("input", render); $(k).addEventListener("change", render); });
   $("resetBtn").addEventListener("click", function () {
     try { localStorage.removeItem(KEY); } catch (e) {}
+    cur = Object.assign({}, DEFAULTS);
     load(); render();
   });
   $("copyBtn").addEventListener("click", function () {
     var c = $("copied");
+    var text = lastText; // null si la saisie est invalide : on ne copie jamais un plan périmé
+    if (!text) { c.textContent = "Rien à copier : corrigez la saisie."; setTimeout(function () { c.textContent = ""; }, 4000); return; }
     if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(lastText).then(function () { c.textContent = "Copié"; }, function () { c.textContent = lastText; });
-    } else { c.textContent = lastText; }
+      navigator.clipboard.writeText(text).then(function () { c.textContent = "Copié"; }, function () { c.textContent = text; });
+    } else { c.textContent = text; }
     setTimeout(function () { c.textContent = ""; }, 4000);
   });
 
-  load(); render();
+  // Navigation : trois vues, ancres #accueil (ou aucune), #parametres, #aide.
+  var VIEWS = ["calcul", "parametres", "aide"];
+  var HEADINGS = { calcul: "t-soir", parametres: "t-param", aide: "t-aide" };
+  function viewFromHash() {
+    var h = location.hash;
+    return h === "#parametres" ? "parametres" : h === "#aide" ? "aide" : "calcul";
+  }
+  var shown = null;
+  function route(focus) {
+    var v = viewFromHash();
+    if (v === shown) return;
+    shown = v;
+    VIEWS.forEach(function (n) { $("v-" + n).hidden = n !== v; });
+    Array.prototype.forEach.call(document.querySelectorAll(".tabbar a"), function (a) {
+      if (a.getAttribute("data-nav") === v) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current");
+    });
+    window.scrollTo(0, 0);
+    if (focus) $(HEADINGS[v]).focus({ preventScroll: true });
+  }
+  var goingBack = false; // évite un second history.back() avant le popstate (double appui)
+  function go(target) {
+    if (goingBack) return;
+    var here = viewFromHash();
+    if (target === here) return;
+    var hash = target === "calcul" ? "#accueil" : "#" + target;
+    if (here === "calcul") {
+      // Depuis l'accueil : nouvelle entrée d'historique, le retour d'Android revient ici.
+      history.pushState({ pushed: true }, "", hash);
+    } else if (target === "calcul" && history.state && history.state.pushed) {
+      goingBack = true;
+      history.back(); // popstate / hashchange affichent l'accueil
+      return;
+    } else {
+      // Entre deux vues secondaires : on remplace en gardant l'état existant. Seul un
+      // pushState fait depuis l'accueil pose « pushed » (ouverture directe sur #aide :
+      // aucune entrée accueil derrière, donc pas de history.back()).
+      history.replaceState(history.state, "", hash);
+    }
+    route(true);
+  }
+  document.addEventListener("click", function (e) {
+    var a = e.target.closest ? e.target.closest("a[data-nav]") : null;
+    if (!a || e.defaultPrevented || e.metaKey || e.ctrlKey || e.shiftKey) return;
+    e.preventDefault();
+    go(a.getAttribute("data-nav"));
+  });
+  window.addEventListener("hashchange", function () { goingBack = false; route(true); });
+  window.addEventListener("popstate", function () { goingBack = false; route(true); });
+
+  load(); render(); route(false);
 })();
 </script>
 <script>

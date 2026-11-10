@@ -42,6 +42,8 @@ sign = HMAC-SHA256(str, accessSecret) en hexadécimal MAJUSCULE
 
 ## 4. Lire et commander l'appareil (**À VÉRIFIER**)
 
+> Écart relevé le 2026-11-10 : la page officielle « Device Control » utilise `/v1.0/devices/{device_id}/...` (et `specifications`), pas `/v1.0/iot-03/...`. La sonde prend le chemin officiel par défaut (`--iot03` pour l'autre). Le chemin qui marche réellement sera noté dans `docs/tuya-findings.md` après le test T1 ; se fier à ce fichier plutôt qu'au tableau ci-dessous.
+
 | Usage | Appel |
 |---|---|
 | Informations, en ligne ou non | `GET /v1.0/iot-03/devices/{device_id}` |

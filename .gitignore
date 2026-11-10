@@ -3,6 +3,7 @@ tools/.env
 worker/.dev.vars
 .env
 .wrangler/
+tools/releves/
 
 # Divers
 node_modules/

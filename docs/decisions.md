@@ -19,3 +19,4 @@
 | 2026-11-10 | `.claude/settings.json` : lecture des fichiers de secrets interdite aussi par le terminal ; confirmation imposée pour la sonde, `wrangler deploy`, `wrangler secret` et `git push` | L'interdiction ne couvrait que l'outil de lecture |
 | 2026-11-10 | Phase 1bis : vues Paramètres et Aide dans le même `index.html` | Un seul fichier en cache ; prépare les champs de la phase 2c |
 | 2026-11-09 | Tests lancés avec le motif `node --test "tests/**/*.test.mjs"` en CI | Node 24 ne parcourt pas un dossier passé en argument (MODULE_NOT_FOUND), Node 26 oui ; le motif marche sur les deux |
+| 2026-11-10 | Phase 1bis : navigation par barre d'onglets en bas + ancres (#accueil, #parametres, #aide), saisie invalide = aucun plan ni copie ; clés localStorage inchangées ; SW v2 | Pouce sur Pixel ; retour Android = accueil ; aucune perte de paramètres |
