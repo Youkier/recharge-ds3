@@ -55,6 +55,8 @@ La sonde lit `tools/.env` elle-même ; commandes : `node tools/tuya-probe.mjs <a
 
 | Test | Résultat | Détails | Date |
 |---|---|---|---|
+| T0a Plage du câble + programmation Smart Life | **Réussi avec effet de bord** | Observé par Mathieu : la plage du câble se règle, s'active et la charge a lieu sur la plage. Quand la programmation Smart Life « marche à 7h » se déclenche, elle **désactive la plage** (celle-ci reste désactivée ensuite). Conséquence : la plage doit être réactivée chaque soir, sinon pas de charge la nuit suivante | 2026-11-11 |
+| T0b Même essai, box coupée | Non fait | | |
 | T1 Lecture de l'état | | | |
 | T2 Allumer / éteindre | | | |
 | T3 Démarrage différé exécuté par l'appareil | | | |
