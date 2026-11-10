@@ -7,7 +7,7 @@ Ce fichier est lu automatiquement par Claude Code à chaque session. Il fixe le 
 Mathieu possède une DS 3 Crossback E-Tense (plateforme e-CMP, environ 46 kWh utiles, SOH 92 %). Il recharge à la maison :
 
 - prise Legrand Green'up Access 16 A (3,7 kW), ligne dédiée 3G2,5, disjoncteur différentiel 20 A courbe C 30 mA ;
-- câble de recharge mode 2 connecté, piloté par l'application **Smart Life** (écosystème Tuya) ;
+- câble de recharge mode 2 connecté (marque « dé », 3,7 kW, 6–16 A réglable, Wi-Fi), piloté par l'application **Smart Life** (écosystème Tuya). C'est le câble qui autorise ou bloque la charge, pas la prise murale ; il a sa propre fonction de charge différée, à une seule plage. Dans ce projet, « la prise » désigne ce câble ;
 - heures creuses 22h00–06h00, prix HC 0,146688 €/kWh, prix HP 0,196476 €/kWh ;
 - départ habituel 7h30, préconditionnement programmé dans la voiture, prise rallumée 30 min avant le départ ;
 - smartphone Android Pixel 9.
@@ -70,7 +70,7 @@ docs/            journal des décisions, résultats Tuya
 
 ## Commandes utiles
 
-- Tests : `node --test tests/`
+- Tests : `node --test "tests/**/*.test.mjs"`
 - Servir la page en local : `npx serve site` ou `python3 -m http.server -d site 8080`
 - Worker en local (phase 2) : `cd worker && npx wrangler dev`
 

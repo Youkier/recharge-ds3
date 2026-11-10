@@ -13,7 +13,7 @@ Le chef de projet obtient l'accord de Mathieu **avant** chaque première publica
 - Publication par GitHub Actions : `.github/workflows/pages.yml`, déclenché sur `push` vers `main` et à la main (`workflow_dispatch`).
 - Le workflow :
   1. récupère le code et installe Node (version LTS) ;
-  2. lance `node --test tests/` : **si un test échoue, rien n'est publié** ;
+  2. lance `node --test "tests/**/*.test.mjs"` (motif compatible Node 24) : **si un test échoue, rien n'est publié** ;
   3. publie `site/` avec les actions officielles GitHub Pages (`configure-pages`, `upload-pages-artifact`, `deploy-pages`), en utilisant leurs dernières versions majeures (à vérifier sur leur page GitHub au moment d'écrire le workflow) ;
   4. permissions minimales : `contents: read`, `pages: write`, `id-token: write`.
 - Réglages à faire par Mathieu : Settings → Pages → Source : **GitHub Actions** ; Settings → Code security → *Secret scanning* et *Push protection* activés ; double authentification sur le compte.

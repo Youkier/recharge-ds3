@@ -13,4 +13,9 @@
 | 2026-11-09 | Défauts de saisie relevés à l'extraction (champ vide → NaN, plan périmé copié, cible non atteinte sans message, prix vide = 0) traités après la phase 1 | Ne pas mêler correction et extraction ; aucun cas de référence concerné |
 | 2026-11-09 | Service worker « réseau d'abord, repli sur le cache » (délai 4 s) | Page minuscule ouverte une fois par soir : la fraîcheur prime ; nouvelle version visible dès la 1re ouverture en ligne |
 | 2026-11-09 | Publication par GitHub Actions : tests puis déploiement de site/, actions épinglées par empreinte | Rien n'est publié si un cas de référence casse |
+| 2026-11-10 | Architecture phase 2 : le service écrit le début de la plage de charge du câble ; le préconditionnement reste une programmation Smart Life fixe | Le câble n'a qu'une plage ; la recharge de nuit repose ainsi sur le mécanisme le plus autonome. **Hypothèse non testée** (test T0 de `PLAN.md`), à confirmer avant la phase 2b |
+| 2026-11-10 | T4 en échec = arrêt, sauf dérogation écrite ; ajout de T0 (sans API) et T6 (non-régression) | La règle n°1 ne peut pas être contournée par un simple « à noter » |
+| 2026-11-10 | Agents en `model: sonnet` ; tests réels de la phase 2a lancés par la session principale | Coût ; la 2a est un dialogue pas à pas avec Mathieu |
+| 2026-11-10 | `.claude/settings.json` : lecture des fichiers de secrets interdite aussi par le terminal ; confirmation imposée pour la sonde, `wrangler deploy`, `wrangler secret` et `git push` | L'interdiction ne couvrait que l'outil de lecture |
+| 2026-11-10 | Phase 1bis : vues Paramètres et Aide dans le même `index.html` | Un seul fichier en cache ; prépare les champs de la phase 2c |
 | 2026-11-09 | Tests lancés avec le motif `node --test "tests/**/*.test.mjs"` en CI | Node 24 ne parcourt pas un dossier passé en argument (MODULE_NOT_FOUND), Node 26 oui ; le motif marche sur les deux |

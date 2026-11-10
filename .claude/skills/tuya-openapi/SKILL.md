@@ -55,7 +55,17 @@ sign = HMAC-SHA256(str, accessSecret) en hexadécimal MAJUSCULE
 
 ## 5. Programmer un démarrage différé (cœur du projet, **À VÉRIFIER**)
 
-Deux pistes, à tester dans cet ordre au point d'arrêt T3 :
+Le câble est une borne portable (marque « dé », 3,7 kW, Wi-Fi) qui pilote elle-même la charge et possède une fonction de charge différée à **une seule plage**. Piste principale (hypothèse du 2026-11-10, rien n'est encore vérifié) :
+
+0. **Plage de charge du câble.** Ce réglage est très probablement un point de données propre au fabricant, absent des fonctions standard.
+   - Pour l'identifier : relever tous les points de données, changer l'heure dans l'appli, relever à nouveau, comparer (test T2).
+   - Son format est inconnu : heure lisible, minutes depuis minuit, ou valeur encodée. Ne rien supposer.
+   - Le service n'écrit que le **début** de la plage. Si début et fin sont dans la même valeur, relire la valeur en place et ne changer que le début.
+   - Ne jamais écrire le courant de charge ni un autre réglage.
+   - Après écriture, relire la valeur et vérifier que les autres points de données n'ont pas changé (test T6).
+   - Heure déjà passée au moment de l'appel : appliquer la règle fixée en fin de phase 2a, jamais de report silencieux au lendemain.
+
+Pistes de repli, seulement si la plage n'est pas accessible en écriture :
 
 1. **Compte à rebours de l'appareil** : beaucoup d'appareils Tuya exposent un code de type `countdown` ou `countdown_1` (en secondes). À l'échéance, l'appareil change d'état lui-même. Vérifier :
    - le sens exact (inverse l'état actuel, ou allume toujours ?) ;
@@ -63,7 +73,7 @@ Deux pistes, à tester dans cet ordre au point d'arrêt T3 :
    - que l'exécution est faite par l'appareil, même si internet est coupé (test T4).
 2. **Minuteries cloud de l'appareil** : Tuya propose des API de minuteries (ajout, mise à jour, suppression) exécutées par le module de l'appareil. Une partie de ces API est marquée comme dépréciée dans la documentation. Chercher dans developer.tuya.com l'API actuelle de « device timer » pour les projets cloud, la tester sur une minuterie de test, puis vérifier qu'elle apparaît dans l'onglet Programmation de Smart Life.
 
-Le projet ne touche **qu'à la programmation de démarrage**. Les programmations fixes (extinction de fin d'heures creuses, rallumage pour le préconditionnement, extinction après le départ) sont configurées une fois par Mathieu dans Smart Life et ne doivent jamais être modifiées ou supprimées par le code.
+Le projet ne touche **qu'au début de la plage de charge**. La programmation Smart Life de rallumage pour le préconditionnement est configurée une fois par Mathieu et ne doit jamais être modifiée ou supprimée par le code.
 
 ## 6. Erreurs courantes
 

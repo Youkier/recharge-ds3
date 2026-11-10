@@ -3,7 +3,22 @@
     "deny": [
       "Read(./tools/.env)",
       "Read(./worker/.dev.vars)",
-      "Read(./.env)"
+      "Read(./.env)",
+      "Bash(*tools/.env*)",
+      "Bash(*.dev.vars*)",
+      "PowerShell(*tools/.env*)",
+      "PowerShell(*tools\\.env*)",
+      "PowerShell(*.dev.vars*)"
+    ],
+    "ask": [
+      "Bash(node tools/tuya-probe.mjs*)",
+      "Bash(npx wrangler deploy*)",
+      "Bash(npx wrangler secret*)",
+      "Bash(git push*)",
+      "PowerShell(node tools/tuya-probe.mjs*)",
+      "PowerShell(npx wrangler deploy*)",
+      "PowerShell(npx wrangler secret*)",
+      "PowerShell(git push*)"
     ]
   }
 }
