@@ -1,0 +1,2 @@
+# Les scripts de contrôle git doivent garder des fins de ligne Unix pour s'exécuter.
+tools/hooks/* text eol=lf

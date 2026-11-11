@@ -1,0 +1,64 @@
+#!/bin/sh
+# Contrôle avant commit : empêche de publier un secret sur le dépôt public.
+# Installation (une fois) : git config core.hooksPath tools/hooks
+#
+# Refuse le commit si :
+#  1. un fichier de secrets est indexé (.env…, .dev.vars…), sauf le modèle .env.example ;
+#  2. le modèle .env.example contient une valeur pour un identifiant Tuya ;
+#  3. une valeur présente dans tools/.env ou worker/.dev.vars apparaît dans les
+#     changements indexés (comparaison exacte, sur ce PC uniquement ; rien n'est affiché
+#     à part le nom de la variable).
+# Pour les tests : SECRETS_FILES remplace la liste des fichiers de secrets lus.
+
+racine=$(git rev-parse --show-toplevel) || exit 1
+cd "$racine" || exit 1
+erreur=0
+
+# 1. Fichiers de secrets indexés
+fichiers=$(git diff --cached --name-only --diff-filter=ACMR)
+for f in $fichiers; do
+  nom=$(basename "$f")
+  case "$nom" in
+    .env.example) ;;
+    .env*|*.dev.vars*)
+      echo "REFUSÉ : fichier de secrets indexé : $f" >&2
+      erreur=1 ;;
+  esac
+done
+
+# 2. Modèle .env.example rempli par erreur
+for f in $fichiers; do
+  case "$(basename "$f")" in
+    .env.example)
+      if git show ":$f" | grep -Eq '^[[:space:]]*(export[[:space:]]+)?TUYA_(ACCESS_ID|ACCESS_SECRET|DEVICE_ID|UID)[[:space:]]*=[[:space:]]*[^[:space:]#]'; then
+        echo "REFUSÉ : $f contient une valeur d'identifiant Tuya. Ce modèle doit rester vide." >&2
+        erreur=1
+      fi ;;
+  esac
+done
+
+# 3. Valeurs réelles des secrets dans les changements indexés
+liste=${SECRETS_FILES:-"tools/.env worker/.dev.vars"}
+diff_indexe=$(git diff --cached -U0 --no-color --diff-filter=ACMR)
+for src in $liste; do
+  [ -f "$src" ] || continue
+  # KEY=VALUE, sans commentaires, guillemets retirés ; valeurs d'au moins 8 caractères.
+  while IFS= read -r ligne || [ -n "$ligne" ]; do
+    ligne=$(printf '%s' "$ligne" | tr -d '\r')
+    case "$ligne" in ''|'#'*) continue ;; esac
+    cle=$(printf '%s' "${ligne%%=*}" | sed 's/^[[:space:]]*export[[:space:]]*//; s/[[:space:]]//g')
+    val=$(printf '%s' "${ligne#*=}" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//; s/^"\(.*\)"$/\1/; s/^'"'"'\(.*\)'"'"'$/\1/')
+    [ "$cle" = "TUYA_ENDPOINT" ] && continue
+    [ "${#val}" -ge 8 ] || continue
+    if printf '%s' "$diff_indexe" | grep -Fq -- "$val"; then
+      echo "REFUSÉ : la valeur de $cle (fichier $src) apparaît dans les changements indexés." >&2
+      erreur=1
+    fi
+  done < "$src"
+done
+
+if [ "$erreur" -ne 0 ]; then
+  echo "Commit annulé. Retirez le secret (git restore --staged <fichier>) puis recommencez." >&2
+  exit 1
+fi
+exit 0

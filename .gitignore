@@ -1,7 +1,9 @@
 # Secrets : ne jamais versionner
-tools/.env
-worker/.dev.vars
-.env
+# Tout fichier dont le nom commence par .env (.env, .env.txt, .env - Copie, .env.local…),
+# dans n'importe quel dossier, sauf le modèle vide .env.example.
+.env*
+!.env.example
+*.dev.vars*
 .wrangler/
 tools/releves/
 

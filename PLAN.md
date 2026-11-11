@@ -91,7 +91,7 @@ Tant que T0 n'est pas fait, tout le travail de la phase 2a repose sur l'hypothè
 ### Ce que fait Mathieu (guidé pas à pas par le chef de projet)
 
 1. Compte sur la plateforme développeur Tuya (iot.tuya.com), projet cloud de type Smart Home, centre de données **Central Europe**.
-2. Liaison du compte Smart Life au projet (scan d'un QR code depuis l'appli Smart Life).
+2. Liaison au projet d'un **compte Smart Life dédié**, qui ne voit que le câble (partagé depuis le compte principal, fait le 2026-11-11). Le QR code est scanné depuis le compte dédié ; le compte principal n'est jamais relié au projet. Repli si l'appareil partagé n'est pas visible ou pas pilotable par l'API : déplacer le câble sur le compte dédié et le partager vers le compte principal.
 3. Abonnement gratuit au service IoT Core (et à ce que la sonde réclame).
 4. Double authentification activée sur le compte développeur Tuya.
 5. Récupération de l'Access ID, de l'Access Secret et de l'identifiant du câble, à placer dans `tools/.env` (ignoré par git).
@@ -107,7 +107,7 @@ Les tests sont lancés par la session principale avec Mathieu, commande par comm
 
 | # | Test | Si échec |
 |---|---|---|
-| T1 | Le câble apparaît dans le projet et la sonde lit son état. La liste des autres appareils visibles est notée dans `docs/tuya-findings.md` (noms et catégories seulement) | Arrêt |
+| T1 | Le câble apparaît dans le projet et la sonde lit son état. La liste des appareils visibles ne contient **que le câble** (noms et catégories notés dans `docs/tuya-findings.md`) | Arrêt ; si un autre appareil apparaît : délier le compte immédiatement |
 | T2 | Le réglage de plage est identifié : relevé des points de données, changement d'heure dans l'appli, nouveau relevé, comparaison. Son format est compris (heure, minutes, valeur encodée) | Arrêt, ou repli |
 | T3 | Écrire le début de plage par l'API : la nouvelle heure apparaît dans l'écran du câble dans Smart Life, et la charge démarre à cette heure (essai à +5 min) | Arrêt, ou repli sur décision de Mathieu |
 | T4 | La plage écrite par l'API s'exécute avec internet coupé côté box (essai de 10 min) | **Arrêt**, ou dérogation explicite à la règle n°1 consignée dans `docs/decisions.md` |
@@ -116,7 +116,7 @@ Les tests sont lancés par la session principale avec Mathieu, commande par comm
 
 ### Décisions à prendre en fin de phase
 
-- **Compte Smart Life :** si T1 montre une caméra, une serrure ou une alarme, passer à un compte dédié qui ne voit que le câble avant la phase 2b.
+- **Compte Smart Life :** compte dédié retenu dès le départ (voir étape 2 ci-dessus). Avant la phase 2b, l'Access Secret est régénéré et la nouvelle valeur ne va que dans les secrets Cloudflare.
 - **Heure déjà passée** (bouton pressé après l'heure de démarrage calculée) : démarrer tout de suite, ou refuser avec un message. Jamais de report silencieux au lendemain.
 - **Soirs d'oubli :** la plage reste-t-elle active d'un jour sur l'autre (la voiture charge à l'heure de la veille) ou faut-il un autre comportement ?
 - **Contrat du service** (`POST /api/programmer`, `GET /api/etat`) figé, pour que les phases 2b et 2c avancent sans se bloquer.

@@ -10,7 +10,7 @@ description: Comment appeler l'API cloud Tuya (Smart Life) de façon sûre et v�
 ## 1. Prérequis côté compte (fait par Mathieu)
 
 - Projet cloud sur iot.tuya.com, type Smart Home, **centre de données Central Europe** (même région que le compte Smart Life, sinon l'appareil n'apparaît pas).
-- Compte Smart Life principal lié au projet (onglet Devices → Link App Account → QR code scanné depuis l'appli). **Les clés du projet donnent accès à tous les appareils de ce compte**, pas seulement au câble : elles sont les secrets les plus sensibles du projet.
+- Compte Smart Life **dédié** lié au projet (onglet Devices → Link App Account → QR code scanné depuis l'appli connectée au compte dédié). Le câble y est partagé depuis le compte principal, qui n'est jamais relié au projet. **Les clés du projet donnent accès à tous les appareils du compte relié** : d'où ce compte dédié, qui ne doit contenir que le câble. Elles restent les secrets les plus sensibles du projet.
 - Service API **IoT Core** activé (offre gratuite d'essai, à renouveler périodiquement).
 - Récupérés : Access ID (`client_id`), Access Secret, identifiant de l'appareil (`device_id`).
 - Endpoint Europe : `https://openapi.tuyaeu.com`.
