@@ -4,9 +4,22 @@ Chaque ligne : ce qui a été vérifié, comment (URL de documentation ou comman
 
 ## Appareil
 
-- Nom dans Smart Life :
-- Catégorie Tuya :
-- Mode d'instruction (standard / DP) :
+- Nom dans Smart Life : (câble « dé », seul appareil coché dans le projet)
+- Catégorie Tuya : `dj` (renvoyée par `GET /v1.0/iot-03/devices/{id}/specification`, sans aucune fonction ni état déclarés), appel réel 2026-11-11
+- Mode d'instruction : aucun code standard (`status` vide) ; seuls les points de données du fabricant (`x_…`) sont lisibles, via les « shadow properties » v2
+
+## Appels réels (2026-11-11, T1, compte principal relié avec le câble seul)
+
+| Appel | Résultat |
+|---|---|
+| `GET /v1.0/token?grant_type=1` | OK : signature acceptée, `result.access_token`, `expire_time` = 7200 s |
+| `GET /v1.3/iot-03/devices` (sans `source_type`) | `success` mais liste vide. `TUYA_UID` volontairement non renseigné (il interrogerait la liste du compte, qui contient d'autres appareils) |
+| `GET /v1.0/devices/{id}/status` (chemin de la doc « Device Control ») | Erreur `code=2003 msg=function not support` |
+| `GET /v1.0/iot-03/devices/{id}/status` | OK, liste vide `[]` |
+| `GET /v1.0/iot-03/devices/{id}/specification` | OK, `{"category":"dj"}` seulement |
+| `GET /v2.0/cloud/thing/{id}/shadow/properties` | **OK** : 29 points de données (`result.properties[]` avec `code`, `dp_id`, `type`, `value`, `time`). C'est le chemin de lecture retenu |
+
+Vérification « câble seul » : faite visuellement par Mathieu dans la console (onglet Devices) ; non vérifiable par l'API sans appel au niveau du compte.
 
 ## Vérifié dans la documentation officielle (2026-11-10, aucun appel réel encore)
 
@@ -39,6 +52,15 @@ Chaque ligne : ce qui a été vérifié, comment (URL de documentation ou comman
 
 | Code | Type | Valeurs | Source | Date |
 |---|---|---|---|---|
+| `x_charge_mode` (dp 151) | string (JSON) | `{"m":2,"dt":0,"ss":"04:00","se":"06:00"}`. **Confirmé en T2** : plage de charge différée, `ss` = début et `se` = fin, en `HH:MM` ; début et fin dans la même valeur (relire puis ne changer que `ss`). `m` = 2 avec plage active, **`m` = 0 quand la plage est désactivée dans l'appli, et le câble se met alors à charger immédiatement** (`x_work_st_debug` WAIT → WORKING, `x_work_state` 202 → 300, `cp` 9.5 → 6.5 dans `x_charger_info`). Désactiver la plage n'empêche donc pas la charge : c'est le mode « charge immédiate ». Après réactivation (04:00–06:00) : valeur identique au relevé initial, câble revenu en attente ; seul `x_metrics` garde la trace d'une session brève (`d` 0 → 190, `e` = 0). `dt` inconnu | relevés shadow avant/après changement dans l'appli 04:00 → 04:30, puis désactivation | 2026-11-11 |
+| `x_charge_history` (dp 105) | string (JSON) | `{"t":"2026-11-10 17:46:51","s":"17:46","e":"06:00","d":43997,"c":246}` : dernière charge (début, fin, durée en s ?, `c` inconnu) | relevé shadow | 2026-11-11 |
+| `x_work_state` (dp 101) | value | 202 ; `x_work_st_debug` (dp 109, enum) = `WAIT` | relevé shadow | 2026-11-11 |
+| `x_metrics` (dp 102) | string (JSON) | `{"L1":[2300,0,0],…,"t":210,"p":0,"d":0,"e":0}` (tension ×10 ?, puissance, énergie) | relevé shadow | 2026-11-11 |
+| `x_charge_current` (dp 150) | value | 16 ; `x_max_current_cfg` (dp 152) = 16 ; `x_adjust_current` (dp 107) = `[6, 8, 10, 13, 16]`. **Ne jamais écrire** | relevé shadow | 2026-11-11 |
+| `x_downcounter` (dp 108) | value | 0 (compte à rebours ? piste de repli) | relevé shadow | 2026-11-11 |
+| `x_do_charge` (dp 140), `x_do_reset` (141), `x_do_reboot` (142) | bool | false. **Ne jamais écrire** | relevé shadow | 2026-11-11 |
+| `x_sch1` à `x_sch4` (dp 180-183) | raw | sans valeur | relevé shadow | 2026-11-11 |
+| Autres | | `x_selftest`, `x_alarm`, `x_charger_info` (firmware 1.9.7, différentiel type B), `x_single_fase_mode`, `x_debug`, `x_lang_cfg`, `x_socket_cfg`, `x_nfc_cfg`, `x_earch_free_cfg`, `x_product_varient`, `x_heartbeat`, `dp_num`, `x_plug_charge` | relevé shadow | 2026-11-11 |
 
 ## À vérifier lors des tests réels
 
@@ -57,8 +79,8 @@ La sonde lit `tools/.env` elle-même ; commandes : `node tools/tuya-probe.mjs <a
 |---|---|---|---|
 | T0a Plage du câble + programmation Smart Life | **Réussi avec effet de bord** | Observé par Mathieu : la plage du câble se règle, s'active et la charge a lieu sur la plage. Quand la programmation Smart Life « marche à 7h » se déclenche, elle **désactive la plage** (celle-ci reste désactivée ensuite). Conséquence : la plage doit être réactivée chaque soir, sinon pas de charge la nuit suivante | 2026-11-11 |
 | T0b Même essai, box coupée | Non fait | | |
-| T1 Lecture de l'état | | | |
-| T2 Allumer / éteindre | | | |
+| T1 Lecture de l'état | **Réussi** | Jeton OK ; état lisible uniquement via `/v2.0/cloud/thing/{id}/shadow/properties` (29 points de données fabricant) ; câble seul visible dans la console (contrôle visuel) | 2026-11-11 |
+| T2 Identification du réglage de plage | **Réussi** | Début de plage changé dans Smart Life (04:00 → 04:30) : seul `x_charge_mode` change, `ss` passe de `"04:00"` à `"04:30"`, rien d'autre ne bouge | 2026-11-11 |
 | T3 Démarrage différé exécuté par l'appareil | | | |
 | T4 Exécution sans internet | | | |
 | T5 Redémarrage de la charge après 2 h prise éteinte | | | |
