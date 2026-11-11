@@ -50,6 +50,9 @@ export function chargerConfig(chemin = join(ICI, '.env')) {
     device: env.TUYA_DEVICE_ID,
     endpoint: (env.TUYA_ENDPOINT || ENDPOINT_DEFAUT).replace(/\/+$/, ''),
     uid: env.TUYA_UID || '', // facultatif, seulement pour `appareils`
+    // Facultatif et temporaire : identifiant d'un AUTRE appareil du compte, seulement pour
+    // l'action `isolement` (vérifier que le projet n'y a PAS accès). À retirer après le test.
+    testIsolement: env.TUYA_TEST_ISOLEMENT_ID || '',
   };
 }
 
@@ -206,7 +209,36 @@ function actionCompare(f1, f2) {
   }
 }
 
-export const HEURE_VALIDE = /^([01]\d|2[0-3]):[0-5]\d$/;
+// Test d'isolement : le projet doit être REFUSÉ sur un appareil autre que le câble.
+// Lecture seule (GET), aucune valeur affichée : seulement « refusé » (code Tuya) ou « ACCESSIBLE ».
+async function actionIsolement(cfg) {
+  if (!cfg.testIsolement) throw new Error('Ajouter temporairement TUYA_TEST_ISOLEMENT_ID (un autre appareil du compte) dans tools/.env.');
+  if (cfg.testIsolement === cfg.device) throw new Error("TUYA_TEST_ISOLEMENT_ID doit être un autre appareil que le câble.");
+  const id = cfg.testIsolement;
+  const essais = [
+    ['infos', `/v1.0/iot-03/devices/${id}`],
+    ['infos (v1.0)', `/v1.0/devices/${id}`],
+    ['état', `/v1.0/iot-03/devices/${id}/status`],
+    ['points de données', `/v2.0/cloud/thing/${id}/shadow/properties`],
+  ];
+  let accessible = 0;
+  for (const [nom, chemin] of essais) {
+    try {
+      const r = await appeler(cfg, 'GET', chemin); // contenu jamais affiché : seulement sa taille
+      const taille = Array.isArray(r) ? `${r.length} élément(s)`
+        : Array.isArray(r?.properties) ? `${r.properties.length} point(s) de données`
+        : r && typeof r === 'object' ? `objet de ${Object.keys(r).length} champ(s)` : `valeur ${r === null || r === undefined || r === '' ? 'vide' : 'non vide'}`;
+      const vide = (Array.isArray(r) && !r.length) || (Array.isArray(r?.properties) && !r.properties.length) || r === null || r === undefined || r === '' || (r && typeof r === 'object' && !Object.keys(r).length);
+      if (!vide) accessible++;
+      log(`${vide ? 'succès mais VIDE' : 'ACCESSIBLE'} : ${nom} -> ${taille} (contenu non affiché)`);
+    } catch (e) {
+      log(`refusé : ${nom} -> ${e.message}`);
+    }
+  }
+  log(accessible ? `ÉCHEC DE L'ISOLEMENT : ${accessible} lecture(s) acceptée(s) sur un autre appareil.` : "Isolement vérifié : toutes les lectures sur l'autre appareil sont refusées.");
+}
+
+export const HEURE_VALIDE =/^([01]\d|2[0-3]):[0-5]\d$/;
 
 async function actionEcrireDebut(cfg, hhmm, confirme, iot03) {
   if (!CODE_DEBUT_PLAGE) {
@@ -222,7 +254,7 @@ async function actionEcrireDebut(cfg, hhmm, confirme, iot03) {
   log('Réponse :', vue(await appeler(cfg, 'POST', chemins(cfg, iot03).commandes, { corps })));
 }
 
-const AIDE = `Actions : token | appareils | fonctions | spec | etat | releve [--shadow] | compare <f1> <f2> | ecrire-debut <HH:MM> --confirmer
+const AIDE = `Actions : token | appareils | fonctions | spec | etat | releve [--shadow] | compare <f1> <f2> | isolement | ecrire-debut <HH:MM> --confirmer
 Option --iot03 : utilise les chemins /v1.0/iot-03/devices/... (variante non confirmée).`;
 
 async function main(argv) {
@@ -234,6 +266,7 @@ async function main(argv) {
   const cfg = chargerConfig();
   secrets.add(cfg.id); secrets.add(cfg.secret); secrets.add(cfg.device);
   if (cfg.uid) secrets.add(cfg.uid);
+  if (cfg.testIsolement) secrets.add(cfg.testIsolement);
   const iot03 = opt('iot03');
   switch (action) {
     case 'token': return actionToken(cfg);
@@ -242,6 +275,7 @@ async function main(argv) {
     case 'spec': return actionLire(cfg, 'spec', iot03);
     case 'etat': return actionLire(cfg, 'etat', iot03);
     case 'releve': return actionReleve(cfg, iot03, opt('shadow'));
+    case 'isolement': return actionIsolement(cfg);
     case 'ecrire-debut': return actionEcrireDebut(cfg, reste[0], opt('confirmer'), iot03);
     default: console.log(AIDE); process.exitCode = 1;
   }

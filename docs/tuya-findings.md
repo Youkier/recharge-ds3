@@ -21,6 +21,17 @@ Chaque ligne : ce qui a été vérifié, comment (URL de documentation ou comman
 
 Vérification « câble seul » : faite visuellement par Mathieu dans la console (onglet Devices) ; non vérifiable par l'API sans appel au niveau du compte.
 
+**Test d'isolement (2026-11-11, action `isolement`, lecture seule, contenu jamais affiché)** : compte principal relié avec liaison manuelle du câble seul ; lectures tentées sur un thermomètre du même compte, non coché dans le projet.
+
+| Appel | Résultat |
+|---|---|
+| `GET /v1.0/iot-03/devices/{autre}` | refusé, `code=1106 permission deny` |
+| `GET /v1.0/devices/{autre}` | **accepté**, objet de 22 champs |
+| `GET /v1.0/iot-03/devices/{autre}/status` | **accepté**, 4 états |
+| `GET /v2.0/cloud/thing/{autre}/shadow/properties` | **accepté**, 6 points de données |
+
+Conclusion : **la sélection d'appareils à la liaison ne cloisonne pas l'accès**. Les clés d'un projet relié à un compte donnent accès aux appareils de tout ce compte. Seul un compte relié qui ne possède que le câble isole réellement.
+
 ## Vérifié dans la documentation officielle (2026-11-10, aucun appel réel encore)
 
 | Point | Résultat | Source |
