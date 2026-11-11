@@ -59,6 +59,12 @@ Conclusion : **la sélection d'appareils à la liaison ne cloisonne pas l'accès
 - Le code et le format du « début de plage de charge » : inconnus. `ecrire-debut` refuse de s'exécuter tant que `CODE_DEBUT_PLAGE` et `formaterDebut()` ne sont pas renseignés dans la sonde.
 - Format de réponse d'erreur : la sonde lit `success`, `code`, `msg` (skill). À confirmer.
 
+## Écriture d'un point de données
+
+- `POST /v2.0/cloud/thing/{device_id}/shadow/properties/issue`, corps `{"properties": "<texte JSON>"}` (la valeur de `properties` est une **chaîne**), réponse `{"success": true, "result": {}}` ; échoue si l'appareil est hors ligne ; 4 appels/s au plus. Source : https://developer.tuya.com/en/docs/cloud/c057ad5cfd?id=Kcp2kxdzftp91 (documentation, pas encore d'appel réel).
+- Pour le câble : `{"properties": "{\"x_charge_mode\":\"{\\\"m\\\":2,\\\"dt\\\":0,\\\"ss\\\":\\\"HH:MM\\\",\\\"se\\\":\\\"06:00\\\"}\"}"}`. Activer la plage = `m` = 2 (observé : réactivation dans l'appli fait passer `m` de 0 à 2).
+- **Hypothèse à vérifier** : la programmation Smart Life « marche à 7h » (T0a) fait passer `m` à 0, ce qui « désactive » la plage. Vérifiable par un relevé un matin après 7h.
+
 ## Fonctions et états
 
 | Code | Type | Valeurs | Source | Date |

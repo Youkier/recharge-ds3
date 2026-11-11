@@ -12,12 +12,27 @@ const ICI = dirname(fileURLToPath(import.meta.url));
 const DELAI_MS = 10_000;
 const ENDPOINT_DEFAUT = 'https://openapi.tuyaeu.com';
 
-// --- À DÉTERMINER au test T2 (ne rien deviner) ---------------------------------
-// Code du point de données « début de plage de charge » et format de sa valeur.
-export const CODE_DEBUT_PLAGE = '';
-// Fonction (heure "HH:MM") -> valeur à envoyer, selon le format observé en T2.
-export function formaterDebut(_hhmm) {
-  throw new Error('Format de la valeur de début de plage non déterminé (T2).');
+// --- Plage de charge du câble (identifiée au test T2, 2026-11-11) ---------------
+// Point de données fabricant 151, type texte JSON : {"m":2,"dt":0,"ss":"04:00","se":"06:00"}
+// ss = début, se = fin (HH:MM), m = 2 plage active, m = 0 charge immédiate (plage désactivée).
+export const CODE_DEBUT_PLAGE = 'x_charge_mode';
+const CLES_PLAGE = ['m', 'dt', 'ss', 'se'];
+
+// Valeurs de m observées (relevés du 2026-11-11) : 2 = plage active, 0 = plage désactivée
+// (charge immédiate). Toute autre valeur est inconnue : refus.
+const MODES_CONNUS = [0, 2];
+
+// Valeur actuelle (texte) -> nouvelle valeur (texte) : début réglé ET plage activée (m = 2).
+// Refuse tout format inattendu ou mode inconnu ; ne touche jamais à dt ni à se.
+export function formaterDebut(hhmm, valeurActuelle) {
+  if (!HEURE_VALIDE.test(hhmm || '')) throw new Error('Heure invalide : attendu HH:MM (00:00 à 23:59).');
+  let obj;
+  try { obj = JSON.parse(valeurActuelle); } catch { throw new Error('Valeur actuelle de la plage illisible (JSON attendu).'); }
+  const cles = obj && typeof obj === 'object' ? Object.keys(obj) : [];
+  if (cles.join(',') !== CLES_PLAGE.join(',')) throw new Error(`Format de plage inattendu (clés : ${cles.join(',')}) : rien n'est envoyé.`);
+  if (!HEURE_VALIDE.test(obj.ss) || !HEURE_VALIDE.test(obj.se)) throw new Error('Heures actuelles de la plage invalides : rien n\'est envoyé.');
+  if (!MODES_CONNUS.includes(obj.m)) throw new Error(`Mode de charge inconnu (m = ${JSON.stringify(obj.m)}) : rien n'est envoyé.`);
+  return JSON.stringify({ ...obj, m: 2, ss: hhmm });
 }
 
 // --- Parseur .env minimal -------------------------------------------------------
@@ -240,18 +255,43 @@ async function actionIsolement(cfg) {
 
 export const HEURE_VALIDE =/^([01]\d|2[0-3]):[0-5]\d$/;
 
-async function actionEcrireDebut(cfg, hhmm, confirme, iot03) {
-  if (!CODE_DEBUT_PLAGE) {
-    throw new Error('ecrire-debut refusée : CODE_DEBUT_PLAGE et formaterDebut() ne sont pas renseignés (à déterminer au test T2).');
-  }
+// Points qui bougent seuls (mesures, état de travail) : exclus du contrôle de non-régression.
+const VOLATILS = new Set(['x_metrics', 'x_heartbeat', 'x_work_state', 'x_work_st_debug', 'x_charger_info', 'dp_num', 'x_charge_history']);
+
+async function lirePoints(cfg) {
+  const r = await appeler(cfg, 'GET', chemins(cfg).shadow);
+  const m = new Map();
+  for (const p of r?.properties ?? []) m.set(p.code, p.value);
+  return m;
+}
+
+// Écriture du début de plage (source : https://developer.tuya.com/en/docs/cloud/c057ad5cfd?id=Kcp2kxdzftp91,
+// POST /v2.0/cloud/thing/{device_id}/shadow/properties/issue, corps {"properties": "<JSON en texte>"}).
+async function actionEcrireDebut(cfg, hhmm, confirme) {
   if (!HEURE_VALIDE.test(hhmm || '')) throw new Error('Heure invalide : attendu HH:MM (00:00 à 23:59).');
-  const valeur = formaterDebut(hhmm);
-  if (!confirme) {
-    log(`Simulation : écrirait code=${CODE_DEBUT_PLAGE} valeur=${JSON.stringify(valeur)} sur le câble. Ajouter --confirmer pour envoyer.`);
-    return;
+  const avant = await lirePoints(cfg);
+  if (!avant.has(CODE_DEBUT_PLAGE)) throw new Error(`${CODE_DEBUT_PLAGE} absent des points de données : rien n'est envoyé.`);
+  const actuelle = avant.get(CODE_DEBUT_PLAGE);
+  const nouvelle = formaterDebut(hhmm, actuelle);
+  const corps = JSON.stringify({ properties: JSON.stringify({ [CODE_DEBUT_PLAGE]: nouvelle }) });
+  log(`Valeur actuelle : ${actuelle}`);
+  log(`Valeur à écrire : ${nouvelle}`);
+  if (actuelle === nouvelle) return log('Déjà réglé : rien à envoyer.');
+  if (!confirme) return log(`Simulation : POST .../shadow/properties/issue avec le corps ${corps}\nAjouter --confirmer pour envoyer.`);
+
+  await appeler(cfg, 'POST', `/v2.0/cloud/thing/${cfg.device}/shadow/properties/issue`, { corps });
+  log('Envoyé. Relecture dans 5 s…');
+  await new Promise((r) => setTimeout(r, 5000));
+  const apres = await lirePoints(cfg);
+  const relue = apres.get(CODE_DEBUT_PLAGE);
+  log(`Valeur relue  : ${relue} -> ${relue === nouvelle ? 'CONFORME' : 'DIFFÉRENTE (vérifier dans Smart Life)'}`);
+  const changes = [];
+  for (const code of new Set([...avant.keys(), ...apres.keys()])) {
+    if (code === CODE_DEBUT_PLAGE || VOLATILS.has(code)) continue;
+    if (JSON.stringify(avant.get(code)) !== JSON.stringify(apres.get(code))) changes.push(`${code} : ${JSON.stringify(avant.get(code))} -> ${JSON.stringify(apres.get(code))}`);
   }
-  const corps = JSON.stringify({ commands: [{ code: CODE_DEBUT_PLAGE, value: valeur }] });
-  log('Réponse :', vue(await appeler(cfg, 'POST', chemins(cfg, iot03).commandes, { corps })));
+  log(changes.length ? 'ATTENTION, autres réglages modifiés :\n' + changes.join('\n') : 'Aucun autre réglage modifié (courant, plafond, options).');
+  log(`État du câble : ${apres.get('x_work_st_debug')} (${apres.get('x_work_state')})`);
 }
 
 const AIDE = `Actions : token | appareils | fonctions | spec | etat | releve [--shadow] | compare <f1> <f2> | isolement | ecrire-debut <HH:MM> --confirmer
@@ -276,7 +316,7 @@ async function main(argv) {
     case 'etat': return actionLire(cfg, 'etat', iot03);
     case 'releve': return actionReleve(cfg, iot03, opt('shadow'));
     case 'isolement': return actionIsolement(cfg);
-    case 'ecrire-debut': return actionEcrireDebut(cfg, reste[0], opt('confirmer'), iot03);
+    case 'ecrire-debut': return actionEcrireDebut(cfg, reste[0], opt('confirmer'));
     default: console.log(AIDE); process.exitCode = 1;
   }
 }
