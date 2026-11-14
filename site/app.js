@@ -1,4 +1,5 @@
 import { plan, hm, fmt, fdur, fr, eur } from "./calc.js";
+import { lignesValides, marques, modeles, versions, trouver } from "./vehicules.js";
 import { validerAdresse, validerJeton, choisirDemande, libelleBouton, consigneManuelle, envoyerEtAfficher } from "./service.js";
 
 (function () {
@@ -116,7 +117,8 @@ import { validerAdresse, validerJeton, choisirDemande, libelleBouton, consigneMa
   function updateStatic() {
     $("chipText").textContent = fmt(hm(cur.dep)) + " · " + cur.target + " %";
     $("chip").setAttribute("aria-label", "Départ " + fmt(hm(cur.dep)) + ", batterie visée " + cur.target + " %. Modifier dans les paramètres");
-    $("carSum").textContent = num(cur.cap) + " kWh · SOH " + num(cur.soh) + " %";
+    var nomVeh = veh.choix && veh.choix.version ? veh.choix.marque + " " + veh.choix.modele + " · " : "";
+    $("carSum").textContent = nomVeh + num(cur.cap) + " kWh · SOH " + num(cur.soh) + " %";
     $("cableSum").textContent = num(cur.amp) + " A · " + num(cur.volt) + " V · rendement " + num(cur.eff) + " %";
     var dep = hm(cur.dep);
     var fills = { dep: fmt(dep), hcStart: fmt(hm(cur.hcStart)), hcEnd: fmt(hm(cur.hcEnd)), hcEndMoins: fmt(hm(cur.hcEnd) - 1) };
@@ -314,9 +316,69 @@ import { validerAdresse, validerJeton, choisirDemande, libelleBouton, consigneMa
   Array.prototype.forEach.call(radios(), function (r) { r.addEventListener("change", render); });
   $("resetBtn").addEventListener("click", function () {
     if (!window.confirm("Revenir aux valeurs de départ ? Tous vos réglages seront remplacés.")) return;
-    try { localStorage.removeItem(KEY); } catch (e) {}
+    try { localStorage.removeItem(KEY); localStorage.removeItem(KEY_VEH); } catch (e) {}
     cur = Object.assign({}, DEFAULTS);
+    veh.choix = null; remplirVehicules();
     load(); render();
+  });
+
+  // ---------- Véhicule : marque → modèle → version remplit la capacité utile ----------
+  var KEY_VEH = "recharge-ds3-vehicule";
+  var veh = { lignes: [], choix: null };
+  function options(sel, liste, vide, choisi) {
+    sel.textContent = "";
+    sel.appendChild(new Option(vide, ""));
+    liste.forEach(function (x) { sel.appendChild(new Option(x, x, false, x === choisi)); });
+    sel.disabled = liste.length === 0;
+  }
+  function enregistrerVehicule() { try { localStorage.setItem(KEY_VEH, JSON.stringify(veh.choix)); } catch (e) {} }
+  function remplirVehicules() {
+    var c = veh.choix || {}, L = veh.lignes;
+    options($("vMarque"), marques(L), "Choisir la marque", c.marque);
+    options($("vModele"), c.marque ? modeles(L, c.marque) : [], c.marque ? "Choisir le modèle" : "Choisir d'abord la marque", c.modele);
+    options($("vVersion"), c.modele ? versions(L, c.marque, c.modele).map(function (v) { return v.libelle; }) : [], c.modele ? "Choisir la version" : "Choisir d'abord le modèle", c.version);
+    setMsg("vMsg", "", false);
+  }
+  function chargerVehicules() {
+    try { veh.choix = JSON.parse(localStorage.getItem(KEY_VEH) || "null"); } catch (e) { veh.choix = null; }
+    if (!veh.choix || typeof veh.choix !== "object") veh.choix = null;
+    fetch("vehicules.json").then(function (r) { if (!r.ok) throw new Error(String(r.status)); return r.json(); })
+      .then(function (doc) {
+        veh.lignes = lignesValides(doc);
+        if (!veh.lignes.length) throw new Error("liste vide");
+        // Choix enregistré absent de la nouvelle liste : on garde la capacité, on oublie la version.
+        if (veh.choix && veh.choix.version && !trouver(veh.lignes, veh.choix)) veh.choix.version = null;
+        remplirVehicules(); updateStatic();
+      })
+      .catch(function () {
+        options($("vMarque"), [], "Liste indisponible", null);
+        setMsg("vMsg", "Liste des véhicules indisponible : saisissez la capacité utile à la main.", true);
+      });
+  }
+  $("vMarque").addEventListener("change", function () {
+    veh.choix = this.value ? { marque: this.value } : null;
+    enregistrerVehicule(); remplirVehicules(); updateStatic();
+  });
+  $("vModele").addEventListener("change", function () {
+    veh.choix = { marque: veh.choix.marque, modele: this.value || null };
+    enregistrerVehicule(); remplirVehicules(); updateStatic();
+  });
+  $("vVersion").addEventListener("change", function () {
+    veh.choix.version = this.value || null;
+    var t = trouver(veh.lignes, veh.choix);
+    enregistrerVehicule();
+    if (t) { $("cap").value = t.cap; setMsg("vMsg", "Capacité utile remplie : " + num(t.cap) + " kWh.", false); render(); }
+    else updateStatic();
+  });
+  // Capacité changée à la main : la version choisie ne correspond plus.
+  $("cap").addEventListener("input", function () {
+    var t = trouver(veh.lignes, veh.choix);
+    if (t && Number(this.value) !== t.cap) {
+      veh.choix.version = null; enregistrerVehicule();
+      $("vVersion").value = "";
+      setMsg("vMsg", "Capacité modifiée à la main : version désélectionnée.", false);
+      updateStatic();
+    }
   });
 
   // Navigation : trois vues, ancres #accueil (ou aucune), #parametres, #aide.
@@ -505,5 +567,5 @@ import { validerAdresse, validerJeton, choisirDemande, libelleBouton, consigneMa
     });
   });
 
-  load(); loadService(); render(); route(false);
+  load(); loadService(); chargerVehicules(); render(); route(false);
 })();

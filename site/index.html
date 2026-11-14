@@ -115,9 +115,12 @@
         <span><span class="group-title">Voiture</span><span id="carSum">46 kWh · SOH 95 %</span></span>
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
       </summary>
+      <div class="field"><label for="vMarque">Marque</label><select id="vMarque" disabled><option value="">Chargement de la liste…</option></select></div>
+      <div class="field"><label for="vModele">Modèle</label><select id="vModele" disabled><option value="">Choisir d'abord la marque</option></select></div>
+      <div class="field"><label for="vVersion">Version</label><select id="vVersion" disabled aria-describedby="vMsg"><option value="">Choisir d'abord le modèle</option></select><p class="fmsg" id="vMsg"></p></div>
       <div class="row"><label for="cap">Capacité utile</label><input type="number" id="cap" step="0.1" value="46" inputmode="decimal" aria-describedby="u-cap"><span class="unit" id="u-cap">kWh</span></div>
       <div class="row"><label for="soh">SOH</label><input type="number" id="soh" step="1" value="95" inputmode="decimal" aria-describedby="u-soh"><span class="unit" id="u-soh">%</span></div>
-      <p class="hint">Valeurs de départ : DS 3 Crossback E-Tense (50 kWh brut, environ 46 kWh utiles).</p>
+      <p class="hint">Choisir la version remplit la capacité utile, qui reste modifiable. Liste : <a href="https://github.com/KilowattApp/open-ev-data" rel="noopener">Open EV Data</a> (<a href="LICENCE-open-ev-data.txt">licence MIT</a>), données d'avril 2025 nettoyées : à vérifier pour les modèles récents.</p>
     </details>
 
     <details class="card group" id="cableBox">

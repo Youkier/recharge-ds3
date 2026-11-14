@@ -209,7 +209,7 @@ details .row:first-of-type { border-top: 1px solid var(--line); }
 /* Champs du service (texte long : pleine largeur) */
 .field { padding: 8px 0; border-top: 1px solid var(--line); }
 .field label { display: block; font-size: 16px; margin-bottom: 4px; }
-.field input { width: 100%; height: 44px; padding: 0 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); text-align: left; }
+.field input, .field select { width: 100%; height: 44px; padding: 0 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); text-align: left; }
 .field input[aria-invalid="true"] { border-color: var(--bad); border-width: 2px; }
 .fmsg { font-size: 13px; color: var(--muted); min-height: 0; margin-top: 4px; }
 .fmsg:empty { display: none; }
