@@ -1,4 +1,4 @@
-// Service worker de Recharge DS 3.
+// Service worker de Recharge VE.
 //
 // Stratégie : réseau d'abord, repli sur le cache.
 // - À l'installation, tous les fichiers de la page sont mis en cache (précache).

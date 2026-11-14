@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; manifest-src 'self'; worker-src 'self'; connect-src 'self' https://*.workers.dev; base-uri 'none'; form-action 'none'">
-<title>Recharge DS 3 de nuit</title>
+<title>Recharge VE de nuit</title>
 <meta name="theme-color" content="#f2f4f8" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#0f1420" media="(prefers-color-scheme: dark)">
 <link rel="manifest" href="manifest.webmanifest">
@@ -18,7 +18,7 @@
   <!-- Vue 1 : Ce soir (accueil) -->
   <div class="view" id="v-calcul">
     <header class="top">
-      <h1 id="t-soir" tabindex="-1">Recharge DS 3</h1>
+      <h1 id="t-soir" tabindex="-1">Recharge VE</h1>
       <a class="chip" id="chip" href="#parametres" data-nav="parametres"><span><span class="chip-k">Départ </span><span id="chipText">07:30 · 80 %</span></span><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></a>
     </header>
 
@@ -37,7 +37,6 @@
         <div class="hero-main">
           <p class="hero-k" id="kBig">Allumer la prise à</p>
           <p class="hero-big" id="tBig">--:--</p>
-          <p class="hero-sub">À régler ce soir dans Smart Life</p>
         </div>
         <div class="hero-side">
           <p class="hero-k" id="kSmall">Éteindre à</p>
@@ -53,7 +52,7 @@
     </section>
     <p class="sr" role="status" id="live"></p>
 
-    <section class="card send" aria-label="Programmation de la charge">
+    <section class="card send" id="sendCard" aria-label="Programmation de la charge" hidden>
       <button type="button" class="send-btn" id="sendBtn" disabled>
         <span class="send-main" id="sendMain">Programmer la charge</span>
         <span class="send-sub" id="sendSub"></span>

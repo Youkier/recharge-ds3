@@ -532,11 +532,10 @@ import { validerAdresse, validerJeton, choisirDemande, libelleBouton, consigneMa
     $("sendMain").textContent = busy ? "Envoi en cours…" : (lab ? lab.principal : "Programmer la charge");
     $("sendSub").textContent = busy ? "patientez, jusqu'à 25 secondes" : (lab ? lab.secondaire : "saisie à corriger");
     b.disabled = busy || !configured || !demande;
+    // Sans adresse ni jeton, la carte entière est masquée : réglage manuel dans Smart Life (voir Aide).
+    $("sendCard").hidden = !configured && !busy;
     help.textContent = "";
-    if (!configured && !busy) {
-      help.hidden = false;
-      help.append("Service non configuré : renseignez l'adresse et le jeton dans ", navLink("Paramètres", "#parametres", "parametres"), ". Le réglage manuel dans Smart Life reste possible (voir ", navLink("Aide", "#aide", "aide"), ").");
-    } else if (!demande && !busy) {
+    if (!demande && !busy) {
       help.hidden = false;
       help.textContent = "Corrigez la saisie pour pouvoir programmer la charge.";
     } else help.hidden = true;

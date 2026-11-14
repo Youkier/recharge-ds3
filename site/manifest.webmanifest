@@ -1,8 +1,8 @@
 {
   "id": "/recharge-ds3/",
-  "name": "Recharge DS 3",
+  "name": "Recharge VE",
   "short_name": "Recharge",
-  "description": "Heure d'allumage de la prise pour recharger la DS 3 en heures creuses.",
+  "description": "Heure d'allumage de la prise pour recharger une voiture électrique en heures creuses.",
   "lang": "fr",
   "dir": "ltr",
   "start_url": "./",
