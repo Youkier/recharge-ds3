@@ -168,7 +168,7 @@ T1 à T3 passés le 2026-11-11 (voir `docs/tuya-findings.md`). Compte principal 
 ### Critères d'acceptation (`testeur-relecteur`)
 
 - [ ] Tests unitaires de la signature Tuya (vecteurs de test) et du routage
-- [ ] Appel direct en ligne de commande (pas depuis un navigateur) sans jeton ou avec mauvais jeton : 401
+- [x] Appel direct en ligne de commande (pas depuis un navigateur) sans jeton ou avec mauvais jeton : 401 (production, 2026-11-14)
 - [ ] Avec le bon jeton : seules les actions prévues sont possibles, toute autre route ou heure invalide est refusée
 - [ ] Après une programmation : une seule plage, courant et fin de plage inchangés
 - [ ] La réponse n'annonce un succès que si la valeur relue sur le câble est celle demandée ; sinon erreur explicite
@@ -177,10 +177,10 @@ T1 à T3 passés le 2026-11-11 (voir `docs/tuya-findings.md`). Compte principal 
 - [ ] Dépassement de la limite d'appels : 429
 - [ ] Origine non autorisée : refusée par CORS (confort navigateur)
 - [ ] Le Worker refuse d'agir sur tout autre appareil que `TUYA_DEVICE_ID` (identifiant jamais fourni par la page)
-- [ ] Double authentification activée sur Cloudflare
+- [x] Double authentification activée sur Cloudflare (Mathieu, 2026-11-14)
 - [ ] Procédure de révocation du jeton (`SECURITE.md`) testée une fois
 - [ ] Aucun secret dans le dépôt ni dans les journaux
-- [ ] Programmation réelle constatée dans l'écran du câble dans Smart Life
+- [x] Programmation réelle constatée dans l'écran du câble dans Smart Life (depuis le Pixel, 2026-11-14)
 - [ ] Relecture sécurité du Worker faite une fois avec le modèle le plus capable, avant le déploiement
 
 ---
@@ -201,7 +201,7 @@ T1 à T3 passés le 2026-11-11 (voir `docs/tuya-findings.md`). Compte principal 
 
 ### Critères d'acceptation
 
-- [ ] Programmation réussie depuis le Pixel, constatée dans l'écran du câble dans Smart Life
+- [x] Programmation réussie depuis le Pixel, constatée dans l'écran du câble dans Smart Life (2026-11-14)
 - [ ] Service coupé, jeton faux, câble hors ligne : alerte KO avec message distinct, mode manuel rappelé, aide accessible hors ligne
 - [ ] Alerte OK affichée seulement avec une valeur relue conforme (vérifié en simulant une relecture différente)
 - [ ] Aucun autre site n'est publié sur `youkier.github.io` (le stockage local, donc le jeton, y serait partagé), ou risque accepté dans `docs/decisions.md`
