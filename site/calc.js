@@ -22,7 +22,8 @@ export function plan(p) {
   var limit = preRel < hcLen ? preRel : hcLen;
   var need = p.target - p.soc - preGain;
   var r = { usable: usable, P: P, pctPerHour: pctPerHour, preGain: preGain, hcLen: hcLen, preRel: preRel, depRel: depRel, hcS: hcS, preS: preS, dep: dep };
-  if (!(usable > 0) || !(pctPerHour > 0)) { r.status = "err"; return r; }
+  // need non fini = cible, batterie ou préconditionnement vide : refusé plutôt que « ok » avec des heures NaN:NaN.
+  if (!(usable > 0) || !(pctPerHour > 0) || !isFinite(need)) { r.status = "err"; return r; }
   if (need <= 0) {
     r.status = "none"; r.startRel = r.endRel = 0; r.chargeMin = 0; r.offMin = 0;
   } else {

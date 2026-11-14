@@ -114,8 +114,7 @@ describe("Cas limites (propriétés de bon sens)", () => {
 // Chaque test décrit le comportement attendu ; il échoue aujourd'hui et est donc marqué « todo ».
 
 describe("Comportements douteux (todo)", () => {
-  test("Cible vide (NaN) : devrait être refusée, pas « ok » avec des heures NaN:NaN",
-    { todo: "target = NaN donne statut ok, allumage NaN:NaN, durée/énergie/coût NaN" }, () => {
+  test("Cible vide (NaN) : refusée (statut err), pas « ok » avec des heures NaN:NaN", () => {
       const p = { ...DEFAUT, target: NaN };
       const r = plan(p);
       assert.equal(r.status, "err");
