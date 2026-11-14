@@ -3,7 +3,7 @@ import { validerAdresse, validerJeton, choisirDemande, libelleBouton, consigneMa
 
 (function () {
   var DEFAULTS = { cap: 46, soh: 95, target: 80, dep: "07:30", hcStart: "22:00", hcEnd: "06:00", amp: 16, volt: 230, eff: 90, pHC: 0.146688, pHP: 0.196476, mode: "end", soc: 38 };
-  var AMPS = [6, 8, 10, 13, 16]; // courants proposés par le câble (x_adjust_current, docs/tuya-findings.md)
+  var AMPS = [6, 8, 10, 13, 16, 32]; // câble : 6 à 16 A (x_adjust_current, docs/tuya-findings.md) ; 32 A = borne 7,4 kW
   var KEY = "recharge-ds3-v1"; // clé inchangée depuis la phase 1 : aucun paramètre perdu
   var ids = ["cap", "soh", "target", "dep", "hcStart", "hcEnd", "amp", "volt", "eff", "pHC", "pHP", "mode"];
   var NUMS = ["cap", "soh", "target", "amp", "volt", "eff", "pHC", "pHP"];
@@ -110,6 +110,7 @@ import { validerAdresse, validerJeton, choisirDemande, libelleBouton, consigneMa
     ["fArrS", "fKwh", "fCostS"].forEach(function (i) { $(i).textContent = ""; $(i).className = "ts"; });
     $("timeline").textContent = ""; $("ticks").textContent = "";
     $("timeline").setAttribute("aria-label", "Frise de la nuit : aucun plan calculé");
+    $("ampWarn").hidden = true;
   }
 
   function updateStatic() {
@@ -203,6 +204,12 @@ import { validerAdresse, validerJeton, choisirDemande, libelleBouton, consigneMa
     var cs = $("fCostS");
     if (r.kwhHP > 0) { cs.textContent = "dont " + eur(r.kwhHP * p.pHP) + " hors creuses"; cs.className = "ts hp"; }
     else { cs.textContent = r.kwh > 0 ? "100 % creuses" : "aucune charge"; cs.className = "ts"; }
+
+    var aw = $("ampWarn");
+    if (p.amp > 16) {
+      aw.hidden = false;
+      aw.textContent = "Au-delà de 16 A (3,7 kW), ni le câble ni une prise Green'up ne suffisent : il faut une borne de recharge. Le bouton « Programmer la charge » ne règle pas le courant.";
+    } else aw.hidden = true;
 
     drawTimeline(r);
     drawAide(p, r);

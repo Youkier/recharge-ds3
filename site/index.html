@@ -77,6 +77,7 @@
       <div class="tile"><p class="tk">Durée</p><p class="tv" id="fDur">–</p><p class="ts" id="fKwh"></p></div>
       <div class="tile"><p class="tk">Coût</p><p class="tv" id="fCost">–</p><p class="ts" id="fCostS"></p></div>
     </div>
+    <p class="msg bad" id="ampWarn" hidden></p>
 
   </div>
 
@@ -116,7 +117,7 @@
       </summary>
       <div class="row"><label for="cap">Capacité utile</label><input type="number" id="cap" step="0.1" value="46" inputmode="decimal" aria-describedby="u-cap"><span class="unit" id="u-cap">kWh</span></div>
       <div class="row"><label for="soh">SOH</label><input type="number" id="soh" step="1" value="95" inputmode="decimal" aria-describedby="u-soh"><span class="unit" id="u-soh">%</span></div>
-      <div class="row"><label for="amp">Courant de charge</label><select id="amp" aria-describedby="u-amp"><option>6</option><option>8</option><option>10</option><option>13</option><option selected>16</option></select><span class="unit" id="u-amp">A</span></div>
+      <div class="row"><label for="amp">Courant de charge</label><select id="amp" aria-describedby="u-amp"><option>6</option><option>8</option><option>10</option><option>13</option><option selected>16</option><option>32</option></select><span class="unit" id="u-amp">A</span></div>
       <div class="row"><label for="volt">Tension</label><input type="number" id="volt" step="1" value="230" inputmode="decimal" aria-describedby="u-volt"><span class="unit" id="u-volt">V</span></div>
       <div class="row"><label for="eff">Rendement de charge</label><input type="number" id="eff" step="1" value="90" inputmode="decimal" aria-describedby="u-eff"><span class="unit" id="u-eff">%</span></div>
       <p class="hint">Valeurs de départ : DS 3 Crossback E-Tense (50 kWh brut, environ 46 kWh utiles). Le rendement se remplit selon le courant et la tension (pertes mesurées par l'ADAC) ; il reste modifiable.</p>
