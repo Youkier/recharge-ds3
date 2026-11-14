@@ -26,6 +26,7 @@ const PRECACHE = [
   "./service.js",
   "./vehicules.js",
   "./vehicules.json",
+  "./LICENCE-open-ev-data.txt",
   "./app.js",
   "./sw-register.js",
   "./style.css",

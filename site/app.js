@@ -533,7 +533,9 @@ import { validerAdresse, validerJeton, choisirDemande, libelleBouton, consigneMa
     $("sendSub").textContent = busy ? "patientez, jusqu'à 25 secondes" : (lab ? lab.secondaire : "saisie à corriger");
     b.disabled = busy || !configured || !demande;
     // Sans adresse ni jeton, la carte entière est masquée : réglage manuel dans Smart Life (voir Aide).
-    $("sendCard").hidden = !configured && !busy;
+    // Une alerte affichée (OK ou KO) garde la carte visible : jamais de résultat masqué (règle 2).
+    var alerte = $("sendOk").textContent !== "" || $("sendKo").textContent !== "";
+    $("sendCard").hidden = !configured && !busy && !alerte;
     help.textContent = "";
     if (!demande && !busy) {
       help.hidden = false;
