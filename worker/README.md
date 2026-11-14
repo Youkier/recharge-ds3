@@ -1,6 +1,6 @@
 # Worker de programmation
 
-Service Cloudflare minimal : règle le **début** de la plage de charge du câble par l'API Tuya, puis relit le câble. Code : `src/index.js` (module ES, Web Crypto et fetch, aucune dépendance). Tests : `node --test "tests/**/*.test.mjs"` depuis la racine du dépôt (Tuya simulé, aucun réseau).
+Service Cloudflare minimal : règle le **début** de la plage de charge du câble par l'API Tuya, puis relit le câble. Code : `src/index.js` (point d'entrée) et `src/service.js` (logique) (module ES, Web Crypto et fetch, aucune dépendance). Tests : `node --test "tests/**/*.test.mjs"` depuis la racine du dépôt (Tuya simulé, aucun réseau).
 
 ## Variables
 

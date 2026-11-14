@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {
   traiter, signer, decider, heureParis, jetonValide, validerCorps, nouvellePlage,
   reinitialiserCache, reinitialiserLimiteur,
-} from '../worker/src/index.js';
+} from '../worker/src/service.js';
 import { signer as signerSonde } from '../tools/tuya-probe.mjs';
 
 const JETON = 'jeton-de-test-0123456789-abcdefghijklmnop';
@@ -409,4 +409,12 @@ test('aucune fuite de secret dans les réponses ni dans les journaux', async () 
   } finally { Object.assign(console, { log: o.l, error: o.e, warn: o.w }); }
   const tout = textes.join('\n') + '\n' + sortie.join('\n');
   for (const s of secrets) assert.ok(!tout.includes(s), `fuite : ${s.slice(0, 4)}…`);
+});
+
+// Cloudflare traite chaque export du module principal comme un point d'entrée :
+// index.js ne doit exporter que le gestionnaire par défaut (sinon wrangler refuse de démarrer).
+test('point d\'entrée : index.js n\'exporte que le gestionnaire par défaut', async () => {
+  const mod = await import('../worker/src/index.js');
+  assert.deepEqual(Object.keys(mod), ['default']);
+  assert.equal(typeof mod.default.fetch, 'function');
 });
