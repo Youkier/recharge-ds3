@@ -60,8 +60,9 @@ def charger_config(chemin=None):
     return {
         "device": env["TUYA_DEVICE_ID"],
         "cle": env.get("TUYA_LOCAL_KEY", ""),
-        "ip": env.get("TUYA_LOCAL_IP", ""),
-        "version": env.get("TUYA_LOCAL_VERSION", ""),
+        # Adresse et version (non secrètes) : la variable d'environnement prime sur tools/.env.
+        "ip": os.environ.get("TUYA_LOCAL_IP") or env.get("TUYA_LOCAL_IP", ""),
+        "version": os.environ.get("TUYA_LOCAL_VERSION") or env.get("TUYA_LOCAL_VERSION", ""),
     }
 
 

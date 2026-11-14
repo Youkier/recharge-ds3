@@ -137,7 +137,7 @@ Statuts HTTP du Worker : `hors_ligne`, `jeton`, `tuya`, `relecture_differente` :
 
 Worker (révisé le 2026-11-14 après T7) : plus de `charge_active` ; `{"desactiver":true}` écrit la plage courte (début = `se` relu − 1 min, `m` = 2), relue comme une programmation normale, jamais `immediat`.
 
-## Pilotage local, sans cloud (piste du 2026-11-12, aucun test L fait)
+## Pilotage local, sans cloud (piste du 2026-11-12 ; L1 et L2 faits le 2026-11-15)
 
 Idée : écrire `x_charge_mode` (dp 151) directement par le réseau de la maison (protocole local Tuya, TCP 6668), avec l'identifiant du câble et sa clé locale. Repli sans internet et base d'une éventuelle appli ; pour l'usage de Mathieu, la voie cloud (Worker) reste retenue (décision du 2026-11-12). Source du protocole : https://github.com/jasonacox/tinytuya (rétro-ingénierie communautaire, pas de documentation Tuya).
 
@@ -155,6 +155,8 @@ Préparation : `py -m pip install tinytuya`, puis `node tools/tuya-probe.mjs cle
 | L4 Sans internet (teste le repli local ; ne remplace pas T4, qui reste à faire avant la phase 2b) | box : internet coupé, Wi-Fi gardé ; `ecrire-debut` à +5 min `--confirmer` | écriture acceptée et charge démarrée sans internet | Le local ne remplace pas le cloud : retour au plan Worker | | |
 
 À noter aussi : la version de protocole (3.3, 3.4, 3.5), la liste des dp visibles en local, et si `cle-locale` renvoie bien `local_key` par `GET /v1.0/devices/{id}`.
+
+Constaté le 2026-11-15 : `GET /v1.0/devices/{id}` renvoie bien `local_key` (16 caractères) ; protocole 3.5 ; l'adresse et la version peuvent être passées à `tools/tuya-local-test.py` par les variables d'environnement `TUYA_LOCAL_IP` et `TUYA_LOCAL_VERSION` (non secrètes). Un second appareil répond sur le port 6668 (192.168.0.9), non identifié.
 
 ## Décision
 
