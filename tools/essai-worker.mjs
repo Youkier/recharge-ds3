@@ -36,7 +36,7 @@ async function appeler(chemin, { methode = 'GET', corps, jeton = true } = {}) {
   if (jeton) entetes.Authorization = `Bearer ${lireJeton()}`;
   if (corps !== undefined) entetes['Content-Type'] = 'application/json';
   const debut = Date.now();
-  const rep = await fetch(url, { method: methode, headers: entetes, body: corps === undefined ? undefined : JSON.stringify(corps), signal: AbortSignal.timeout(30000) });
+  const rep = await fetch(url, { method: methode, headers: entetes, body: corps === undefined ? undefined : JSON.stringify(corps), signal: AbortSignal.timeout(30000), redirect: 'error' });
   const texte = await rep.text();
   console.log(`${methode} ${url.pathname} -> HTTP ${rep.status} (${Date.now() - debut} ms)`);
   console.log(texte);

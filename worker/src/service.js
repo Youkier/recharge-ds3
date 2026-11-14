@@ -13,6 +13,7 @@ const MODES_CONNUS = [0, 2]; // 2 = plage active, 0 = désactivée (= charge imm
 const ENDPOINT_DEFAUT = 'https://openapi.tuyaeu.com';
 const DELAI_TUYA_MS = 10_000;
 const TAILLE_MAX_CORPS = 512;
+const LONGUEUR_MIN_JETON = 32; // en dessous, le jeton est jugé trop faible : tout est refusé
 // Relecture après écriture : le câble met quelques secondes à répercuter (la sonde attendait 5 s).
 const ATTENTES_RELECTURE_MS = [1500, 2000, 2500];
 // Repli si le binding de limitation est absent (développement local) : par isolat, donc approximatif.
@@ -54,7 +55,7 @@ export async function signer({ clientId, secret, t, nonce = '', accessToken = ''
 
 // --- Authentification du client : empreintes SHA-256 comparées par boucle XOR (longueur fixe) ---
 export async function jetonValide(entete, attendu) {
-  if (typeof attendu !== 'string' || attendu.length === 0) return false; // sans secret configuré : tout est refusé
+  if (typeof attendu !== 'string' || attendu.length < LONGUEUR_MIN_JETON) return false; // secret absent ou trop court : tout est refusé
   const m = /^Bearer (.+)$/.exec(entete || '');
   const fourni = m ? m[1] : '';
   const [a, b] = await Promise.all([
@@ -92,7 +93,8 @@ export function lirePlage(valeur) {
   try { obj = JSON.parse(valeur); } catch { throw new ErreurService('tuya'); }
   const cles = obj && typeof obj === 'object' ? Object.keys(obj) : [];
   if (cles.join(',') !== CLES_PLAGE.join(',')) throw new ErreurService('tuya');
-  if (!HEURE_VALIDE.test(obj.ss) || !HEURE_VALIDE.test(obj.se) || !MODES_CONNUS.includes(obj.m)) throw new ErreurService('tuya');
+  if (typeof obj.ss !== 'string' || typeof obj.se !== 'string' || !HEURE_VALIDE.test(obj.ss) || !HEURE_VALIDE.test(obj.se)
+    || !Number.isInteger(obj.dt) || !MODES_CONNUS.includes(obj.m)) throw new ErreurService('tuya');
   return obj;
 }
 
@@ -230,13 +232,16 @@ async function desactiver() {
 
 // --- Limite d'appels ---
 // Mécanisme : binding Rate Limiting de Workers (env.LIMITEUR), voir docs/cloudflare-findings.md.
-// Sans binding (wrangler dev local) : repli en mémoire par isolat, avec un avertissement.
+// Sans binding (wrangler dev local) : repli en mémoire par isolat, avec un avertissement,
+// sauf si EXIGER_LIMITEUR vaut "1" (production) : la requête est alors refusée (503).
 const appelsRepli = [];
 let avertiSansLimiteur = false;
 export function reinitialiserLimiteur() { appelsRepli.length = 0; avertiSansLimiteur = false; }
 
+const limiteurPresent = (env) => Boolean(env.LIMITEUR) && typeof env.LIMITEUR.limit === 'function';
+
 async function limiteAtteinte(env, deps) {
-  if (env.LIMITEUR && typeof env.LIMITEUR.limit === 'function') {
+  if (limiteurPresent(env)) {
     const { success } = await env.LIMITEUR.limit({ key: 'service' });
     return !success;
   }
@@ -254,7 +259,7 @@ async function limiteAtteinte(env, deps) {
 // --- HTTP ---
 function entetesCors(request, env) {
   const origine = request.headers.get('Origin');
-  if (!origine || !env.ORIGINE_AUTORISEE || origine !== env.ORIGINE_AUTORISEE) return {};
+  if (!origine || !env.ORIGINE_AUTORISEE || origine !== env.ORIGINE_AUTORISEE) return { Vary: 'Origin' };
   return { 'Access-Control-Allow-Origin': origine, Vary: 'Origin' };
 }
 
@@ -290,13 +295,19 @@ export async function traiter(request, env, deps = {}) {
   // Préflight CORS : ne touche ni Tuya ni aucune donnée ; seule l'origine autorisée est acceptée.
   if (methode === 'OPTIONS') {
     const cors = entetesCors(request, env);
-    if (!cors['Access-Control-Allow-Origin'] || !(url.pathname in ROUTES)) return new Response(null, { status: 403 });
+    if (!cors['Access-Control-Allow-Origin'] || !(url.pathname in ROUTES)) return new Response(null, { status: 403, headers: { Vary: 'Origin' } });
     return new Response(null, { status: 204, headers: { ...cors, 'Access-Control-Allow-Methods': 'GET, POST, OPTIONS', 'Access-Control-Allow-Headers': 'Authorization, Content-Type', 'Access-Control-Max-Age': '600' } });
   }
 
   // Jeton d'abord, avant toute autre logique.
+  if (typeof env.JETON_ACCES !== 'string' || env.JETON_ACCES.length < LONGUEUR_MIN_JETON) console.error('configuration_incomplete');
   if (!(await jetonValide(request.headers.get('Authorization'), env.JETON_ACCES))) {
     return repondre(request, env, 401, { ok: false, erreur: 'non_autorise' }, { 'WWW-Authenticate': 'Bearer' });
+  }
+  // Production : sans limiteur, on refuse plutôt que de retomber sur le repli en mémoire.
+  if (env.EXIGER_LIMITEUR === '1' && !limiteurPresent(env)) {
+    console.error('limiteur_absent_exige');
+    return erreur(request, env, 'tuya', 503);
   }
   let limite;
   try {
@@ -316,6 +327,9 @@ export async function traiter(request, env, deps = {}) {
 
   try {
     if (url.pathname === '/api/etat') return repondre(request, env, 200, await etat(env, deps));
+    // Content-Length exigé et borné avant toute lecture du corps ; la taille est revérifiée après lecture.
+    const cl = request.headers.get('Content-Length');
+    if (cl === null || !/^[0-9]+$/.test(cl) || Number(cl) > TAILLE_MAX_CORPS) return repondre(request, env, 400, { ok: false, erreur: 'requete_invalide' });
     const corps = validerCorps(await request.text());
     if (!corps) return repondre(request, env, 400, { ok: false, erreur: 'requete_invalide' });
     if (corps.desactiver) await desactiver();

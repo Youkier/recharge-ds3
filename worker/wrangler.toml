@@ -4,10 +4,22 @@ name = "recharge-ds3"
 main = "src/index.js"
 compatibility_date = "2026-10-01"
 
+# Adresse publique en *.workers.dev explicite ; pas d'adresses de previsualisation ni de version.
+workers_dev = true
+preview_urls = false
+
+# Aucun journal persiste : les journaux d'invocation pourraient contenir des en-tetes (jeton).
+# Voir docs/cloudflare-findings.md. Ne jamais lancer wrangler tail ni activer Logpush sans revoir ce point.
+[observability]
+enabled = false
+
 [vars]
 TUYA_ENDPOINT = "https://openapi.tuyaeu.com"
 # A remplacer par l'origine GitHub Pages (sans chemin ni barre finale), par exemple https://<compte>.github.io
 ORIGINE_AUTORISEE = "https://youkier.github.io"
+# Production : le limiteur [[ratelimits]] est obligatoire (503 s'il manque, pas de repli en memoire).
+# En local : npx.cmd wrangler dev --var EXIGER_LIMITEUR:0 (le drapeau l'emporte sur ce fichier).
+EXIGER_LIMITEUR = "1"
 
 # Limite d'appels (binding Rate Limiting, wrangler >= 4.36.0). Periode permise : 10 ou 60 secondes.
 # Limite par emplacement Cloudflare, approximative. Voir docs/cloudflare-findings.md.

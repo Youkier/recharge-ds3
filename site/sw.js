@@ -14,7 +14,7 @@
 // précache modifiée) et active immédiatement le nouveau service worker
 // (skipWaiting + clients.claim), donc au plus deux ouvertures dans tous les cas.
 
-const VERSION = "v3";
+const VERSION = "v4";
 const CACHE = "recharge-ds3-" + VERSION;
 const TIMEOUT_MS = 4000;
 
@@ -23,6 +23,10 @@ const PRECACHE = [
   "./",
   "./index.html",
   "./calc.js",
+  "./service.js",
+  "./app.js",
+  "./sw-register.js",
+  "./style.css",
   "./manifest.webmanifest",
   "./icons/icon-192.png",
   "./icons/icon-512.png",
@@ -60,6 +64,8 @@ function fromNetwork(request) {
 
 self.addEventListener("fetch", (event) => {
   const request = event.request;
+  // Jamais d'interception ni de cache pour le service de programmation : autre origine
+  // et méthode POST (avec jeton). On ne répond pas, le navigateur traite la requête seul.
   if (request.method !== "GET") return;
   const url = new URL(request.url);
   if (url.origin !== self.location.origin) return;

@@ -43,7 +43,7 @@ function cable({ valeur = { m: 2, dt: 0, ss: '04:00', se: '06:00' }, ignorerEcri
 
 const deps = (c, extra = {}) => ({ fetch: c.fetch, now: () => NUIT, sleep: async () => {}, attentes: [0, 0], ...extra });
 const req = (chemin, { methode = 'GET', jeton = JETON, corps, origine, entetes = {} } = {}) => new Request('https://w.example' + chemin, {
-  method: methode, body: corps, headers: { ...(jeton ? { Authorization: `Bearer ${jeton}` } : {}), ...(origine ? { Origin: origine } : {}), ...entetes },
+  method: methode, body: corps, headers: { ...(typeof corps === 'string' ? { 'Content-Length': String(new TextEncoder().encode(corps).length) } : {}), ...(jeton ? { Authorization: `Bearer ${jeton}` } : {}), ...(origine ? { Origin: origine } : {}), ...entetes },
 });
 const appel = async (r, c, env = ENV, extra = {}) => {
   const rep = await traiter(r, env, deps(c, extra));
@@ -82,6 +82,8 @@ test('401 sans jeton, avec mauvais jeton, ou sans secret configuré, et aucun ap
     [req('/api/inconnu', { jeton: null }), ENV],
     [req('/api/etat', { jeton: '' }), { ...ENV, JETON_ACCES: '' }],
     [req('/api/etat'), { ...ENV, JETON_ACCES: undefined }],
+    [req('/api/etat', { jeton: 'court-mais-identique' }), { ...ENV, JETON_ACCES: 'court-mais-identique' }], // moins de 32 caractères
+    [req('/api/etat', { jeton: 'x'.repeat(31) }), { ...ENV, JETON_ACCES: 'x'.repeat(31) }],
   ]) {
     const c = cable();
     const a = await appel(r, c, env);
@@ -89,6 +91,17 @@ test('401 sans jeton, avec mauvais jeton, ou sans secret configuré, et aucun ap
     assert.deepEqual(a.corps, { ok: false, erreur: 'non_autorise' });
     assert.equal(c.appels.length, 0);
   }
+});
+
+test('jeton de 32 caractères : accepté ; trop court : configuration_incomplete journalisé', async () => {
+  const j32 = 'x'.repeat(32); const journal = []; const o = console.error; console.error = (...a) => journal.push(a.join(' '));
+  try {
+    assert.equal((await appel(req('/api/etat', { jeton: j32 }), cable(), { ...ENV, JETON_ACCES: j32 })).statut, 200);
+    assert.equal(journal.length, 0);
+    const a = await appel(req('/api/etat', { jeton: 'court' }), cable(), { ...ENV, JETON_ACCES: 'court' });
+    assert.equal(a.statut, 401); assert.deepEqual(journal, ['configuration_incomplete']);
+  } finally { console.error = o; }
+  assert.equal(await jetonValide('Bearer court', 'court'), false);
 });
 
 // --- Routage et validation ---
@@ -121,6 +134,23 @@ test('l\'identifiant de l\'appareil ne vient que de l\'environnement', async () 
   for (const a of c.appels) assert.ok(!a.url.includes('autre') && (a.chemin === '/v1.0/token' || a.chemin.includes(ENV.TUYA_DEVICE_ID)));
 });
 
+test('corps : Content-Length absent, non numérique ou > 512 -> 400 avant lecture du corps', async () => {
+  const c = cable(); const corps = JSON.stringify({ allumage: '22:30' });
+  for (const cl of [undefined, 'abc', '-1', '1e2', '513', '99999999999']) {
+    const r = post(corps); r.headers.delete('Content-Length');
+    if (cl !== undefined) r.headers.set('Content-Length', cl);
+    let lu = false; const orig = r.text.bind(r); r.text = () => { lu = true; return orig(); };
+    const a = await appel(r, c);
+    assert.equal(a.statut, 400, String(cl)); assert.deepEqual(a.corps, { ok: false, erreur: 'requete_invalide' });
+    assert.equal(lu, false, 'corps lu malgré un Content-Length refusé : ' + cl);
+  }
+  assert.equal(c.appels.length, 0);
+  // Content-Length valide mais corps réel trop grand : refusé par la vérification après lecture.
+  const gros = post('{"allumage":"' + '1'.repeat(600) + '"}', { entetes: { 'Content-Length': '40' } });
+  assert.equal((await appel(gros, c)).statut, 400);
+  assert.equal((await appel(post(corps), c)).statut, 200);
+});
+
 // --- Lecture ---
 test('GET /api/etat : lecture seule, charge_active null', async () => {
   const c = cable();
@@ -133,7 +163,9 @@ test('GET /api/etat : lecture seule, charge_active null', async () => {
   assert.equal(d.corps.plage_active, false);
 });
 test('GET /api/etat : valeur de plage inattendue -> tuya, sans fuite', async () => {
-  for (const valeur of [{ m: 5, dt: 0, ss: '04:00', se: '06:00' }, { m: 2, ss: '04:00', se: '06:00' }, { m: 2, dt: 0, ss: 'x', se: '06:00' }]) {
+  for (const valeur of [{ m: 5, dt: 0, ss: '04:00', se: '06:00' }, { m: 2, ss: '04:00', se: '06:00' }, { m: 2, dt: 0, ss: 'x', se: '06:00' },
+    { m: 2, dt: 0, ss: ['04:00'], se: '06:00' }, { m: 2, dt: 0, ss: '04:00', se: ['06:00'] }, { m: 2, dt: {}, ss: '04:00', se: '06:00' },
+    { m: 2, dt: '0', ss: '04:00', se: '06:00' }, { m: 2, dt: 1.5, ss: '04:00', se: '06:00' }, { m: 1, dt: 0, ss: '04:00', se: '06:00' }, { m: 2, dt: null, ss: '04:00', se: '06:00' }]) {
     const a = await appel(req('/api/etat'), cable({ valeur }));
     assert.equal(a.statut, 502); assert.deepEqual(a.corps, { ok: false, erreur: 'tuya' });
   }
@@ -349,7 +381,47 @@ test('CORS : en-têtes sur les réponses (succès et erreur), absents pour une a
   assert.equal(autre.entetes.get('Access-Control-Allow-Origin') === '*', false);
 });
 
+test('Vary: Origin sur toutes les réponses, avec ou sans Origin correspondante', async () => {
+  const c = cable();
+  for (const origine of [undefined, 'https://autre.example', ENV.ORIGINE_AUTORISEE]) {
+    for (const r of [req('/api/etat', { origine }), req('/api/etat', { origine, jeton: null }), req('/api/inconnu', { origine }), post('{}', { origine })]) {
+      assert.equal((await appel(r, c)).entetes.get('Vary'), 'Origin');
+    }
+  }
+  const pre = await traiter(req('/api/etat', { methode: 'OPTIONS', jeton: null, origine: 'https://autre.example' }), ENV, deps(c));
+  assert.equal(pre.status, 403); assert.equal(pre.headers.get('Vary'), 'Origin');
+  const ok = await traiter(req('/api/etat', { methode: 'OPTIONS', jeton: null, origine: ENV.ORIGINE_AUTORISEE }), ENV, deps(c));
+  assert.equal(ok.headers.get('Vary'), 'Origin');
+});
+
 // --- Limite d'appels ---
+test('EXIGER_LIMITEUR=1 : sans binding (ou sans méthode limit) -> 503 tuya, journal fixe, aucun appel Tuya', async () => {
+  const c = cable(); const journal = []; const o = console.error; console.error = (...a) => journal.push(a.join(' '));
+  try {
+    for (const lim of [undefined, null, {}, { limit: 'pas une fonction' }]) {
+      const a = await appel(req('/api/etat'), c, { ...ENV, EXIGER_LIMITEUR: '1', LIMITEUR: lim });
+      assert.equal(a.statut, 503); assert.deepEqual(a.corps, { ok: false, erreur: 'tuya' });
+    }
+    assert.equal(c.appels.length, 0);
+    assert.deepEqual([...new Set(journal)], ['limiteur_absent_exige']);
+    // avec le binding : normal ; sans jeton : toujours 401 d'abord
+    const env = { ...ENV, EXIGER_LIMITEUR: '1', LIMITEUR: { limit: async () => ({ success: true }) } };
+    assert.equal((await appel(req('/api/etat'), c, env)).statut, 200);
+    assert.equal((await appel(req('/api/etat', { jeton: 'mauvais' }), c, { ...ENV, EXIGER_LIMITEUR: '1' })).statut, 401);
+  } finally { console.error = o; }
+  // EXIGER_LIMITEUR autre que "1" : repli en mémoire conservé
+  const w = console.warn; console.warn = () => {};
+  try { assert.equal((await appel(req('/api/etat'), c, { ...ENV, EXIGER_LIMITEUR: '0' })).statut, 200); } finally { console.warn = w; }
+});
+test('wrangler.toml : limiteur exigé, journaux désactivés, adresses explicites', async () => {
+  const { readFileSync } = await import('node:fs');
+  const t = readFileSync(new URL('../worker/wrangler.toml', import.meta.url), 'utf8').replace(/\r/g, '').replace(/^\s*#.*$/gm, '');
+  assert.match(t, /^EXIGER_LIMITEUR = "1"$/m);
+  assert.match(t, /^\[observability\]\s*\nenabled = false$/m);
+  assert.match(t, /^workers_dev = true$/m);
+  assert.match(t, /^preview_urls = false$/m);
+  assert.match(t, /^\[\[ratelimits\]\]$/m);
+});
 test('429 quand le binding de limitation refuse ; la requête n\'atteint pas Tuya', async () => {
   const c = cable(); let appels = 0;
   const env = { ...ENV, LIMITEUR: { limit: async () => ({ success: ++appels <= 2 }) } };

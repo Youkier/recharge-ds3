@@ -1,0 +1,171 @@
+// Logique pure du bouton « Programmer la charge » (phase 2c). Module ES, aucune dépendance,
+// utilisable par la page et par Node (tests). Contrat du service : PLAN.md, phase 2a.
+// Règle n°2 : jamais d'échec silencieux, jamais de faux succès. Seul un résultat
+// vérifié renvoie etat « ok » ; tout le reste est « ko » avec l'heure à régler à la main.
+// Le jeton n'est jamais journalisé ni placé dans une URL ou un message.
+
+export const DELAI_MAX_MS = 25000;
+export const HEURE_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
+
+// --- Réglages saisis par l'utilisateur ---
+
+// Adresse https://<nom>.workers.dev, sans chemin, sans port, sans identifiants.
+// Une barre finale seule est tolérée et retirée.
+const ADRESSE_RE = /^https:\/\/[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*\.workers\.dev$/i;
+
+export function validerAdresse(saisie) {
+  const s = String(saisie ?? '').trim().replace(/\/$/, '');
+  if (s === '') return { ok: false, raison: 'vide' };
+  if (!ADRESSE_RE.test(s)) return { ok: false, raison: 'format' };
+  return { ok: true, adresse: s.toLowerCase() };
+}
+
+// Le jeton passe dans un en-tête HTTP : caractères ASCII visibles seulement, sans espace.
+export function validerJeton(saisie) {
+  const s = String(saisie ?? '').trim();
+  if (s === '') return { ok: false, raison: 'vide' };
+  if (!/^[\x21-\x7e]+$/.test(s)) return { ok: false, raison: 'format' };
+  return { ok: true, jeton: s };
+}
+
+// --- Choix de la demande ---
+
+// statut : r.status du calcul ('none' = aucune charge nécessaire). heure : "HH:MM" du début de charge.
+// Renvoie null si la demande ne peut pas être construite (rien n'est alors envoyé).
+export function choisirDemande(statut, heure) {
+  if (statut === 'none') return { desactiver: true };
+  if ((statut === 'ok' || statut === 'short') && typeof heure === 'string' && HEURE_RE.test(heure)) return { allumage: heure };
+  return null;
+}
+
+export function libelleBouton(demande) {
+  if (!demande) return null;
+  return demande.desactiver
+    ? { principal: 'Désactiver la charge', secondaire: 'aucune charge ce soir' }
+    : { principal: 'Programmer la charge', secondaire: 'démarrage ' + demande.allumage };
+}
+
+// Ce que l'utilisateur doit faire à la main dans Smart Life si le service échoue.
+export function consigneManuelle(demande) {
+  return demande && demande.desactiver
+    ? 'À faire à la main dans Smart Life : désactiver la plage de charge du câble pour cette nuit.'
+    : 'À régler à la main dans Smart Life : plage de charge du câble, début ' + (demande ? demande.allumage : '--:--') + '.';
+}
+
+// --- Interprétation des réponses ---
+
+// Cause en clair par code d'erreur. incertain : l'état réel du câble est peut-être différent de ce
+// qu'on croit (écriture possible sans confirmation) : on ajoute « vérifiez dans Smart Life ».
+const CAUSES = {
+  non_autorise: { message: 'Jeton refusé par le service. Vérifiez le jeton dans Paramètres.', incertain: false },
+  trop_de_requetes: { message: 'Trop de requêtes. Attendez quelques minutes avant de réessayer.', incertain: false },
+  hors_ligne: { message: 'Le câble est hors ligne (Wi-Fi ou courant coupé).', incertain: true },
+  jeton: { message: 'Le service Tuya est en erreur (accès refusé côté Tuya).', incertain: true },
+  tuya: { message: 'Le service Tuya est en erreur.', incertain: true },
+  delai: { message: 'Le câble n\'a pas répondu à temps.', incertain: true },
+  relecture_differente: { message: 'Le câble n\'a pas la valeur demandée après l\'écriture.', incertain: true },
+  non_disponible: { message: 'La désactivation automatique n\'est pas encore disponible.', incertain: false },
+  requete_invalide: { message: 'Le service a refusé la demande (format invalide).', incertain: false },
+  // Échecs côté page
+  hors_ligne_navigateur: { message: 'Pas de connexion internet : la demande n\'a pas été envoyée.', incertain: false },
+  injoignable: { message: 'Service injoignable (réseau coupé, adresse erronée ou service arrêté).', incertain: true },
+  delai_page: { message: 'Pas de réponse du service après 25 secondes.', incertain: true },
+  illisible: { message: 'Réponse illisible du service.', incertain: true },
+  inattendue: { message: 'Réponse inattendue du service : le réglage n\'est pas confirmé.', incertain: true },
+};
+
+export function resultatKo(demande, code) {
+  const c = CAUSES[code] || CAUSES.inattendue;
+  return {
+    etat: 'ko',
+    code: CAUSES[code] ? code : 'inattendue',
+    message: c.message,
+    manuel: consigneManuelle(demande),
+    incertain: c.incertain,
+    verifier: c.incertain ? 'Vérifiez dans Smart Life.' : null,
+  };
+}
+
+const estHeure = (x) => typeof x === 'string' && HEURE_RE.test(x);
+
+// status : code HTTP ; json : objet déjà décodé, ou undefined si le corps n'était pas du JSON.
+export function interpreterReponse(demande, status, json) {
+  if (json === undefined || json === null || typeof json !== 'object' || Array.isArray(json)) {
+    return resultatKo(demande, status === 401 ? 'non_autorise' : status === 429 ? 'trop_de_requetes' : 'illisible');
+  }
+  if (json.ok === false) {
+    if (typeof json.erreur === 'string' && Object.hasOwn(CAUSES, json.erreur)) return resultatKo(demande, json.erreur);
+    return resultatKo(demande, status === 401 ? 'non_autorise' : status === 429 ? 'trop_de_requetes' : status === 501 ? 'non_disponible' : 'inattendue');
+  }
+  // Seul chemin vers « ok » : HTTP 200, ok === true, et valeurs relues conformes.
+  if (status !== 200 || json.ok !== true) return resultatKo(demande, 'inattendue');
+
+  if (demande && demande.desactiver) {
+    // Contrat de la désactivation non encore observé (T7) : on exige plage ET charge relues désactivées.
+    if (json.plage_active === false && json.charge_active === false) {
+      return { etat: 'ok', message: 'Charge désactivée pour cette nuit.', detail: null };
+    }
+    return resultatKo(demande, 'relecture_differente');
+  }
+
+  if (!demande || !estHeure(demande.allumage) || !estHeure(json.debut) || json.plage_active !== true) {
+    return resultatKo(demande, 'relecture_differente');
+  }
+  // charge_active : null = non observable (T7 pas fait), on n'en déduit rien. false = charge bloquée : pas un succès.
+  if (json.charge_active === false) return resultatKo(demande, 'relecture_differente');
+
+  const fin = estHeure(json.fin) ? 'Fin de la plage : ' + json.fin + '.' : null;
+  if (json.immediat === true) {
+    return { etat: 'ok', message: 'Démarrage immédiat : l\'heure calculée était passée.', detail: ['Début relu sur le câble : ' + json.debut + '.', fin].filter(Boolean).join(' ') };
+  }
+  if (json.debut !== demande.allumage) return resultatKo(demande, 'relecture_differente');
+  return { etat: 'ok', message: 'Charge programmée : démarrage ' + json.debut, detail: fin };
+}
+
+// --- Envoi ---
+
+// deps (tests) : fetch, onLine (booléen), delaiMs. Ne lève jamais : renvoie toujours un résultat.
+export async function envoyer(adresse, jeton, demande, deps = {}) {
+  const f = deps.fetch || ((...a) => fetch(...a));
+  const enLigne = deps.onLine === undefined ? (typeof navigator !== 'undefined' ? navigator.onLine : true) : deps.onLine;
+  if (!demande) return resultatKo(demande, 'inattendue');
+  if (enLigne === false) return resultatKo(demande, 'hors_ligne_navigateur');
+  const a = validerAdresse(adresse), j = validerJeton(jeton);
+  if (!a.ok || !j.ok) return resultatKo(demande, 'inattendue'); // la page empêche déjà ce cas
+
+  const ctrl = new AbortController();
+  let delaiAtteint = false;
+  const minuteur = setTimeout(() => { delaiAtteint = true; ctrl.abort(); }, deps.delaiMs ?? DELAI_MAX_MS);
+  try {
+    const rep = await f(a.adresse + '/api/programmer', {
+      method: 'POST',
+      headers: { Authorization: 'Bearer ' + j.jeton, 'Content-Type': 'application/json' },
+      body: JSON.stringify(demande),
+      signal: ctrl.signal,
+      cache: 'no-store',
+      credentials: 'omit',
+      referrerPolicy: 'no-referrer',
+      redirect: 'error', // une redirection devient « service injoignable »
+    });
+    let json;
+    try { json = JSON.parse(await rep.text()); } catch (e) {
+      if (delaiAtteint) return resultatKo(demande, 'delai_page');
+      json = undefined;
+    }
+    return interpreterReponse(demande, rep.status, json);
+  } catch (e) {
+    return resultatKo(demande, delaiAtteint ? 'delai_page' : 'injoignable');
+  } finally {
+    clearTimeout(minuteur);
+  }
+}
+
+// Envoie puis affiche le résultat. Ne lève jamais : si l'envoi ou l'affichage échoue, on tente
+// d'afficher un KO générique avec l'heure à régler à la main (règle n°2, pas d'échec silencieux).
+export async function envoyerEtAfficher(adresse, jeton, demande, afficher, deps = {}) {
+  let res;
+  try { res = await envoyer(adresse, jeton, demande, deps); } catch (e) { res = resultatKo(demande, 'inattendue'); }
+  try { afficher(res); } catch (e) {
+    try { afficher(resultatKo(demande, 'inattendue')); } catch (e2) { /* rien de plus à faire */ }
+  }
+}

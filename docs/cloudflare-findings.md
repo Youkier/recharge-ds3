@@ -15,6 +15,18 @@ Choix : 10 appels par période de 60 s, clé fixe (`service`), après contrôle 
 
 Repli sans binding (`wrangler dev` local, ou binding absent) : fenêtre glissante en mémoire, 30 appels par heure par instance, avec un `console.warn` unique (`limiteur_absent`). Approximatif (chaque instance a son compteur) : **ne pas compter dessus en production**.
 
+## Configuration de déploiement et journaux (lu le 2026-11-14)
+
+Sources : https://developers.cloudflare.com/workers/wrangler/configuration/ et https://developers.cloudflare.com/workers/wrangler/commands/workers/
+
+- `workers_dev` (booléen) : active le sous-domaine `*.workers.dev` ; par défaut `true` sans `route`. Écrit explicitement à `true`.
+- `preview_urls` (booléen) : « Enables Version URLs and workers.dev Preview URLs. If omitted, Wrangler does not change an existing setting. » Écrit à `false`. Syntaxe TOML déduite du type booléen (la page n'en donne pas d'exemple).
+- `[observability]` avec `enabled` : « Shorthand for logs.enabled. When set to true on a Worker, logs for the Worker are persisted », défaut `true` pour les nouveaux Workers. Écrit `enabled = false`.
+- `wrangler dev --var clé:valeur` : « Array of key:value pairs to inject as variables », valeur toujours passée en chaîne ; si défini aussi dans le fichier de configuration, **la valeur du drapeau l'emporte**. `--show-interactive-dev-session` : booléen. Non essayé ici (aucun lancement) : à vérifier à la première utilisation sous Windows.
+- `wrangler tail --header` : « Filter by HTTP header » (filtre ; rien sur l'affichage).
+- **En-têtes dans les journaux** : la page Real-time logs (https://developers.cloudflare.com/workers/observability/logs/real-time-logs/) montre, dans un exemple de sortie de `wrangler tail`, un champ `event.request.headers` (vide dans l'exemple) et ne dit **rien** sur les en-têtes affichés ni sur un masquage. La page Workers Logs (https://developers.cloudflare.com/workers/observability/logs/workers-logs/) dit seulement que chaque journal d'invocation contient « details such as the Request, Response, and related metadata », sans préciser ni masquage. **Non vérifié : ne jamais lancer wrangler tail ni activer Logpush sans revoir ce point** (l'en-tête Authorization porte le jeton).
+- Limiteur obligatoire : variable `EXIGER_LIMITEUR = "1"` (choix du projet, pas une fonction Cloudflare). Sans binding, 503 au lieu du repli en mémoire.
+
 ## Limites du plan gratuit (lu le 2026-11-14)
 
 Source : https://developers.cloudflare.com/workers/platform/limits/ : 100 000 requêtes par jour, 10 ms de CPU par requête HTTP, 50 sous-requêtes par requête. Une programmation fait au plus 1 (jeton) + 1 lecture + 1 écriture + 3 relectures = 6 sous-requêtes ; le temps d'attente de Tuya n'est pas du temps CPU (à confirmer en réel : la signature HMAC et la lecture JSON restent très en deçà de 10 ms en principe).

@@ -10,19 +10,20 @@ Service Cloudflare minimal : règle le **début** de la plage de charge du câbl
 | `JETON_ACCES` | secret | jeton attendu dans `Authorization: Bearer ...` |
 | `TUYA_ENDPOINT` | variable | `https://openapi.tuyaeu.com` (valeur par défaut) |
 | `ORIGINE_AUTORISEE` | variable | origine GitHub Pages pour le CORS, sans chemin (par exemple `https://<compte>.github.io`) |
-| `LIMITEUR` | binding | limite d'appels (voir `docs/cloudflare-findings.md`) ; absent en local : repli en mémoire avec avertissement |
+| `EXIGER_LIMITEUR` | variable | `"1"` dans `wrangler.toml` : si le binding `LIMITEUR` manque, toute requête authentifiée reçoit 503 `tuya` (journal `limiteur_absent_exige`), sans repli en mémoire |
+| `LIMITEUR` | binding | limite d'appels (voir `docs/cloudflare-findings.md`) ; repli en mémoire avec avertissement seulement si `EXIGER_LIMITEUR` n'est pas `"1"` |
 
 ## En local
 
 1. Copier `.dev.vars.example` en `.dev.vars` et le remplir (fait par Mathieu ; ce fichier est ignoré par git, ne jamais le partager).
-2. `npx wrangler dev` dans ce dossier, puis par exemple :
+2. `npx.cmd wrangler dev --var EXIGER_LIMITEUR:0 --show-interactive-dev-session=false` dans ce dossier (`--var clé:valeur` remplace la valeur de `wrangler.toml`, et `--show-interactive-dev-session` est un booléen : source https://developers.cloudflare.com/workers/wrangler/commands/workers/). Le binding `LIMITEUR` est reconnu en local ; `EXIGER_LIMITEUR:0` n'est utile que s'il ne l'est pas (sinon le Worker local répondrait 503). Puis par exemple :
    `curl -H "Authorization: Bearer <jeton>" http://localhost:8787/api/etat`
 
 Aucune connexion ni déploiement n'est faite ici (`wrangler login`, `secret put` et `deploy` : voir la skill `deploiement`, par Mathieu).
 
 ## Routes (et seulement elles)
 
-Toute requête sans jeton valide reçoit **401** avant toute autre logique ; ensuite limite d'appels (**429**), route inconnue **404**, mauvaise méthode **405**, corps invalide ou champ en trop **400**. `OPTIONS` répond au préflight CORS de l'origine autorisée seulement.
+Toute requête sans jeton valide reçoit **401** avant toute autre logique (le jeton `JETON_ACCES` doit faire au moins 32 caractères, sinon tout est refusé et `configuration_incomplete` est journalisé) ; ensuite limiteur absent alors qu'il est exigé (**503**), limite d'appels (**429**), route inconnue **404**, mauvaise méthode **405**, corps invalide, champ en trop, ou `Content-Length` absent, non numérique ou supérieur à 512 **400**. Toutes les réponses portent `Vary: Origin`. `OPTIONS` répond au préflight CORS de l'origine autorisée seulement.
 
 - `GET /api/etat` : lecture seule.
 - `POST /api/programmer`, corps `{"allumage":"HH:MM"}` (00:00 à 23:59) : lit la plage, écrit `ss` = début et `m` = 2 (jamais `dt`, `se`, courant ni autre réglage), relit le câble.
