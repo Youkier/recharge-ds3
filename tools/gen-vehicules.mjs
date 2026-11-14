@@ -24,6 +24,7 @@ const anOk = (x) => Number.isInteger(x) && x >= 2008 && x <= 2030;
 
 let ecartes = { type: 0, nom: 0, valeur: 0, correction: 0 };
 const exclus = new Set(corr.exclure.map((e) => [e.marque, e.modele].join("|")));
+const renommer = new Map((corr.renommer || []).map((r) => [r.marque + "|" + r.de, r]));
 const lignes = [];
 for (const v of brut.data || []) {
   if (v.vehicle_type !== "car") { ecartes.type++; continue; }
@@ -34,9 +35,18 @@ for (const v of brut.data || []) {
   // « e-208 51 kWh » : la capacité va dans la version, le modèle reste « e-208 ».
   const m = modele.match(/^(.+?)\s+(\d+(?:[.,]\d+)?\s*kWh.*)$/i);
   if (m) { modele = m[1]; version = (m[2] + (version ? " " + version : "")).trim(); }
+  // Renommage manuel (orthographes multiples d'un même modèle) ; « version » éventuelle placée en tête.
+  const ren = renommer.get(marque + "|" + modele);
+  if (ren) { modele = ren.vers; if (ren.version) version = (ren.version + (version ? " " + version : "")).trim(); }
   lignes.push({ marque, modele, version, an: v.release_year, cap: Math.round(v.usable_battery_size * 10) / 10 });
 }
-for (const a of corr.ajouter) lignes.push({ marque: a.marque, modele: a.modele, version: a.version, an: a.an, cap: a.cap });
+// Ajouts manuels : chacun doit citer sa source (vérifié ici, refus sinon).
+for (const a of corr.ajouter) {
+  if (!texte(a.marque) || !texte(a.modele) || typeof a.version !== "string" || !anOk(a.an) || !capOk(a.cap) || !/^https:\/\//.test(a.source || "")) {
+    throw new Error("Ajout invalide ou sans source : " + JSON.stringify(a));
+  }
+  lignes.push({ marque: a.marque, modele: a.modele, version: a.version, an: a.an, cap: a.cap });
+}
 
 // Doublons de nom : « Zoe R110 » devient « Zoe » + version « R110 » quand « Zoe » existe
 // pour la même marque (préfixe le plus court) ; « E-Traveller » et « e-Traveller » fusionnent
