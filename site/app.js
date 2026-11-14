@@ -110,7 +110,7 @@ import { validerAdresse, validerJeton, choisirDemande, libelleBouton, consigneMa
     $("chip").setAttribute("aria-label", "Départ " + fmt(hm(cur.dep)) + ", batterie visée " + cur.target + " %. Modifier dans les paramètres");
     $("carSum").textContent = num(cur.cap) + " kWh · SOH " + num(cur.soh) + " % · " + num(cur.amp) + " A · " + num(cur.volt) + " V · rendement " + num(cur.eff) + " %";
     var dep = hm(cur.dep), preS = dep - cur.pre;
-    var fills = { dep: fmt(dep), preS: fmt(preS), pre: String(cur.pre), hcStart: fmt(hm(cur.hcStart)), hcEnd: fmt(hm(cur.hcEnd)) };
+    var fills = { dep: fmt(dep), preS: fmt(preS), pre: String(cur.pre), hcStart: fmt(hm(cur.hcStart)), hcEnd: fmt(hm(cur.hcEnd)), hcEndMoins: fmt(hm(cur.hcEnd) - 1) };
     Array.prototype.forEach.call(document.querySelectorAll("[data-fill]"), function (e) { e.textContent = fills[e.getAttribute("data-fill")]; });
     $("lblHc").textContent = fills.hcStart + " – " + fills.hcEnd;
     $("lblPre").textContent = fills.preS + " – " + fills.dep;
@@ -162,7 +162,7 @@ import { validerAdresse, validerJeton, choisirDemande, libelleBouton, consigneMa
     var sv = startVaries(p, r);
 
     if (r.status === "none") {
-      setHero("none", "Pas de charge nécessaire", [el("p", "alt-text", "Désactivez la plage de charge du câble pour cette nuit. Il se rallumera quand même à " + fmt(r.preS) + " pour le préconditionnement.")]);
+      setHero("none", "Pas de charge nécessaire", [el("p", "alt-text", "Réglez le début de la plage à une minute avant la fin des heures creuses (" + fmt(hm(cur.hcEnd) - 1) + ") dans Smart Life, ou ne branchez pas la voiture.")]);
       announce("Pas de charge nécessaire");
     } else if (!reached) {
       var t1 = el("p", "alt-text", "Environ " + Math.round(r.arrival) + " % au départ au lieu de " + p.target + " %, même en démarrant au plus tôt.");
@@ -455,6 +455,7 @@ import { validerAdresse, validerJeton, choisirDemande, libelleBouton, consigneMa
     if (res.etat === "ok") {
       a.appendChild(el("p", "alert-title", res.message));
       if (res.detail) a.appendChild(el("p", null, res.detail));
+      if (res.avertissement) a.appendChild(el("p", "manual", res.avertissement));
     } else {
       a.appendChild(el("p", "alert-title", "Programmation non confirmée"));
       a.appendChild(el("p", null, res.message));
@@ -472,7 +473,7 @@ import { validerAdresse, validerJeton, choisirDemande, libelleBouton, consigneMa
     var d = demande;
     busy = true;
     try { hideAlert(); updateSend(); } catch (e) { /* l'envoi et son alerte restent garantis ci-dessous */ }
-    envoyerEtAfficher(svc.adresse, svc.jeton, d, function (res) { showAlert(res, d); }).then(function () {
+    envoyerEtAfficher(svc.adresse, svc.jeton, d, function (res) { showAlert(res, d); }, { finHC: fmt(hm(cur.hcEnd)) }).then(function () {
       busy = false;
       // La demande a pu changer pendant l'envoi : l'alerte ne doit pas rester pour une autre demande.
       setDemande(demande);

@@ -10,7 +10,8 @@ import {
 
 const prog = { allumage: "00:35" };
 const desact = { desactiver: true };
-const okRep = { ok: true, debut: "00:35", fin: "06:00", plage_active: true, charge_active: null };
+const okRep = { ok: true, debut: "00:35", fin: "06:00", plage_active: true };
+const courteRep = { ok: true, debut: "05:59", fin: "06:00", plage_active: true, courte: true };
 
 describe("Adresse du service", () => {
   test("acceptées", () => {
@@ -59,13 +60,6 @@ describe("Interprétation : OK seulement si tout est conforme", () => {
     assert.equal(r.message, "Charge programmée : démarrage 00:35");
     assert.match(r.detail, /06:00/);
   });
-  test("charge_active null : rien n'est déduit, OK quand même", () => {
-    assert.equal(interpreterReponse(prog, 200, { ...okRep, charge_active: null }).etat, "ok");
-    assert.equal(interpreterReponse(prog, 200, { ...okRep, charge_active: true }).etat, "ok");
-  });
-  test("charge_active false après programmation : KO", () => {
-    assert.equal(interpreterReponse(prog, 200, { ...okRep, charge_active: false }).etat, "ko");
-  });
   test("200 mais debut différent -> KO", () => {
     const r = interpreterReponse(prog, 200, { ...okRep, debut: "00:40" });
     assert.equal(r.etat, "ko");
@@ -104,10 +98,37 @@ describe("Interprétation : OK seulement si tout est conforme", () => {
   test("immédiat truthy mais pas true : on exige l'égalité", () => {
     assert.equal(interpreterReponse(prog, 200, { ...okRep, debut: "23:58", immediat: "oui" }).etat, "ko");
   });
-  test("désactivation : OK seulement si plage et charge relues désactivées", () => {
-    assert.equal(interpreterReponse(desact, 200, { ok: true, debut: "22:00", fin: "06:00", plage_active: false, charge_active: false }).etat, "ok");
-    assert.equal(interpreterReponse(desact, 200, { ok: true, debut: "22:00", fin: "06:00", plage_active: false, charge_active: null }).etat, "ko");
-    assert.equal(interpreterReponse(desact, 200, { ok: true, debut: "22:00", fin: "06:00", plage_active: true, charge_active: false }).etat, "ko");
+  test("plage courte : OK avec les heures relues", () => {
+    const r = interpreterReponse(desact, 200, courteRep);
+    assert.equal(r.etat, "ok");
+    assert.equal(r.message, "Pas de charge cette nuit : plage réduite à une minute (05:59–06:00), inutile de brancher.");
+    assert.equal(interpreterReponse(desact, 200, { ...courteRep, debut: "23:59", fin: "00:00" }).etat, "ok");
+  });
+  test("plage courte : KO si courte absent, plage inactive ou début incohérent", () => {
+    const { courte, ...sansCourte } = courteRep;
+    for (const rep of [
+      sansCourte, { ...courteRep, courte: false }, { ...courteRep, courte: "true" },
+      { ...courteRep, plage_active: false }, { ...courteRep, debut: "05:58" }, { ...courteRep, debut: "06:00" },
+      { ...courteRep, debut: "5:59" }, { ...courteRep, fin: undefined }, { ...courteRep, debut: undefined },
+      { ok: true, debut: "22:00", fin: "06:00", plage_active: false, charge_active: false },
+    ]) {
+      const r = interpreterReponse(desact, 200, rep);
+      assert.equal(r.etat, "ko", JSON.stringify(rep));
+      assert.equal(r.code, "relecture_differente");
+    }
+  });
+  test("avertissement si la fin relue diffère de la fin des heures creuses, sans KO", () => {
+    const r = interpreterReponse(prog, 200, okRep, "07:00");
+    assert.equal(r.etat, "ok");
+    assert.match(r.avertissement, /fin de plage du câble \(06:00\) ne correspond pas à la fin des heures creuses \(07:00\) : vérifiez dans Smart Life/);
+    const c = interpreterReponse(desact, 200, courteRep, "07:00");
+    assert.equal(c.etat, "ok");
+    assert.match(c.avertissement, /\(06:00\).*\(07:00\)/);
+  });
+  test("pas d'avertissement si la fin correspond ou si la fin des Paramètres est inconnue", () => {
+    assert.equal(interpreterReponse(prog, 200, okRep, "06:00").avertissement, undefined);
+    assert.equal(interpreterReponse(desact, 200, courteRep, "06:00").avertissement, undefined);
+    assert.equal(interpreterReponse(prog, 200, okRep).avertissement, undefined);
   });
 });
 
@@ -120,7 +141,7 @@ describe("Interprétation : causes en clair", () => {
     [502, { ok: false, erreur: "tuya" }, "tuya", /Tuya/, true],
     [504, { ok: false, erreur: "delai" }, "delai", /pas répondu/, true],
     [502, { ok: false, erreur: "relecture_differente" }, "relecture_differente", /pas la valeur demandée/, true],
-    [501, { ok: false, erreur: "non_disponible" }, "non_disponible", /désactivation automatique n'est pas encore disponible/, false],
+    [501, { ok: false, erreur: "non_disponible" }, "inattendue", /Réponse inattendue/, true],
     [400, { ok: false, erreur: "requete_invalide" }, "requete_invalide", /refusé/, false],
   ];
   for (const [status, json, code, re, incertain] of cas) {
@@ -138,12 +159,18 @@ describe("Interprétation : causes en clair", () => {
   }
   test("l'heure à régler à la main est celle demandée", () => {
     assert.match(interpreterReponse(prog, 401, { ok: false, erreur: "non_autorise" }).manuel, /début 00:35/);
-    assert.match(interpreterReponse(desact, 501, { ok: false, erreur: "non_disponible" }).manuel, /désactiver la plage/);
+    const m = interpreterReponse(desact, 502, { ok: false, erreur: "tuya" }, "06:00").manuel;
+    assert.match(m, /début de la plage à une minute avant la fin des heures creuses \(05:59\)/);
+    assert.match(m, /ne branchez pas la voiture/);
+    assert.ok(!/désactiver/i.test(m));
+    assert.match(consigneManuelle(desact, "00:00"), /\(23:59\)/);
+    assert.match(consigneManuelle(desact, "07:30"), /\(07:29\)/);
   });
   test("code HTTP seul sans erreur reconnue", () => {
     assert.equal(interpreterReponse(prog, 401, { ok: false }).code, "non_autorise");
     assert.equal(interpreterReponse(prog, 429, { ok: false }).code, "trop_de_requetes");
-    assert.equal(interpreterReponse(prog, 501, { ok: false, erreur: "autre" }).code, "non_disponible");
+    assert.equal(interpreterReponse(prog, 501, { ok: false, erreur: "autre" }).code, "inattendue");
+    assert.equal(interpreterReponse(desact, 501, { ok: false }).code, "inattendue");
     assert.equal(interpreterReponse(prog, 500, { ok: false, erreur: "inconnue" }).code, "inattendue");
   });
   test("réponse illisible ou de forme inattendue", () => {
@@ -177,7 +204,7 @@ describe("Envoi (fetch simulé)", () => {
   });
   test("corps de désactivation", async () => {
     let corps;
-    await envoyer("https://a.workers.dev", "t", desact, { onLine: true, fetch: async (u, i) => { corps = i.body; return reponse(501, { ok: false, erreur: "non_disponible" }); } });
+    await envoyer("https://a.workers.dev", "t", desact, { onLine: true, fetch: async (u, i) => { corps = i.body; return reponse(200, courteRep); } });
     assert.equal(corps, '{"desactiver":true}');
   });
   test("hors ligne : KO immédiat, aucun appel", async () => {

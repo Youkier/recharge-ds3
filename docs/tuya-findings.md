@@ -116,7 +116,7 @@ La sonde lit `tools/.env` elle-même ; commandes : `node tools/tuya-probe.mjs <a
 | T6 (suite) Programmation de préconditionnement | **Supprimé** | Plus de programmation Smart Life : préconditionnement sur la batterie | 2026-11-14 |
 | T4 Exécution sans internet | **Reporté** (pas levé) | À faire avant la mise en service de la phase 2b. Raison (Mathieu) : la plage s'exécute de la même façon, réglée à la main ou par l'API | 2026-11-14 |
 | T5 Redémarrage de la charge après 2 h prise éteinte | **Validé par Mathieu** | Constat en usage, pas d'essai instrumenté par la sonde | 2026-11-14 |
-| T7 Désactivation de la charge (soir sans charge) | À faire | Mécanisme à identifier par relevé avant/après un arrêt de charge dans Smart Life. Ne rien écrire avant (`x_do_charge` reste interdit tant que son effet n'est pas observé) | |
+| T7 Désactivation de la charge (soir sans charge) | **Réussi en partie, mécanisme abandonné** | Relevés `tools/releves/releve-2026-11-14T21-45-39`, `…21-46-34`, `…21-47-10`. Plage désactivée dans Smart Life : `m` 2 → 0, charge immédiate (`WORKING`, 300, 15,3 A, `cp` 6.5). Bouton Smart Life « swipe to pause charging » : `PAUSE` (204), 0 A, `cp` 9.5, **mais aucun point de réglage ne change** (`x_charge_mode` reste `m` = 0, `x_do_charge` reste `false`) : commande ponctuelle invisible dans le relevé, non identifiée. Sortie de pause par l'API : `ecrire-debut 03:30` (`m` 0 → 2) relu conforme, câble `PAUSE` → `WAIT` (202), aucun autre réglage modifié. Pas de recherche plus poussée : soirs sans charge traités par une plage courte (décision du 2026-11-14) | 2026-11-14 |
 
 ## Codes d'erreur Tuya et correspondance du Worker (2026-11-14)
 
@@ -131,11 +131,11 @@ Source : https://developer.tuya.com/en/docs/iot/error-code?id=K989ruxx88swc (doc
 | 1110, 1113, 1199, 28841104, tout autre code, réponse non JSON, panne réseau | autres | `tuya` |
 | appel sans réponse en 10 s | | `delai` |
 
-Statuts HTTP du Worker : `hors_ligne`, `jeton`, `tuya`, `relecture_differente` : 502 ; `delai` : 504 ; `non_disponible` : 501. Seul le code numérique Tuya est journalisé (jamais le message ni la réponse).
+Statuts HTTP du Worker : `hors_ligne`, `jeton`, `tuya`, `relecture_differente` : 502 ; `delai` : 504. Seul le code numérique Tuya est journalisé (jamais le message ni la réponse).
 
 À confirmer par un essai réel : le code renvoyé par l'écriture quand le câble est hors ligne ; le caractère immédiat de la répercussion (le Worker relit jusqu'à 3 fois, 1,5 s, 2 s puis 2,5 s après l'écriture, la sonde attendait 5 s) ; l'effet sur la charge d'un début de plage réglé à l'heure actuelle (cas « heure déjà passée »).
 
-Worker : `charge_active` renvoie `null` tant que T7 n'est pas fait ; `{"desactiver":true}` répond 501 `non_disponible` sans rien écrire.
+Worker (révisé le 2026-11-14 après T7) : plus de `charge_active` ; `{"desactiver":true}` écrit la plage courte (début = `se` relu − 1 min, `m` = 2), relue comme une programmation normale, jamais `immediat`.
 
 ## Pilotage local, sans cloud (piste du 2026-11-12, aucun test L fait)
 

@@ -28,8 +28,8 @@ Toute requête sans jeton valide reçoit **401** avant toute autre logique (le j
 - `GET /api/etat` : lecture seule.
 - `POST /api/programmer`, corps `{"allumage":"HH:MM"}` (00:00 à 23:59) : lit la plage, écrit `ss` = début et `m` = 2 (jamais `dt`, `se`, courant ni autre réglage), relit le câble.
   Si l'heure de Paris est déjà dans `[allumage, fin)` (minuit pris en compte), le début écrit est l'heure actuelle et la réponse porte `"immediat":true`.
-- `POST /api/programmer`, corps `{"desactiver":true}` : **pas encore disponible** (test T7) : 501 `{"ok":false,"erreur":"non_disponible"}`, rien n'est lu ni écrit. Point d'extension : fonction `desactiver()`.
+- `POST /api/programmer`, corps `{"desactiver":true}` : plage courte. Lit la plage, écrit début = fin relue moins une minute (`00:00` donne `23:59`) et active la plage (seuls `ss` et `m` changent), relit. Jamais d'`immediat`. Réponse : `{"ok":true,"debut":"HH:MM","fin":"HH:MM","plage_active":true,"courte":true}`.
 
-Succès : `{"ok":true,"debut":"HH:MM","fin":"HH:MM","plage_active":true|false,"charge_active":null}`. `charge_active` est `null` tant que T7 n'a pas identifié le mécanisme de charge.
-Échec : `{"ok":false,"erreur":"hors_ligne"|"jeton"|"tuya"|"delai"|"relecture_differente"|"non_disponible"}` (502, 502, 502, 504, 502, 501). Correspondance avec les codes Tuya : `docs/tuya-findings.md`.
+Succès : `{"ok":true,"debut":"HH:MM","fin":"HH:MM","plage_active":true|false}`.
+Échec : `{"ok":false,"erreur":"hors_ligne"|"jeton"|"tuya"|"delai"|"relecture_differente"}` (502, 502, 502, 504, 502). Correspondance avec les codes Tuya : `docs/tuya-findings.md`.
 Le succès n'est annoncé que si la valeur relue sur le câble correspond à ce qui a été demandé.

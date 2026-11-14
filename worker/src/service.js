@@ -26,7 +26,7 @@ const CODES_ACCES = new Set([1004, 1013, 1106, 60009001, 28841002, 28841102, 288
 const CODES_HORS_LIGNE = new Set([2001, 40000801]);
 
 const STATUTS = {
-  hors_ligne: 502, jeton: 502, tuya: 502, relecture_differente: 502, delai: 504, non_disponible: 501,
+  hors_ligne: 502, jeton: 502, tuya: 502, relecture_differente: 502, delai: 504,
 };
 
 export class ErreurService extends Error {
@@ -196,10 +196,8 @@ async function ecrirePlage(cfg, deps, plage) {
 
 const memePlage = (a, b) => CLES_PLAGE.every((k) => a[k] === b[k]);
 
-// charge_active : non observable tant que T7 n'est pas fait (x_do_charge reste interdit et son
-// effet est inconnu). Renvoyé null ; à remplacer quand le mécanisme sera identifié.
 const reponsePlage = (plage, extra = {}) => ({
-  ok: true, debut: plage.ss, fin: plage.se, plage_active: plage.m === 2, charge_active: null, ...extra,
+  ok: true, debut: plage.ss, fin: plage.se, plage_active: plage.m === 2, ...extra,
 });
 
 async function etat(env, deps) {
@@ -207,27 +205,36 @@ async function etat(env, deps) {
   return reponsePlage(await lireValeurPlage(cfg, deps));
 }
 
-async function programmer(env, deps, allumage) {
-  const cfg = configTuya(env);
-  const actuelle = await lireValeurPlage(cfg, deps);
-  const { debut, immediat } = decider(allumage, actuelle.se, deps.now());
-  const voulue = nouvellePlage(actuelle, debut);
+// Écrit voulue (seuls ss et m changent), relit, ne conclut au succès que si la relecture est conforme.
+async function ecrireEtVerifier(cfg, deps, actuelle, voulue, extra = {}) {
   if (!memePlage(actuelle, voulue)) await ecrirePlage(cfg, deps, voulue);
-  let relue = null;
   for (const attente of deps.attentes ?? ATTENTES_RELECTURE_MS) {
     await deps.sleep(attente);
-    relue = await lireValeurPlage(cfg, deps);
-    if (memePlage(relue, voulue)) return reponsePlage(relue, immediat ? { immediat: true } : {});
+    const relue = await lireValeurPlage(cfg, deps);
+    if (memePlage(relue, voulue)) return reponsePlage(relue, extra);
   }
   console.error('relecture_differente');
   throw new ErreurService('relecture_differente');
 }
 
-// Point d'extension (test T7) : la désactivation de la charge n'est pas identifiée.
-// NE PAS écrire m = 0 (charge immédiate sur ce câble) ni x_do_charge tant que T7 n'a pas montré
-// le mécanisme. Quand il sera connu : lire, écrire le point identifié (et lui seul), relire, vérifier.
-async function desactiver() {
-  throw new ErreurService('non_disponible');
+async function programmer(env, deps, allumage) {
+  const cfg = configTuya(env);
+  const actuelle = await lireValeurPlage(cfg, deps);
+  const { debut, immediat } = decider(allumage, actuelle.se, deps.now());
+  return ecrireEtVerifier(cfg, deps, actuelle, nouvellePlage(actuelle, debut), immediat ? { immediat: true } : {});
+}
+
+// Fin de plage moins une minute (00:00 -> 23:59). Fonction pure, aucune heure en dur.
+export function moinsUneMinute(hhmm) {
+  const m = (minutes(hhmm) + 1439) % 1440;
+  return `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+}
+
+// Plage courte : début = fin relue - 1 min, plage activée. Jamais de logique « heure déjà passée ».
+async function desactiver(env, deps) {
+  const cfg = configTuya(env);
+  const actuelle = await lireValeurPlage(cfg, deps);
+  return ecrireEtVerifier(cfg, deps, actuelle, nouvellePlage(actuelle, moinsUneMinute(actuelle.se)), { courte: true });
 }
 
 // --- Limite d'appels ---
@@ -332,8 +339,7 @@ export async function traiter(request, env, deps = {}) {
     if (cl === null || !/^[0-9]+$/.test(cl) || Number(cl) > TAILLE_MAX_CORPS) return repondre(request, env, 400, { ok: false, erreur: 'requete_invalide' });
     const corps = validerCorps(await request.text());
     if (!corps) return repondre(request, env, 400, { ok: false, erreur: 'requete_invalide' });
-    if (corps.desactiver) await desactiver();
-    return repondre(request, env, 200, await programmer(env, deps, corps.allumage));
+    return repondre(request, env, 200, corps.desactiver ? await desactiver(env, deps) : await programmer(env, deps, corps.allumage));
   } catch (e) {
     const code = e instanceof ErreurService && STATUTS[e.code] ? e.code : 'tuya';
     if (!(e instanceof ErreurService)) console.error('erreur_interne');
