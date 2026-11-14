@@ -128,7 +128,7 @@ describe("Comportements douteux (todo)", () => {
     });
 
   test("Prix vides (NaN) : le coût ne devrait pas valoir 0 € sans avertissement",
-    { todo: "pHC = pHP = NaN donne un coût de 0 € avec statut ok (|| 0 dans plan)" }, () => {
+    { todo: "pHC = pHP = NaN donne un coût de 0 € avec statut ok (|| 0 dans plan) ; la page ne l'affiche pas : tuile grisée « Prix à renseigner »" }, () => {
       const p = { ...DEFAUT, pHC: NaN, pHP: NaN };
       const r = plan(p);
       assert.ok(r.status === "err" || r.cost > 0, `coût ${r.cost} avec statut ${r.status}`);

@@ -57,11 +57,13 @@ import { validerAdresse, validerJeton, choisirDemande, libelleBouton, consigneMa
   function read() {
     var p = {}, bad = [];
     ids.forEach(function (k) { p[k] = getVal(k); });
+    var sansPrix = []; // prix laissés vides : le plan est calculé, seul le coût est masqué
     NUMS.forEach(function (k) {
       var raw = String($(k).value).trim();
       var v = raw === "" ? NaN : Number(raw);
       p[k] = v;
-      if (!okNum(k, v)) bad.push(k);
+      if (raw === "" && (k === "pHC" || k === "pHP")) sansPrix.push(k);
+      else if (!okNum(k, v)) bad.push(k);
     });
     ["dep", "hcStart", "hcEnd"].forEach(function (k) {
       if (!TIME_RE.test(p[k])) bad.push(k);
@@ -72,7 +74,7 @@ import { validerAdresse, validerJeton, choisirDemande, libelleBouton, consigneMa
     var rawSoc = String($("soc").value).trim();
     p.soc = rawSoc === "" ? NaN : Number(rawSoc);
     if (!okNum("soc", p.soc)) bad.push("soc");
-    return { p: p, bad: bad };
+    return { p: p, bad: bad, sansPrix: sansPrix };
   }
 
   function mark(bad) {
@@ -109,6 +111,7 @@ import { validerAdresse, validerJeton, choisirDemande, libelleBouton, consigneMa
   function clearResults() {
     ["fArr", "fDur", "fCost"].forEach(function (i) { $(i).textContent = "–"; });
     ["fArrS", "fKwh", "fCostS"].forEach(function (i) { $(i).textContent = ""; $(i).className = "ts"; });
+    $("fCostTile").className = "tile";
     $("timeline").textContent = ""; $("ticks").textContent = "";
     $("timeline").setAttribute("aria-label", "Frise de la nuit : aucun plan calculé");
     $("ampWarn").hidden = true;
@@ -128,10 +131,10 @@ import { validerAdresse, validerJeton, choisirDemande, libelleBouton, consigneMa
   }
 
   function render() {
-    var rd = read(), p = rd.p, bad = rd.bad;
+    var rd = read(), p = rd.p, bad = rd.bad, sansPrix = rd.sansPrix;
     mark(bad);
     // Enregistre uniquement les champs valides : les autres gardent leur dernière valeur valide.
-    ids.forEach(function (k) { if (bad.indexOf(k) < 0) cur[k] = p[k]; });
+    ids.forEach(function (k) { if (bad.indexOf(k) < 0 && sansPrix.indexOf(k) < 0) cur[k] = p[k]; });
     if (bad.indexOf("soc") < 0) cur.soc = p.soc;
     save(cur);
     updateStatic();
@@ -204,10 +207,17 @@ import { validerAdresse, validerJeton, choisirDemande, libelleBouton, consigneMa
     else { as.textContent = Math.round(p.target - r.arrival) + " % sous l'objectif"; as.className = "ts miss"; }
     $("fDur").textContent = r.status === "none" ? "0 h 00" : fdur(r.chargeMin);
     $("fKwh").textContent = fr(r.kwh, 1) + " kWh";
-    $("fCost").textContent = eur(r.cost);
     var cs = $("fCostS");
-    if (r.kwhHP > 0) { cs.textContent = "dont " + eur(r.kwhHP * p.pHP) + " hors creuses"; cs.className = "ts hp"; }
-    else { cs.textContent = r.kwh > 0 ? "100 % creuses" : "aucune charge"; cs.className = "ts"; }
+    $("fCostTile").className = sansPrix.length ? "tile off" : "tile";
+    if (sansPrix.length) {
+      // Jamais « 0 € » quand un prix manque : le coût serait faux.
+      $("fCost").textContent = "Prix à renseigner";
+      cs.textContent = ""; cs.className = "ts";
+    } else {
+      $("fCost").textContent = eur(r.cost);
+      if (r.kwhHP > 0) { cs.textContent = "dont " + eur(r.kwhHP * p.pHP) + " hors creuses"; cs.className = "ts hp"; }
+      else { cs.textContent = r.kwh > 0 ? "100 % creuses" : "aucune charge"; cs.className = "ts"; }
+    }
 
     var aw = $("ampWarn");
     if (p.amp > 16) {
