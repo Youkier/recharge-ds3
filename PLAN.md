@@ -115,7 +115,7 @@ T1 à T3 passés le 2026-11-11 (voir `docs/tuya-findings.md`). Compte principal 
 - [ ] T4 **reporté** (pas levé, T0b fusionné dedans) : à faire avant la mise en service de la phase 2b
 - [ ] **Après T7 et la fin des essais sur le câble** : régénérer l'Access Secret Tuya, le poser seulement chez Cloudflare (`wrangler secret put TUYA_ACCESS_SECRET`), puis supprimer `tools/.env` et vider `worker/.dev.vars` (plus aucune clé Tuya sur le PC). **Régénéré et posé chez Cloudflare par Mathieu le 2026-11-15** (secrets du PC périmés) ; reste : supprimer `worker/.dev.vars`, puis `tools/.env` après L3–L4 (il porte la clé locale)
 - [ ] **À chaque fin de séance** : un seul `git push` (avec résumé des changements de `site/`), puis `npx.cmd wrangler logout`
-- [ ] Tests du pilotage local L1 à L4 (`tools/tuya-local-test.py`, détail dans `docs/tuya-findings.md`) : repli sans internet, et base d'une éventuelle appli (volet produit)
+- [ ] Tests du pilotage local L1 à L4 (`tools/tuya-local-test.py`, détail dans `docs/tuya-findings.md`) : repli sans internet, et base d'une éventuelle appli (volet produit). **L1, L2, L3 réussis (2026-11-15/16) ; L4 à faire plus tard** (voiture branchée, méthode notée dans `docs/tuya-findings.md`), puis supprimer `tools/.env`
 
 ### Tests du point d'arrêt
 
