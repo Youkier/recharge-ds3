@@ -66,7 +66,7 @@
     <section class="card night" aria-label="Frise de la nuit">
       <div class="night-labels">
         <span>Heures creuses <b id="lblHc">22:00 – 06:00</b></span>
-        <span>Préclim. <b id="lblPre">07:00 – 07:30</b></span>
+        <span>Départ <b id="lblDep">07:30</b></span>
       </div>
       <div class="timeline" id="timeline" role="img" aria-label="Frise de la nuit"></div>
       <div class="ticks" id="ticks" aria-hidden="true"></div>
@@ -78,7 +78,6 @@
       <div class="tile"><p class="tk">Coût</p><p class="tv" id="fCost">–</p><p class="ts" id="fCostS"></p></div>
     </div>
 
-    <p class="msg bad" id="ampWarn" hidden></p>
   </div>
 
   <!-- Vue 2 : paramètres (#parametres) -->
@@ -110,20 +109,14 @@
       </fieldset>
     </section>
 
-    <section class="card group" aria-labelledby="g-pre">
-      <h2 class="group-title" id="g-pre">Préconditionnement</h2>
-      <div class="row"><label for="pre">Prise rallumée avant le départ</label><input type="number" id="pre" step="5" value="30" inputmode="decimal" aria-describedby="u-pre"><span class="unit" id="u-pre">min</span></div>
-      <label class="check" for="deduct"><input type="checkbox" id="deduct"><span><b>Compter la recharge pendant ce temps</b><small>Moitié de la puissance pour la batterie, le reste pour la clim ou le chauffage</small></span></label>
-    </section>
-
     <details class="card group" id="carBox">
       <summary>
-        <span><span class="group-title">Voiture et câble</span><span id="carSum">46 kWh · SOH 92 % · 16 A · 230 V · rendement 90 %</span></span>
+        <span><span class="group-title">Voiture et câble</span><span id="carSum">46 kWh · SOH 95 % · 16 A · 230 V · rendement 90 %</span></span>
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
       </summary>
       <div class="row"><label for="cap">Capacité utile</label><input type="number" id="cap" step="0.1" value="46" inputmode="decimal" aria-describedby="u-cap"><span class="unit" id="u-cap">kWh</span></div>
-      <div class="row"><label for="soh">SOH</label><input type="number" id="soh" step="1" value="92" inputmode="decimal" aria-describedby="u-soh"><span class="unit" id="u-soh">%</span></div>
-      <div class="row"><label for="amp">Courant de charge</label><input type="number" id="amp" step="1" value="16" inputmode="decimal" aria-describedby="u-amp"><span class="unit" id="u-amp">A</span></div>
+      <div class="row"><label for="soh">SOH</label><input type="number" id="soh" step="1" value="95" inputmode="decimal" aria-describedby="u-soh"><span class="unit" id="u-soh">%</span></div>
+      <div class="row"><label for="amp">Courant de charge</label><select id="amp" aria-describedby="u-amp"><option>6</option><option>8</option><option>10</option><option>13</option><option selected>16</option></select><span class="unit" id="u-amp">A</span></div>
       <div class="row"><label for="volt">Tension</label><input type="number" id="volt" step="1" value="230" inputmode="decimal" aria-describedby="u-volt"><span class="unit" id="u-volt">V</span></div>
       <div class="row"><label for="eff">Rendement de charge</label><input type="number" id="eff" step="1" value="90" inputmode="decimal" aria-describedby="u-eff"><span class="unit" id="u-eff">%</span></div>
       <p class="hint">Valeurs de départ : DS 3 Crossback E-Tense (50 kWh brut, environ 46 kWh utiles).</p>

@@ -2,10 +2,11 @@ import { plan, hm, fmt, fdur, fr, eur } from "./calc.js";
 import { validerAdresse, validerJeton, choisirDemande, libelleBouton, consigneManuelle, envoyerEtAfficher } from "./service.js";
 
 (function () {
-  var DEFAULTS = { cap: 46, soh: 92, target: 80, dep: "07:30", hcStart: "22:00", hcEnd: "06:00", amp: 16, volt: 230, eff: 90, pre: 30, pHC: 0.146688, pHP: 0.196476, mode: "end", deduct: false, soc: 38 };
+  var DEFAULTS = { cap: 46, soh: 95, target: 80, dep: "07:30", hcStart: "22:00", hcEnd: "06:00", amp: 16, volt: 230, eff: 90, pHC: 0.146688, pHP: 0.196476, mode: "end", soc: 38 };
+  var AMPS = [6, 8, 10, 13, 16]; // courants proposés par le câble (x_adjust_current, docs/tuya-findings.md)
   var KEY = "recharge-ds3-v1"; // clé inchangée depuis la phase 1 : aucun paramètre perdu
-  var ids = ["cap", "soh", "target", "dep", "hcStart", "hcEnd", "amp", "volt", "eff", "pre", "pHC", "pHP", "mode"];
-  var NUMS = ["cap", "soh", "target", "amp", "volt", "eff", "pre", "pHC", "pHP"];
+  var ids = ["cap", "soh", "target", "dep", "hcStart", "hcEnd", "amp", "volt", "eff", "pHC", "pHP", "mode"];
+  var NUMS = ["cap", "soh", "target", "amp", "volt", "eff", "pHC", "pHP"];
   var CAR = ["cap", "soh", "amp", "volt", "eff"];
   var $ = function (id) { return document.getElementById(id); };
   var radios = function () { return document.querySelectorAll('input[name="mode"]'); };
@@ -29,19 +30,18 @@ import { validerAdresse, validerJeton, choisirDemande, libelleBouton, consigneMa
     try { s = JSON.parse(localStorage.getItem(KEY) || "null"); } catch (e) { s = null; }
     var p = Object.assign({}, DEFAULTS);
     if (s && typeof s === "object") Object.keys(DEFAULTS).forEach(function (k) { if (s[k] !== null && s[k] !== undefined) p[k] = s[k]; });
+    if (AMPS.indexOf(Number(p.amp)) < 0) p.amp = DEFAULTS.amp; // ancienne valeur saisie à la main, absente de la liste
     ids.forEach(function (k) { setVal(k, p[k]); });
-    $("deduct").checked = !!p.deduct;
     $("soc").value = p.soc; $("socRange").value = p.soc;
   }
   function save(p) { try { localStorage.setItem(KEY, JSON.stringify(p)); } catch (e) {} }
 
-  var LABELS = { cap: "Capacité utile", soh: "SOH", target: "Batterie visée", dep: "Heure de départ", hcStart: "Début heures creuses", hcEnd: "Fin heures creuses", amp: "Courant de charge", volt: "Tension", eff: "Rendement de charge", pre: "Prise rallumée avant départ", pHC: "Prix heures creuses", pHP: "Prix heures pleines", soc: "Batterie à l'arrivée" };
+  var LABELS = { cap: "Capacité utile", soh: "SOH", target: "Batterie visée", dep: "Heure de départ", hcStart: "Début heures creuses", hcEnd: "Fin heures creuses", amp: "Courant de charge", volt: "Tension", eff: "Rendement de charge", pHC: "Prix heures creuses", pHP: "Prix heures pleines", soc: "Batterie à l'arrivée" };
   var TIME_RE = /^\d{1,2}:\d{2}$/;
   function okNum(k, v) {
     if (!isFinite(v)) return false;
     if (k === "soc" || k === "target") return v >= 0 && v <= 100;
     if (k === "soh" || k === "eff") return v > 0 && v <= 100;
-    if (k === "pre") return v >= 0 && v <= 600;
     return v > 0; // cap, amp, volt, pHC, pHP : vide ou 0 = invalide, jamais traité comme 0
   }
 
@@ -59,7 +59,8 @@ import { validerAdresse, validerJeton, choisirDemande, libelleBouton, consigneMa
       if (!TIME_RE.test(p[k])) bad.push(k);
     });
     if (p.mode !== "start" && p.mode !== "end") p.mode = "end";
-    p.deduct = $("deduct").checked;
+    // Préconditionnement supprimé : la voiture le fait sur sa batterie, la charge finit avec les heures creuses.
+    p.pre = 0; p.deduct = false;
     var rawSoc = String($("soc").value).trim();
     p.soc = rawSoc === "" ? NaN : Number(rawSoc);
     if (!okNum("soc", p.soc)) bad.push("soc");
@@ -102,18 +103,17 @@ import { validerAdresse, validerJeton, choisirDemande, libelleBouton, consigneMa
     ["fArrS", "fKwh", "fCostS"].forEach(function (i) { $(i).textContent = ""; $(i).className = "ts"; });
     $("timeline").textContent = ""; $("ticks").textContent = "";
     $("timeline").setAttribute("aria-label", "Frise de la nuit : aucun plan calculé");
-    $("ampWarn").hidden = true;
   }
 
   function updateStatic() {
     $("chipText").textContent = fmt(hm(cur.dep)) + " · " + cur.target + " %";
     $("chip").setAttribute("aria-label", "Départ " + fmt(hm(cur.dep)) + ", batterie visée " + cur.target + " %. Modifier dans les paramètres");
     $("carSum").textContent = num(cur.cap) + " kWh · SOH " + num(cur.soh) + " % · " + num(cur.amp) + " A · " + num(cur.volt) + " V · rendement " + num(cur.eff) + " %";
-    var dep = hm(cur.dep), preS = dep - cur.pre;
-    var fills = { dep: fmt(dep), preS: fmt(preS), pre: String(cur.pre), hcStart: fmt(hm(cur.hcStart)), hcEnd: fmt(hm(cur.hcEnd)), hcEndMoins: fmt(hm(cur.hcEnd) - 1) };
+    var dep = hm(cur.dep);
+    var fills = { dep: fmt(dep), hcStart: fmt(hm(cur.hcStart)), hcEnd: fmt(hm(cur.hcEnd)), hcEndMoins: fmt(hm(cur.hcEnd) - 1) };
     Array.prototype.forEach.call(document.querySelectorAll("[data-fill]"), function (e) { e.textContent = fills[e.getAttribute("data-fill")]; });
     $("lblHc").textContent = fills.hcStart + " – " + fills.hcEnd;
-    $("lblPre").textContent = fills.preS + " – " + fills.dep;
+    $("lblDep").textContent = fills.dep;
   }
 
   function render() {
@@ -121,7 +121,6 @@ import { validerAdresse, validerJeton, choisirDemande, libelleBouton, consigneMa
     mark(bad);
     // Enregistre uniquement les champs valides : les autres gardent leur dernière valeur valide.
     ids.forEach(function (k) { if (bad.indexOf(k) < 0) cur[k] = p[k]; });
-    cur.deduct = p.deduct;
     if (bad.indexOf("soc") < 0) cur.soc = p.soc;
     save(cur);
     updateStatic();
@@ -198,12 +197,6 @@ import { validerAdresse, validerJeton, choisirDemande, libelleBouton, consigneMa
     if (r.kwhHP > 0) { cs.textContent = "dont " + eur(r.kwhHP * p.pHP) + " hors creuses"; cs.className = "ts hp"; }
     else { cs.textContent = r.kwh > 0 ? "100 % creuses" : "aucune charge"; cs.className = "ts"; }
 
-    var aw = $("ampWarn");
-    if (p.amp > 16) {
-      aw.hidden = false;
-      aw.textContent = "Au-delà de 16 A (3,7 kW), une prise Green'up ne suffit plus : il faut une borne de recharge.";
-    } else aw.hidden = true;
-
     drawTimeline(r);
     drawAide(p, r);
     setDemande(choisirDemande(r.status, r.status === "none" ? null : fmt(r.start)));
@@ -221,14 +214,14 @@ import { validerAdresse, validerJeton, choisirDemande, libelleBouton, consigneMa
     tl.textContent = "";
     var seg = function (cls, left, width) { var d = el("div", "seg " + cls); d.style.left = pc(left); d.style.width = wd(width); tl.appendChild(d); return d; };
     seg("hc", 0, r.hcLen);
-    var label = "Préconditionnement " + fmt(r.preS) + " – " + fmt(r.dep);
+    var label = "Départ " + fmt(r.dep);
     if (r.chargeMin > 0) {
       seg("charge", r.startRel, r.chargeMin);
       var txt = "Charge " + fmt(r.start) + " → " + fmt(r.end);
       tl.appendChild(el("span", "clabel in", txt));
       label = txt.replace("→", "à") + ". " + label;
     } else label = "Pas de charge. " + label;
-    seg("pre", r.preRel, r.depRel - r.preRel);
+    seg("dep", r.depRel, 0);
     tl.setAttribute("aria-label", "Frise de la nuit. Heures creuses " + $("lblHc").textContent + ". " + label);
 
     tk.textContent = "";
@@ -294,7 +287,7 @@ import { validerAdresse, validerJeton, choisirDemande, libelleBouton, consigneMa
   $("socRange").addEventListener("input", function () { $("soc").value = this.value; render(); });
   $("soc").addEventListener("input", function () { if ($("soc").value !== "") $("socRange").value = $("soc").value; render(); });
 
-  ids.filter(function (k) { return k !== "mode"; }).concat(["deduct"]).forEach(function (k) { $(k).addEventListener("input", render); $(k).addEventListener("change", render); });
+  ids.filter(function (k) { return k !== "mode"; }).forEach(function (k) { $(k).addEventListener("input", render); $(k).addEventListener("change", render); });
   Array.prototype.forEach.call(radios(), function (r) { r.addEventListener("change", render); });
   $("resetBtn").addEventListener("click", function () {
     if (!window.confirm("Revenir aux valeurs de départ ? Tous vos réglages seront remplacés.")) return;
