@@ -82,10 +82,10 @@ docs/            journal des décisions, résultats Tuya, volet produit (busines
 ## Commandes utiles
 
 - Tests : `node --test "tests/**/*.test.mjs"`
-- Servir la page en local : `npx serve site` ou `python3 -m http.server -d site 8080`
+- Servir la page en local : `python -m http.server --bind 127.0.0.1 -d site 8080` (toujours `--bind 127.0.0.1` : sinon la page, et tout dossier servi par erreur, est visible du Wi-Fi)
 - Worker en local (phase 2) : `cd worker && npx wrangler dev` (demande d'autorisation : il charge `worker/.dev.vars`)
 
-Sans autorisation : modifications de fichiers (sauf `.claude/`, `tools/hooks/`, `.github/`), tests, `git status|diff|log|show|add|commit|grep`, serveur local de la page (`python -m http.server -d site 8080`), `node tools/gen-icons.mjs`, lecture de `developer.tuya.com` et `developers.cloudflare.com`. Avec autorisation : tout ce qui est listé dans `ask` de `.claude/settings.json`. Toute autre commande déclenche aussi une demande : si elle revient souvent et ne touche ni la prise, ni les secrets, ni la publication, proposer à Mathieu de l'ajouter à `allow`.
+Sans autorisation : modifications de fichiers (sauf `.claude/`, `tools/hooks/`, `.github/`, les scripts `tools/*.mjs` et `tools/*.py`, `worker/wrangler.toml`, `.gitignore`, `CLAUDE.md` et `SECURITE.md`), tests, `git status|diff|log|show|add|commit|grep` (sauf les options qui lisent hors du dépôt ou forcent l'ajout de fichiers ignorés), serveur local de la page (`python -m http.server --bind 127.0.0.1 -d site 8080`), `node tools/gen-icons.mjs`, lecture de `developer.tuya.com` et `developers.cloudflare.com`. Avec autorisation : tout ce qui est listé dans `ask` de `.claude/settings.json`. Toute autre commande déclenche aussi une demande : si elle revient souvent et ne touche ni la prise, ni les secrets, ni la publication, proposer à Mathieu de l'ajouter à `allow`.
 
 ## Journal
 
