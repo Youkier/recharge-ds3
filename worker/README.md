@@ -19,7 +19,7 @@ Service Cloudflare minimal : règle le **début** de la plage de charge du câbl
 2. `npx.cmd wrangler dev --var EXIGER_LIMITEUR:0 --show-interactive-dev-session=false` dans ce dossier (`--var clé:valeur` remplace la valeur de `wrangler.toml`, et `--show-interactive-dev-session` est un booléen : source https://developers.cloudflare.com/workers/wrangler/commands/workers/). Le binding `LIMITEUR` est reconnu en local ; `EXIGER_LIMITEUR:0` n'est utile que s'il ne l'est pas (sinon le Worker local répondrait 503). Puis par exemple :
    `curl -H "Authorization: Bearer <jeton>" http://localhost:8787/api/etat`
 
-Aucune connexion ni déploiement n'est faite ici (`wrangler login`, `secret put` et `deploy` : voir la skill `deploiement`, par Mathieu).
+Aucune connexion ni déploiement n'est faite ici (voir la skill `deploiement` : `wrangler login` et `secret put` par Mathieu ; `deploy` lancé par Claude après accord de Mathieu dans la demande d'autorisation).
 
 ## Routes (et seulement elles)
 

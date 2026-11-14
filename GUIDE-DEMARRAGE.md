@@ -78,7 +78,7 @@ Seulement si la phase 2a est validée :
 
 > Phase 2a validée. Lance les phases 2b puis 2c selon PLAN.md. Arrête-toi avant le premier déploiement du Worker et avant d'ajouter les secrets, et explique-moi les commandes que je dois lancer moi-même.
 
-Vous lancerez vous-même `npx wrangler login` et les commandes `npx wrangler secret put ...`, en tapant les valeurs directement dans le terminal.
+Vous lancerez vous-même `npx wrangler login` et les commandes `npx wrangler secret put ...`, en tapant les valeurs directement dans le terminal. Le déploiement (`npx wrangler deploy`) est lancé par Claude Code : vous l'acceptez dans la demande d'autorisation.
 
 Sur le Pixel : Paramètres de la page → adresse du service et jeton d'accès, puis un premier essai de « Programmer la charge », vérifié dans Smart Life.
 
@@ -90,7 +90,7 @@ Sur le Pixel : Paramètres de la page → adresse du service et jeton d'accès, 
 - **Une phase par session.** Ouvrez une nouvelle session Claude Code pour chaque phase : le contexte reste léger, et `CLAUDE.md` + `PLAN.md` suffisent à reprendre.
 - **Vérifiez vous-même ce qui compte** : l'heure affichée sur la page pour un cas que vous connaissez, la programmation réelle dans Smart Life.
 - **Surveillez votre consommation.** Plusieurs agents consomment plus vite votre quota. Si une tâche tourne en rond, interrompez (Échap) et recadrez.
-- **Pas de mode « tout accepter » en phase 2.** Validez vous-même chaque commande qui touche à la prise, aux secrets ou au déploiement.
+- **Pas de mode « tout accepter ».** Claude Code lance lui-même les commandes courantes (tests, commits locaux) sans rien vous demander. Il vous demande une autorisation, une commande à la fois, pour ce qui touche à la prise, aux secrets, à la publication (`git push`) ou au déploiement : lisez-la avant d'accepter. Vous ne tapez de commande que pour vous connecter à vos comptes et saisir les secrets.
 - **Lisez `SECURITE.md` une fois** et gardez en tête le geste d'urgence : dans la console Tuya, délier votre compte Smart Life du projet coupe tout accès en deux minutes.
 - **Le mode manuel reste votre filet de sécurité** : programmation fixe d'extinction à 06h00, rallumage pour le préconditionnement et réglage manuel possible à tout moment dans Smart Life.
 
