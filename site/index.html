@@ -112,19 +112,30 @@
 
     <details class="card group" id="carBox">
       <summary>
-        <span><span class="group-title">Voiture et câble</span><span id="carSum">46 kWh · SOH 95 % · 16 A · 230 V · rendement 90 %</span></span>
+        <span><span class="group-title">Voiture</span><span id="carSum">46 kWh · SOH 95 %</span></span>
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
       </summary>
       <div class="row"><label for="cap">Capacité utile</label><input type="number" id="cap" step="0.1" value="46" inputmode="decimal" aria-describedby="u-cap"><span class="unit" id="u-cap">kWh</span></div>
       <div class="row"><label for="soh">SOH</label><input type="number" id="soh" step="1" value="95" inputmode="decimal" aria-describedby="u-soh"><span class="unit" id="u-soh">%</span></div>
+      <p class="hint">Valeurs de départ : DS 3 Crossback E-Tense (50 kWh brut, environ 46 kWh utiles).</p>
+    </details>
+
+    <details class="card group" id="cableBox">
+      <summary>
+        <span><span class="group-title">Borne et câble</span><span id="cableSum">16 A · 230 V · rendement 90 %</span></span>
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+      </summary>
       <div class="row"><label for="amp">Courant de charge</label><select id="amp" aria-describedby="u-amp"><option>6</option><option>8</option><option>10</option><option>13</option><option selected>16</option><option>32</option></select><span class="unit" id="u-amp">A</span></div>
       <div class="row"><label for="volt">Tension</label><input type="number" id="volt" step="1" value="230" inputmode="decimal" aria-describedby="u-volt"><span class="unit" id="u-volt">V</span></div>
       <div class="row"><label for="eff">Rendement de charge</label><input type="number" id="eff" step="1" value="90" inputmode="decimal" aria-describedby="u-eff"><span class="unit" id="u-eff">%</span></div>
-      <p class="hint">Valeurs de départ : DS 3 Crossback E-Tense (50 kWh brut, environ 46 kWh utiles). Le rendement se remplit selon le courant et la tension (pertes mesurées par l'ADAC) ; il reste modifiable.</p>
+      <p class="hint">Le rendement se remplit selon le courant et la tension (pertes mesurées par l'ADAC) ; il reste modifiable.</p>
     </details>
 
-    <section class="card group" aria-labelledby="g-service">
-      <h2 class="group-title" id="g-service">Service de programmation</h2>
+    <details class="card group" id="svcBox" open>
+      <summary>
+        <span><span class="group-title">Service de programmation</span><span id="svcSum">Non configuré : bouton inactif</span></span>
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+      </summary>
       <p class="hint">Sert au bouton « Programmer la charge ». Sans ces deux réglages, le bouton reste inactif et le réglage manuel dans Smart Life reste possible.</p>
       <form id="svcForm" autocomplete="off">
       <div class="field"><label for="svcUrl">Adresse du service</label><input type="url" id="svcUrl" inputmode="url" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="https://nom.workers.dev" aria-describedby="svcUrlMsg"><p class="fmsg" id="svcUrlMsg"></p></div>
@@ -132,7 +143,7 @@
       <button type="button" class="danger" id="svcTokClear">Effacer le jeton</button>
       </form>
       <p class="hint">Le jeton reste dans ce navigateur, n'est jamais réaffiché et n'est envoyé qu'au service.</p>
-    </section>
+    </details>
 
     <button type="button" class="danger" id="resetBtn">Revenir aux valeurs de départ</button>
     <p class="note">Réglages enregistrés dans ce navigateur.</p>

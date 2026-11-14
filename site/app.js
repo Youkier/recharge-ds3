@@ -7,7 +7,7 @@ import { validerAdresse, validerJeton, choisirDemande, libelleBouton, consigneMa
   var KEY = "recharge-ds3-v1"; // clé inchangée depuis la phase 1 : aucun paramètre perdu
   var ids = ["cap", "soh", "target", "dep", "hcStart", "hcEnd", "amp", "volt", "eff", "pHC", "pHP", "mode"];
   var NUMS = ["cap", "soh", "target", "amp", "volt", "eff", "pHC", "pHP"];
-  var CAR = ["cap", "soh", "amp", "volt", "eff"];
+  var CAR = ["cap", "soh"], CABLE = ["amp", "volt", "eff"];
   // Rendement proposé selon la puissance (courant × tension) : pertes = 3 % + 250 W fixes.
   // Source : ADAC, mesure du 06/08/2026 (100 à 300 W pour l'électronique de charge ;
   // 12,7 à 24,2 % de pertes à 2,3 kW). Donne 90 % à 16 A, valeur validée de la page.
@@ -116,7 +116,8 @@ import { validerAdresse, validerJeton, choisirDemande, libelleBouton, consigneMa
   function updateStatic() {
     $("chipText").textContent = fmt(hm(cur.dep)) + " · " + cur.target + " %";
     $("chip").setAttribute("aria-label", "Départ " + fmt(hm(cur.dep)) + ", batterie visée " + cur.target + " %. Modifier dans les paramètres");
-    $("carSum").textContent = num(cur.cap) + " kWh · SOH " + num(cur.soh) + " % · " + num(cur.amp) + " A · " + num(cur.volt) + " V · rendement " + num(cur.eff) + " %";
+    $("carSum").textContent = num(cur.cap) + " kWh · SOH " + num(cur.soh) + " %";
+    $("cableSum").textContent = num(cur.amp) + " A · " + num(cur.volt) + " V · rendement " + num(cur.eff) + " %";
     var dep = hm(cur.dep);
     var fills = { dep: fmt(dep), hcStart: fmt(hm(cur.hcStart)), hcEnd: fmt(hm(cur.hcEnd)), hcEndMoins: fmt(hm(cur.hcEnd) - 1) };
     Array.prototype.forEach.call(document.querySelectorAll("[data-fill]"), function (e) { e.textContent = fills[e.getAttribute("data-fill")]; });
@@ -147,6 +148,7 @@ import { validerAdresse, validerJeton, choisirDemande, libelleBouton, consigneMa
         pe.hidden = false;
         pe.textContent = "Valeur manquante ou impossible : " + pbad.map(function (k) { return LABELS[k]; }).join(", ") + ". Le calcul reste en attente tant qu'elle n'est pas corrigée.";
         if (pbad.some(function (k) { return CAR.indexOf(k) >= 0; })) $("carBox").open = true;
+        if (pbad.some(function (k) { return CABLE.indexOf(k) >= 0; })) $("cableBox").open = true;
       }
       setHero("bad", "Saisie à corriger", [t]);
       announce("Saisie à corriger");
@@ -386,6 +388,14 @@ import { validerAdresse, validerJeton, choisirDemande, libelleBouton, consigneMa
     $("svcUrl").value = svc.adresse || "";
     $("svcTok").value = ""; // le jeton n'est jamais réaffiché
     tokenMsg();
+    $("svcBox").open = !(svc.adresse && svc.jeton); // replié une fois configuré
+    svcSummary();
+  }
+  // Résumé du bloc replié. Ne le referme jamais pendant une saisie ; le rouvre s'il n'est plus configuré.
+  function svcSummary() {
+    var ok = !!(svc.adresse && svc.jeton);
+    $("svcSum").textContent = ok ? "Configuré · " + new URL(svc.adresse).hostname : (svc.adresse ? "Jeton manquant : bouton inactif" : "Non configuré : bouton inactif");
+    if (!ok) $("svcBox").open = true;
   }
   function setMsg(id, text, bad) { var m = $(id); m.textContent = text; m.className = "fmsg" + (bad ? " bad" : ""); }
   function tokenMsg() { setMsg("svcTokMsg", svc.jeton ? "Un jeton est enregistré (non affiché)." : "Aucun jeton enregistré.", false); }
@@ -443,6 +453,7 @@ import { validerAdresse, validerJeton, choisirDemande, libelleBouton, consigneMa
   }
 
   function updateSend() {
+    svcSummary();
     var b = $("sendBtn"), help = $("sendHelp");
     var lab = libelleBouton(demande);
     var configured = !!(svc.adresse && svc.jeton);
