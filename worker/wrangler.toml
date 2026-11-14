@@ -1,0 +1,20 @@
+# Aucun secret ici. Les secrets (TUYA_ACCESS_ID, TUYA_ACCESS_SECRET, TUYA_DEVICE_ID, JETON_ACCES)
+# se saisissent avec `npx wrangler secret put <NOM>` (production) ou dans worker/.dev.vars (local).
+name = "recharge-ds3"
+main = "src/index.js"
+compatibility_date = "2026-10-01"
+
+[vars]
+TUYA_ENDPOINT = "https://openapi.tuyaeu.com"
+# A remplacer par l'origine GitHub Pages (sans chemin ni barre finale), par exemple https://<compte>.github.io
+ORIGINE_AUTORISEE = "https://youkier.github.io"
+
+# Limite d'appels (binding Rate Limiting, wrangler >= 4.36.0). Periode permise : 10 ou 60 secondes.
+# Limite par emplacement Cloudflare, approximative. Voir docs/cloudflare-findings.md.
+[[ratelimits]]
+name = "LIMITEUR"
+namespace_id = "1001"
+
+  [ratelimits.simple]
+  limit = 10
+  period = 60

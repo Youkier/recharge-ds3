@@ -118,6 +118,25 @@ La sonde lit `tools/.env` elle-même ; commandes : `node tools/tuya-probe.mjs <a
 | T5 Redémarrage de la charge après 2 h prise éteinte | **Validé par Mathieu** | Constat en usage, pas d'essai instrumenté par la sonde | 2026-11-14 |
 | T7 Désactivation de la charge (soir sans charge) | À faire | Mécanisme à identifier par relevé avant/après un arrêt de charge dans Smart Life. Ne rien écrire avant (`x_do_charge` reste interdit tant que son effet n'est pas observé) | |
 
+## Codes d'erreur Tuya et correspondance du Worker (2026-11-14)
+
+Source : https://developer.tuya.com/en/docs/iot/error-code?id=K989ruxx88swc (documentation lue ; **tous les codes autres que 1106 sont à confirmer en réel**). Observés en réel : `1106 permission deny`, `2003 function not support`, `40001900 No space permission` (tests d'isolement).
+
+| Code Tuya (documentation) | Sens | Erreur du Worker |
+|---|---|---|
+| 1010, 1011, 1012, 1400 | jeton expiré ou invalide | jeton Tuya redemandé et appel rejoué une fois ; si ça échoue encore : `jeton` |
+| 1004, 1013, 1106, 60009001, 28841002, 28841102, 28841105 | signature, horloge, permission, abonnement ou autorisation du projet | `jeton` (= accès à l'API Tuya à revoir) |
+| 2001, 40000801 | appareil hors ligne | `hors_ligne` |
+| message contenant « offline » (repli, à confirmer) | l'écriture hors ligne « échoue » selon la doc, code exact non vérifié | `hors_ligne` |
+| 1110, 1113, 1199, 28841104, tout autre code, réponse non JSON, panne réseau | autres | `tuya` |
+| appel sans réponse en 10 s | | `delai` |
+
+Statuts HTTP du Worker : `hors_ligne`, `jeton`, `tuya`, `relecture_differente` : 502 ; `delai` : 504 ; `non_disponible` : 501. Seul le code numérique Tuya est journalisé (jamais le message ni la réponse).
+
+À confirmer par un essai réel : le code renvoyé par l'écriture quand le câble est hors ligne ; le caractère immédiat de la répercussion (le Worker relit jusqu'à 3 fois, 1,5 s, 2 s puis 2,5 s après l'écriture, la sonde attendait 5 s) ; l'effet sur la charge d'un début de plage réglé à l'heure actuelle (cas « heure déjà passée »).
+
+Worker : `charge_active` renvoie `null` tant que T7 n'est pas fait ; `{"desactiver":true}` répond 501 `non_disponible` sans rien écrire.
+
 ## Pilotage local, sans cloud (piste du 2026-11-12, aucun test L fait)
 
 Idée : écrire `x_charge_mode` (dp 151) directement par le réseau de la maison (protocole local Tuya, TCP 6668), avec l'identifiant du câble et sa clé locale. Repli sans internet et base d'une éventuelle appli ; pour l'usage de Mathieu, la voie cloud (Worker) reste retenue (décision du 2026-11-12). Source du protocole : https://github.com/jasonacox/tinytuya (rétro-ingénierie communautaire, pas de documentation Tuya).

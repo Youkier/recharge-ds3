@@ -4,9 +4,13 @@
 .env*
 !.env.example
 *.dev.vars*
+!.dev.vars.example
 .wrangler/
 tools/releves/
 
 # Divers
 node_modules/
 .DS_Store
+
+# Cache Python (script d'essai du pilotage local)
+__pycache__/

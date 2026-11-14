@@ -134,8 +134,8 @@ T1 à T3 passés le 2026-11-11 (voir `docs/tuya-findings.md`). Compte principal 
 - **Soirs d'oubli** (décidé le 2026-11-14) : rien de spécial, la plage de la veille reste active et la voiture charge à la même heure.
 - **Contrat du service** (décidé le 2026-11-14) :
   - `POST /api/programmer`, corps `{"allumage":"HH:MM"}` (début de plage, plage activée, charge réactivée si besoin) ou `{"desactiver":true}` (plage et charge désactivées, T7). `GET /api/etat` : lecture seule. Jeton obligatoire.
-  - Succès, après relecture sur le câble : `{"ok":true,"debut":"HH:MM","fin":"HH:MM","plage_active":bool,"charge_active":bool}` (plus `"immediat":true` si l'heure était passée).
-  - Échec : `{"ok":false,"erreur":"hors_ligne"|"jeton"|"tuya"|"delai"|"relecture_differente"}`, sans détail interne. Erreurs de requête : 400 (corps invalide), 401 (jeton), 429 (limite d'appels).
+  - Succès, après relecture sur le câble : `{"ok":true,"debut":"HH:MM","fin":"HH:MM","plage_active":bool,"charge_active":bool|null}` (plus `"immediat":true` si l'heure était passée). `charge_active` vaut `null` tant que T7 n'a pas identifié l'état de la charge ; la page doit traiter ce cas.
+  - Échec : `{"ok":false,"erreur":"hors_ligne"|"jeton"|"tuya"|"delai"|"relecture_differente"|"non_disponible"}`, sans détail interne. `non_disponible` (501) : « désactiver » tant que T7 n'est pas fait ; la page affiche alors le réglage manuel. Erreurs de requête : 400 (corps invalide), 401 (jeton), 429 (limite d'appels).
 
 **Fin de phase :** rapport court du chef de projet (ce qui marche, ce qui ne marche pas, recommandation) et décision de Mathieu : continuer, adapter ou arrêter. `tools/.env` est supprimé du PC une fois la phase close.
 
