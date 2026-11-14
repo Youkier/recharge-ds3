@@ -190,7 +190,7 @@ T1 à T3 passés le 2026-11-11 (voir `docs/tuya-findings.md`). Compte principal 
 ### Tâches (`dev-web`)
 
 - Champ « Jeton d'accès » et « Adresse du service » dans la vue Paramètres (stockés localement).
-- Bouton « Programmer la charge » sous le résultat, avec l'heure en petit dessous (« démarrage 00:35 ») ; « Désactiver la charge » les soirs sans charge. Actif seulement si le service est configuré.
+- Bouton « Programmer la charge » sous le résultat, avec l'heure en petit dessous (« démarrage 00:35 ») ; « Pas de charge ce soir » (plage réduite à 1 min) les soirs sans charge. Actif seulement si le service est configuré.
 - **Alerte de confirmation** après chaque appui, fondée sur la relecture Tuya renvoyée par le service :
   - **OK** (vert) : « Charge programmée : démarrage 00:35 », heure relue sur le câble ; ou « Charge désactivée pour cette nuit ».
   - **KO** (rouge, bien visible) : cause en clair (service injoignable, jeton refusé, câble hors ligne, valeur relue différente, délai dépassé), puis l'heure à régler à la main dans Smart Life et un lien vers la vue Aide.

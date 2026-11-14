@@ -41,7 +41,7 @@ export function choisirDemande(statut, heure) {
 export function libelleBouton(demande) {
   if (!demande) return null;
   return demande.desactiver
-    ? { principal: 'Désactiver la charge', secondaire: 'aucune charge ce soir' }
+    ? { principal: 'Pas de charge ce soir', secondaire: 'plage réduite à 1 min' }
     : { principal: 'Programmer la charge', secondaire: 'démarrage ' + demande.allumage };
 }
 

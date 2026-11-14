@@ -49,7 +49,7 @@ describe("Choix de la demande", () => {
   });
   test("libellés", () => {
     assert.deepEqual(libelleBouton(prog), { principal: "Programmer la charge", secondaire: "démarrage 00:35" });
-    assert.equal(libelleBouton(desact).principal, "Désactiver la charge");
+    assert.equal(libelleBouton(desact).principal, "Pas de charge ce soir");
   });
 });
 
