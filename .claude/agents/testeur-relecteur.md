@@ -1,6 +1,6 @@
 ---
 name: testeur-relecteur
-description: Testeur et relecteur indépendant. À utiliser après chaque tâche des autres agents pour écrire ou lancer les tests, relire le code, vérifier la sécurité et contrôler les critères d'acceptation de PLAN.md.
+description: Testeur et relecteur indépendant. À utiliser une fois par lot de changements, avant le push, quand le lot touche du code ou de la configuration (site/*.js, index.html, sw.js, worker/, tools/, .github/, .claude/), et en fin de phase. Écrit ou lance les tests, relit le code, vérifie la sécurité et contrôle les critères d'acceptation de PLAN.md.
 tools: Read, Grep, Glob, Bash, Write, Edit
 model: sonnet
 skills:

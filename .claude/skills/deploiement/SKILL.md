@@ -5,7 +5,7 @@ description: Publier la page sur GitHub Pages (via GitHub Actions) et déployer 
 
 # Déploiement
 
-Le chef de projet obtient l'accord de Mathieu **avant** chaque première publication et chaque déploiement en production. Les actions qui demandent les comptes de Mathieu (réglages du dépôt, connexion Cloudflare, saisie des secrets) sont faites par lui : explique-lui la commande exacte.
+Le chef de projet obtient l'accord de Mathieu **avant** chaque première publication et chaque déploiement en production. Les actions qui demandent les comptes de Mathieu (réglages du dépôt, connexion Cloudflare, saisie des secrets) sont faites par lui : explique-lui la commande exacte. `git push` et `npx wrangler deploy` sont lancés par Claude ; l'accord de Mathieu passe par la demande d'autorisation de Claude Code (`ask` dans `.claude/settings.json`). Un seul push par séance, précédé d'un résumé des changements de `site/`.
 
 ## Page – GitHub Pages
 
