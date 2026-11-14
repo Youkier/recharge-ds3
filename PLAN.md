@@ -113,6 +113,8 @@ T1 à T3 passés le 2026-11-11 (voir `docs/tuya-findings.md`). Compte principal 
 - [x] T6 supprimé : plus de programmation de préconditionnement (la partie API, une seule plage et réglages inchangés, était déjà réussie)
 - [ ] T7 : désactivation de la charge les soirs « pas de charge nécessaire »
 - [ ] T4 et T0b **reportés** (pas levés) : à faire avant la mise en service de la phase 2b
+- [ ] **Après T7 et la fin des essais sur le câble** : régénérer l'Access Secret Tuya, le poser seulement chez Cloudflare (`wrangler secret put TUYA_ACCESS_SECRET`), puis supprimer `tools/.env` et vider `worker/.dev.vars` (plus aucune clé Tuya sur le PC)
+- [ ] **À chaque fin de séance** : un seul `git push` (avec résumé des changements de `site/`), puis `npx.cmd wrangler logout`
 - [ ] Tests du pilotage local L1 à L4 (`tools/tuya-local-test.py`, détail dans `docs/tuya-findings.md`) : repli sans internet, et base d'une éventuelle appli (volet produit)
 
 ### Tests du point d'arrêt

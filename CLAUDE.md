@@ -75,7 +75,7 @@ site/            page publiée (index.html, calc.js, manifest, service worker, i
 worker/          Cloudflare Worker (phase 2)
 tools/           scripts d'exploration (sonde Tuya)
 tests/           cas de référence et tests Node (node --test)
-docs/            journal des décisions, résultats Tuya, volet produit (business-cases.md)
+docs/            journal des décisions, résultats Tuya, volet produit (business-cases.md, decisions-produit.md)
 .claude/         agents, skills, réglages
 ```
 
@@ -89,4 +89,4 @@ Sans autorisation : modifications de fichiers (sauf `.claude/`, `tools/hooks/`, 
 
 ## Journal
 
-Consigner chaque décision importante dans `docs/decisions.md` (date, décision, raison), en une ou deux lignes.
+Consigner chaque décision importante dans `docs/decisions.md` (date, décision, raison), en une ou deux lignes. Les décisions du volet produit vont dans `docs/decisions-produit.md`, jamais dans `docs/decisions.md` (deux sessions ne doivent pas écrire dans le même journal).

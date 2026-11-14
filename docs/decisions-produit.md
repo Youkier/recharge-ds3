@@ -1,0 +1,9 @@
+# Journal des décisions – volet produit
+
+Décisions du volet produit (phase 3, `docs/business-cases.md`). Les décisions de l'usage personnel (phases 1 et 2) restent dans `docs/decisions.md`.
+
+| Date | Décision | Raison |
+|---|---|---|
+| 2026-11-12 | Ouverture d'un **volet produit**, séparé de l'usage personnel : options, priorités et critères d'arrêt dans `docs/business-cases.md`. Ordre : page gratuite avec liste d'attente, test local, proposition au fabricant, appli Android du câble, affiliation, appli qui complète MyDS ; service par le cloud Tuya écarté | Pré-mortem du 12/11 : chaque voie payante dépend d'un tiers ; on n'engage du développement lourd qu'après une réponse ou une mesure de la demande. Décision vers le 7 décembre |
+| 2026-11-14 | Volet produit : **demandes envoyées**. Stellantis par le formulaire « Contact us » de mobilisights.com (description limitée à 60 caractères, celui du portail développeur ne se charge pas) ; ticket Tuya « General Ticket » (autorisation d'un appareil par son propriétaire, clé locale officielle). Relance vers le 5 décembre, avant la décision du 7 | Le formulaire Mobilisights est le canal Data Act indiqué par Stellantis pour les professionnels ; le mail complet sera renvoyé en réponse |
+| 2026-11-14 | Revue de developer.groupe-psa.io : l'API « Accessing Party for End-Users » permet la lecture (`data:telemetry`) et la programmation de la charge (`nextDelayedTime`) et du préconditionnement (4 programmes). Mais un **serveur est obligatoire** (secret client, certificat Stellantis, rappels des commandes), l'utilisateur doit activer la connectivité partenaires, « Partner Services » n'est pas ouvert dans tous les pays, le consentement porte sur tout le lot demandé, et le portail n'a pas bougé depuis mars 2024 | L'option F « sans serveur » est corrigée dans `docs/business-cases.md` ; lecture seule demandée d'abord |
