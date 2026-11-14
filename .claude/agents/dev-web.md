@@ -1,6 +1,6 @@
 ---
 name: dev-web
-description: Développeur web du projet. À utiliser pour la page site/index.html, l'extraction du calcul dans site/calc.js, la PWA (manifest, service worker, icônes), l'interface du bouton « Programmer la prise » et la publication sur GitHub Pages.
+description: Développeur web du projet. À utiliser pour la page site/index.html, l'extraction du calcul dans site/calc.js, la PWA (manifest, service worker, icônes), l'interface du bouton « Programmer la charge » et la publication sur GitHub Pages.
 tools: Read, Write, Edit, Bash, Grep, Glob
 model: sonnet
 skills:

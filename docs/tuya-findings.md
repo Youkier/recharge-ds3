@@ -97,9 +97,10 @@ La sonde lit `tools/.env` elle-même ; commandes : `node tools/tuya-probe.mjs <a
 - T1 : `token` (signature acceptée, jeton obtenu) ; `appareils` (le câble apparaît, noter noms et catégories des autres appareils) ; `etat` (lecture de l'état). Noter si `/v1.0/devices/...` répond ou s'il faut `--iot03`. Noter l'état « en ligne » et la catégorie du câble.
 - T2 : `fonctions`, `spec` (la plage de charge est-elle listée ?), puis `releve`, changement de l'heure de début dans Smart Life, `releve`, `compare`. Si absente de `status`, retenter `releve --shadow`. Identifier code, type et format (heure, minutes, valeur encodée) ; renseigner `CODE_DEBUT_PLAGE` et `formaterDebut()`. Vérifier si début et fin sont dans la même valeur.
 - T3 : `ecrire-debut HH:MM` (simulation), puis avec `--confirmer` à +5 min ; l'heure apparaît dans Smart Life et la charge démarre.
-- T4 : même essai avec internet coupé côté box (10 min).
-- T5 : voiture branchée, charge bloquée plus de 2 h : redémarre-t-elle au début de plage ?
-- T6 : deux écritures le même soir, une seule plage ; courant, fin de plage et programmation de préconditionnement inchangés (`releve` avant/après + `compare`).
+- T4 : même essai avec internet coupé côté box (10 min). Reporté le 2026-11-14.
+- T5 : voiture branchée, charge bloquée plus de 2 h : redémarre-t-elle au début de plage ? Validé le 2026-11-14.
+- T6 : supprimé le 2026-11-14 (plus de programmation de préconditionnement) ; la partie API a réussi le 2026-11-11.
+- T7 : `releve --shadow --iot03`, arrêt de la charge dans Smart Life, nouveau relevé, `compare` ; puis vérification voiture branchée.
 
 ## Tests du point d'arrêt
 
@@ -116,6 +117,25 @@ La sonde lit `tools/.env` elle-même ; commandes : `node tools/tuya-probe.mjs <a
 | T4 Exécution sans internet | **Reporté** (pas levé) | À faire avant la mise en service de la phase 2b. Raison (Mathieu) : la plage s'exécute de la même façon, réglée à la main ou par l'API | 2026-11-14 |
 | T5 Redémarrage de la charge après 2 h prise éteinte | **Validé par Mathieu** | Constat en usage, pas d'essai instrumenté par la sonde | 2026-11-14 |
 | T7 Désactivation de la charge (soir sans charge) | À faire | Mécanisme à identifier par relevé avant/après un arrêt de charge dans Smart Life. Ne rien écrire avant (`x_do_charge` reste interdit tant que son effet n'est pas observé) | |
+
+## Pilotage local, sans cloud (piste du 2026-11-12, aucun test L fait)
+
+Idée : écrire `x_charge_mode` (dp 151) directement par le réseau de la maison (protocole local Tuya, TCP 6668), avec l'identifiant du câble et sa clé locale. Repli sans internet et base d'une éventuelle appli ; pour l'usage de Mathieu, la voie cloud (Worker) reste retenue (décision du 2026-11-12). Source du protocole : https://github.com/jasonacox/tinytuya (rétro-ingénierie communautaire, pas de documentation Tuya).
+
+Le câble a été réappairé sur le compte dédié le 2026-11-14 : la clé locale est à récupérer à nouveau avant L1.
+
+**À confirmer lors des tests L (affirmations reprises de tinytuya, non vérifiées sur ce câble)** : la clé locale change à chaque appairage ; une seule connexion locale à la fois (d'où Smart Life fermée pendant les essais) ; découverte par diffusion UDP sur les ports 6666, 6667 et 7000 ; `tinytuya.find_device` renvoie notamment `ip` et `version`.
+
+Préparation : `py -m pip install tinytuya`, puis `node tools/tuya-probe.mjs cle-locale` (pose `TUYA_LOCAL_KEY` dans `tools/.env` sans l'afficher). Smart Life fermée pendant les essais. Commandes : `python tools/tuya-local-test.py <action>`.
+
+| Test | Commande | Réussi si | Si échec | Résultat | Date |
+|---|---|---|---|---|---|
+| L1 Le câble s'annonce en local | `scan` | adresse et version de protocole affichées | Essayer `TUYA_LOCAL_IP` + `TUYA_LOCAL_VERSION` ; si le port 6668 ne répond pas : câble « cloud seulement », **piste abandonnée** | | |
+| L2 Lecture locale | `etat` | le dp 151 est lu, même valeur que par le cloud | Clé périmée ou mauvaise version ; si le dp 151 n'est pas exposé en local : piste abandonnée | | |
+| L3 Écriture locale | `ecrire-debut HH:MM --confirmer` (à +5 min, voiture branchée) | valeur relue conforme, heure visible dans Smart Life, charge démarrée à l'heure | Arrêt, on en parle | | |
+| L4 Sans internet (teste le repli local ; ne remplace pas T4, qui reste à faire avant la phase 2b) | box : internet coupé, Wi-Fi gardé ; `ecrire-debut` à +5 min `--confirmer` | écriture acceptée et charge démarrée sans internet | Le local ne remplace pas le cloud : retour au plan Worker | | |
+
+À noter aussi : la version de protocole (3.3, 3.4, 3.5), la liste des dp visibles en local, et si `cle-locale` renvoie bien `local_key` par `GET /v1.0/devices/{id}`.
 
 ## Décision
 

@@ -1,6 +1,6 @@
 # Guide de démarrage
 
-Ce guide vous emmène de zéro à la page installée sur votre Pixel (phase 1), puis jusqu'au bouton « Programmer la prise » (phase 2). À chaque étape : ce que **vous** faites, et le message à **coller dans Claude Code**.
+Ce guide vous emmène de zéro à la page installée sur votre Pixel (phase 1), puis jusqu'au bouton « Programmer la charge » (phase 2). À chaque étape : ce que **vous** faites, et le message à **coller dans Claude Code**.
 
 Comptez une soirée pour la phase 1, une soirée pour le point d'arrêt Tuya, une à deux soirées pour la suite.
 
@@ -80,7 +80,7 @@ Seulement si la phase 2a est validée :
 
 Vous lancerez vous-même `npx wrangler login` et les commandes `npx wrangler secret put ...`, en tapant les valeurs directement dans le terminal.
 
-Sur le Pixel : Paramètres de la page → adresse du service et jeton d'accès, puis un premier essai de « Programmer la prise », vérifié dans Smart Life.
+Sur le Pixel : Paramètres de la page → adresse du service et jeton d'accès, puis un premier essai de « Programmer la charge », vérifié dans Smart Life.
 
 ---
 

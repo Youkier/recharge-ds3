@@ -30,7 +30,7 @@ done
 for f in $fichiers; do
   case "$(basename "$f")" in
     .env.example)
-      if git show ":$f" | grep -Eq '^[[:space:]]*(export[[:space:]]+)?TUYA_(ACCESS_ID|ACCESS_SECRET|DEVICE_ID|UID)[[:space:]]*=[[:space:]]*[^[:space:]#]'; then
+      if git show ":$f" | grep -Eq '^[[:space:]]*(export[[:space:]]+)?TUYA_(ACCESS_ID|ACCESS_SECRET|DEVICE_ID|UID|LOCAL_KEY|LOCAL_IP|TEST_ISOLEMENT_ID)[[:space:]]*=[[:space:]]*[^[:space:]#]'; then
         echo "REFUSÉ : $f contient une valeur d'identifiant Tuya. Ce modèle doit rester vide." >&2
         erreur=1
       fi ;;

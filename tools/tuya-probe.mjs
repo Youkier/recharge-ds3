@@ -253,6 +253,39 @@ async function actionIsolement(cfg) {
   log(accessible ? `ÉCHEC DE L'ISOLEMENT : ${accessible} lecture(s) acceptée(s) sur un autre appareil.` : "Isolement vérifié : toutes les lectures sur l'autre appareil sont refusées.");
 }
 
+// Clé locale du câble, pour le test de pilotage par le réseau local (tools/tuya-local-test.py).
+// Lue par GET /v1.0/devices/{id} (champ local_key, hypothèse à confirmer par cet appel) et
+// écrite dans tools/.env (TUYA_LOCAL_KEY). Jamais affichée. Elle change à chaque appairage.
+export const CLE_VALIDE = /^[\x21-\x7e]+$/;
+
+export function poserCle(texteEnv, cle) {
+  // La valeur vient de l'API : donnée non fiable, refusée si elle n'est pas en ASCII imprimable sans espace.
+  if (typeof cle !== 'string' || !CLE_VALIDE.test(cle)) throw new Error("Clé locale refusée : caractères non autorisés (la valeur n'est pas affichée).");
+  const texte = String(texteEnv);
+  const sep = texte.includes('\r\n') ? '\r\n' : '\n';
+  const ligne = `TUYA_LOCAL_KEY=${cle}`;
+  const est = (l) => /^\s*(export\s+)?TUYA_LOCAL_KEY\s*=/.test(l);
+  const lignes = texte.split(/\r?\n/);
+  const i = lignes.findIndex(est);
+  if (i >= 0) {
+    lignes[i] = ligne;
+    return lignes.filter((l, j) => j === i || !est(l)).join(sep);
+  }
+  while (lignes.length && lignes[lignes.length - 1] === '') lignes.pop();
+  lignes.push(ligne, '');
+  return lignes.join(sep);
+}
+
+async function actionCleLocale(cfg) {
+  const r = await appeler(cfg, 'GET', `/v1.0/devices/${cfg.device}`);
+  const cle = r?.local_key;
+  if (typeof cle !== 'string' || !cle) throw new Error('Champ local_key absent de la réponse : clé locale non disponible par cette API.');
+  secrets.add(cle);
+  const chemin = join(ICI, '.env');
+  writeFileSync(chemin, poserCle(readFileSync(chemin, 'utf8'), cle));
+  log(`Clé locale enregistrée dans tools/.env (TUYA_LOCAL_KEY, ${cle.length} caractères, non affichée).`);
+}
+
 export const HEURE_VALIDE =/^([01]\d|2[0-3]):[0-5]\d$/;
 
 // Points qui bougent seuls (mesures, état de travail) : exclus du contrôle de non-régression.
@@ -294,7 +327,7 @@ async function actionEcrireDebut(cfg, hhmm, confirme) {
   log(`État du câble : ${apres.get('x_work_st_debug')} (${apres.get('x_work_state')})`);
 }
 
-const AIDE = `Actions : token | appareils | fonctions | spec | etat | releve [--shadow] | compare <f1> <f2> | isolement | ecrire-debut <HH:MM> --confirmer
+const AIDE = `Actions : token | appareils | fonctions | spec | etat | releve [--shadow] | compare <f1> <f2> | isolement | cle-locale | ecrire-debut <HH:MM> --confirmer
 Option --iot03 : utilise les chemins /v1.0/iot-03/devices/... (variante non confirmée).`;
 
 async function main(argv) {
@@ -316,6 +349,7 @@ async function main(argv) {
     case 'etat': return actionLire(cfg, 'etat', iot03);
     case 'releve': return actionReleve(cfg, iot03, opt('shadow'));
     case 'isolement': return actionIsolement(cfg);
+    case 'cle-locale': return actionCleLocale(cfg);
     case 'ecrire-debut': return actionEcrireDebut(cfg, reste[0], opt('confirmer'));
     default: console.log(AIDE); process.exitCode = 1;
   }

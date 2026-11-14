@@ -113,6 +113,7 @@ T1 à T3 passés le 2026-11-11 (voir `docs/tuya-findings.md`). Compte principal 
 - [x] T6 supprimé : plus de programmation de préconditionnement (la partie API, une seule plage et réglages inchangés, était déjà réussie)
 - [ ] T7 : désactivation de la charge les soirs « pas de charge nécessaire »
 - [ ] T4 et T0b **reportés** (pas levés) : à faire avant la mise en service de la phase 2b
+- [ ] Tests du pilotage local L1 à L4 (`tools/tuya-local-test.py`, détail dans `docs/tuya-findings.md`) : repli sans internet, et base d'une éventuelle appli (volet produit)
 
 ### Tests du point d'arrêt
 
@@ -187,7 +188,7 @@ T1 à T3 passés le 2026-11-11 (voir `docs/tuya-findings.md`). Compte principal 
 ### Tâches (`dev-web`)
 
 - Champ « Jeton d'accès » et « Adresse du service » dans la vue Paramètres (stockés localement).
-- Bouton « Programmer la charge » sous le résultat, actif seulement si le service est configuré.
+- Bouton « Programmer la charge » sous le résultat, avec l'heure en petit dessous (« démarrage 00:35 ») ; « Désactiver la charge » les soirs sans charge. Actif seulement si le service est configuré.
 - **Alerte de confirmation** après chaque appui, fondée sur la relecture Tuya renvoyée par le service :
   - **OK** (vert) : « Charge programmée : démarrage 00:35 », heure relue sur le câble ; ou « Charge désactivée pour cette nuit ».
   - **KO** (rouge, bien visible) : cause en clair (service injoignable, jeton refusé, câble hors ligne, valeur relue différente, délai dépassé), puis l'heure à régler à la main dans Smart Life et un lien vers la vue Aide.
@@ -206,6 +207,12 @@ T1 à T3 passés le 2026-11-11 (voir `docs/tuya-findings.md`). Compte principal 
 
 ---
 
-## Phase 3 – Optionnelle
+## Phase 3 – Volet produit (après la phase 2c)
 
-Application Android native (widget, rappel du soir), avec `testeur-relecteur` qui compare ses résultats à `tests/golden-cases.json`. À décider après la phase 2.
+Options, priorités, étapes et critères d'arrêt dans `docs/business-cases.md`. Les règles de `CLAUDE.md` s'appliquent aussi à ce volet.
+
+- [ ] Mails envoyés à Tuya et à Stellantis (Mobilisights)
+- [ ] Page gratuite avec profils de voiture, liste d'attente et liens d'affiliation (options A et G)
+- [ ] Vidéo de démonstration et proposition au fabricant du câble (option D)
+- [ ] Décision vers le 7 décembre : panneau pour le fabricant (D), appli Android du câble (B), affiliation et appli qui complète MyDS (G, F), ou arrêt
+- [ ] Toute application Android : `testeur-relecteur` compare ses résultats à `tests/golden-cases.json`

@@ -17,7 +17,9 @@ Chaque soir il lit la batterie restante dans l'appli MyDS, la saisit dans une pa
 ## Objectifs
 
 1. **Phase 1** : la page en ligne sur GitHub Pages, installable sur l'écran d'accueil Android, utilisable hors ligne, paramètres conservés.
-2. **Phase 2** : un bouton « Programmer la prise » dans la page, qui règle la prise via l'API cloud Tuya à travers un petit service (Cloudflare Worker). Le réglage manuel dans Smart Life reste toujours possible.
+2. **Phase 2** : un bouton « Programmer la charge » dans la page, qui règle la plage de charge du câble via l'API cloud Tuya à travers un petit service (Cloudflare Worker). Le réglage manuel dans Smart Life reste toujours possible.
+
+3. **Volet produit**, après la phase 2c : tester si l'outil peut servir à d'autres et se monétiser. Options, priorités et critères d'arrêt dans `docs/business-cases.md`. L'usage personnel passe en premier.
 
 Le détail, les critères d'acceptation et les points d'arrêt sont dans `PLAN.md`.
 
@@ -64,7 +66,7 @@ site/            page publiée (index.html, calc.js, manifest, service worker, i
 worker/          Cloudflare Worker (phase 2)
 tools/           scripts d'exploration (sonde Tuya)
 tests/           cas de référence et tests Node (node --test)
-docs/            journal des décisions, résultats Tuya
+docs/            journal des décisions, résultats Tuya, volet produit (business-cases.md)
 .claude/         agents, skills, réglages
 ```
 
