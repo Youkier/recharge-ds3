@@ -76,7 +76,7 @@ Chaque phase se termine par des critères d'acceptation vérifiés par `testeur-
 Le câble (borne portable « dé » 3,7 kW, Wi-Fi) pilote lui-même la charge et possède une fonction de charge différée à **une seule plage**.
 
 - **Recharge de nuit :** plage de charge du câble. Le service n'écrit que le **début** de cette plage ; la fin reste la fin des heures creuses.
-- **Préconditionnement :** programmation Smart Life fixe (marche 30 min avant le départ), réglée une fois par Mathieu, jamais touchée par le code. C'est un confort : en cas d'échec, la voiture préconditionne sur sa batterie.
+- **Préconditionnement :** sur la batterie de la voiture, sans rallumage du câble le matin (décision du 2026-11-11, confirmée le 2026-11-14). Plus aucune programmation Smart Life ; le code n'en crée ni n'en modifie jamais.
 - **Repli** si la plage du câble n'est pas accessible en écriture par l'API : compte à rebours ou minuteries de l'appareil.
 
 ### Test préalable, sans compte Tuya (Mathieu, 20 min, voiture branchée)
@@ -84,7 +84,7 @@ Le câble (borne portable « dé » 3,7 kW, Wi-Fi) pilote lui-même la charge et
 | # | Test | Si échec |
 |---|---|---|
 | T0a | Plage du câble de +5 à +10 min, programmation Smart Life « marche » à +20 min : la charge démarre à +5, s'arrête à +10, reprend à +20 | Reprise à +20 impossible : la plage bloque la programmation, passer au repli |
-| T0b | Même essai, box coupée juste après le réglage | Charge de nuit absente : **Arrêt**. Seule la reprise à +20 échoue : dérogation à la règle n°1 limitée au préconditionnement, décision de Mathieu |
+| T0b | Même essai, box coupée juste après le réglage. **Reporté avec T4** (2026-11-14), à faire avant la mise en service de la phase 2b | Charge de nuit absente : **Arrêt**. Seule la reprise à +20 échoue : dérogation à la règle n°1 limitée au préconditionnement, décision de Mathieu |
 
 Tant que T0 n'est pas fait, tout le travail de la phase 2a repose sur l'hypothèse ci-dessus. T0 doit être passé avant le début de la phase 2b.
 
@@ -103,6 +103,17 @@ Tant que T0 n'est pas fait, tout le travail de la phase 2a repose sur l'hypothè
 
 Les tests sont lancés par la session principale avec Mathieu, commande par commande.
 
+### Reprise (état au 2026-11-14)
+
+T1 à T3 passés le 2026-11-11 (voir `docs/tuya-findings.md`). Compte principal délié et Access Secret régénéré ; aucun identifiant utilisable sur le PC.
+
+- [x] Câble réappairé sur le compte dédié (propriétaire), seul relié au projet
+- [x] Nouveaux identifiants dans `tools/.env`, puis `node tools/tuya-probe.mjs isolement` refuse les 4 lectures (2026-11-14)
+- [x] T5 validé par Mathieu (2026-11-14)
+- [x] T6 supprimé : plus de programmation de préconditionnement (la partie API, une seule plage et réglages inchangés, était déjà réussie)
+- [ ] T7 : désactivation de la charge les soirs « pas de charge nécessaire »
+- [ ] T4 et T0b **reportés** (pas levés) : à faire avant la mise en service de la phase 2b
+
 ### Tests du point d'arrêt
 
 | # | Test | Si échec |
@@ -112,14 +123,18 @@ Les tests sont lancés par la session principale avec Mathieu, commande par comm
 | T3 | Écrire le début de plage par l'API : la nouvelle heure apparaît dans l'écran du câble dans Smart Life, et la charge démarre à cette heure (essai à +5 min) | Arrêt, ou repli sur décision de Mathieu |
 | T4 | La plage écrite par l'API s'exécute avec internet coupé côté box (essai de 10 min) | **Arrêt**, ou dérogation explicite à la règle n°1 consignée dans `docs/decisions.md` |
 | T5 | Voiture branchée, charge bloquée depuis plus de 2 h : la charge démarre bien au début de plage | Arrêt : problème indépendant de l'API |
-| T6 | Non-régression : après deux écritures le même soir, une seule plage existe ; le courant, la fin de plage et la programmation de préconditionnement sont inchangés | Arrêt |
+| ~~T6~~ | Supprimé le 2026-11-14 : plus de programmation de préconditionnement. La partie API (une seule plage, courant et fin inchangés après plusieurs écritures) a réussi le 2026-11-11 et reste un critère de la phase 2b | — |
+| T7 | Soir « pas de charge nécessaire » : identifier comment **désactiver la charge** (arrêt dans Smart Life, relevé avant/après, comparaison), puis vérifier que plage désactivée + charge désactivée = aucune charge, voiture branchée. Vérifier aussi que l'écriture du soir suivant (début de plage + activation) relance bien la charge | Arrêt du cas « aucune charge » : l'aide reste en mode manuel pour ces soirs |
 
 ### Décisions à prendre en fin de phase
 
 - **Compte Smart Life :** compte dédié retenu dès le départ (voir étape 2 ci-dessus). Avant la phase 2b, l'Access Secret est régénéré et la nouvelle valeur ne va que dans les secrets Cloudflare.
-- **Heure déjà passée** (bouton pressé après l'heure de démarrage calculée) : démarrer tout de suite, ou refuser avec un message. Jamais de report silencieux au lendemain.
-- **Soirs d'oubli :** la plage reste-t-elle active d'un jour sur l'autre (la voiture charge à l'heure de la veille) ou faut-il un autre comportement ?
-- **Contrat du service** (`POST /api/programmer`, `GET /api/etat`) figé, pour que les phases 2b et 2c avancent sans se bloquer.
+- **Heure déjà passée** (décidé le 2026-11-14) : démarrage immédiat, le service écrit l'heure actuelle comme début de plage ; l'alerte OK le dit (« démarrage immédiat, l'heure calculée était passée »). Jamais de report silencieux au lendemain.
+- **Soirs d'oubli** (décidé le 2026-11-14) : rien de spécial, la plage de la veille reste active et la voiture charge à la même heure.
+- **Contrat du service** (décidé le 2026-11-14) :
+  - `POST /api/programmer`, corps `{"allumage":"HH:MM"}` (début de plage, plage activée, charge réactivée si besoin) ou `{"desactiver":true}` (plage et charge désactivées, T7). `GET /api/etat` : lecture seule. Jeton obligatoire.
+  - Succès, après relecture sur le câble : `{"ok":true,"debut":"HH:MM","fin":"HH:MM","plage_active":bool,"charge_active":bool}` (plus `"immediat":true` si l'heure était passée).
+  - Échec : `{"ok":false,"erreur":"hors_ligne"|"jeton"|"tuya"|"delai"|"relecture_differente"}`, sans détail interne. Erreurs de requête : 400 (corps invalide), 401 (jeton), 429 (limite d'appels).
 
 **Fin de phase :** rapport court du chef de projet (ce qui marche, ce qui ne marche pas, recommandation) et décision de Mathieu : continuer, adapter ou arrêter. `tools/.env` est supprimé du PC une fois la phase close.
 
@@ -134,8 +149,8 @@ Les tests sont lancés par la session principale avec Mathieu, commande par comm
 ### Tâches (`tuya-integrateur`)
 
 - `worker/` : Cloudflare Worker (JavaScript, Web Crypto, aucune dépendance d'exécution).
-- `POST /api/programmer` avec `{ "allumage": "HH:MM" }` ou `{ "desactiver": true }` : écrit le début de la plage de charge (mécanisme validé en phase 2a). Réponse : ce qui a été réellement réglé, relu sur l'appareil.
-- Le Worker n'écrit **que** le début de plage : jamais le courant, la fin de plage, un autre réglage du câble ou une programmation Smart Life.
+- `POST /api/programmer` avec `{ "allumage": "HH:MM" }` ou `{ "desactiver": true }` : `allumage` écrit le début de la plage et l'active (et réactive la charge si elle était désactivée) ; `desactiver` désactive la plage **et** la charge (mécanisme de T7). Réponse : ce qui a été réellement réglé, **relu sur l'appareil** après l'écriture.
+- Le Worker n'écrit **que** le début et l'activation de la plage, et l'activation de la charge (T7) : jamais le courant, la fin de plage, un autre réglage du câble ou une programmation Smart Life.
 - Heure déjà passée : comportement fixé en fin de phase 2a, avec un test.
 - Erreurs Tuya (câble hors ligne, accès à l'API expiré, délai dépassé de 10 s) : réponse d'erreur explicite et distincte pour chaque cas, sans détail interne.
 - `GET /api/etat` : état du câble et plage en place.
@@ -152,7 +167,8 @@ Les tests sont lancés par la session principale avec Mathieu, commande par comm
 - [ ] Tests unitaires de la signature Tuya (vecteurs de test) et du routage
 - [ ] Appel direct en ligne de commande (pas depuis un navigateur) sans jeton ou avec mauvais jeton : 401
 - [ ] Avec le bon jeton : seules les actions prévues sont possibles, toute autre route ou heure invalide est refusée
-- [ ] Après une programmation : courant, fin de plage et programmation de préconditionnement inchangés
+- [ ] Après une programmation : une seule plage, courant et fin de plage inchangés
+- [ ] La réponse n'annonce un succès que si la valeur relue sur le câble est celle demandée ; sinon erreur explicite
 - [ ] Heure déjà passée : comportement conforme à la décision de fin de phase 2a
 - [ ] Câble hors ligne ou Tuya en erreur (simulés) : erreur explicite, jamais de faux succès
 - [ ] Dépassement de la limite d'appels : 429
@@ -172,15 +188,19 @@ Les tests sont lancés par la session principale avec Mathieu, commande par comm
 
 - Champ « Jeton d'accès » et « Adresse du service » dans la vue Paramètres (stockés localement).
 - Bouton « Programmer la charge » sous le résultat, actif seulement si le service est configuré.
-- Retour visible : « Charge programmée : démarrage 00:35 » (relu depuis le service) ou erreur claire + rappel de l'heure à régler à la main + lien vers la vue Aide.
-- Cas « aucune charge » : le bouton désactive le démarrage programmé.
-- Le préconditionnement reste une programmation fixe dans Smart Life, jamais modifiée par le service.
+- **Alerte de confirmation** après chaque appui, fondée sur la relecture Tuya renvoyée par le service :
+  - **OK** (vert) : « Charge programmée : démarrage 00:35 », heure relue sur le câble ; ou « Charge désactivée pour cette nuit ».
+  - **KO** (rouge, bien visible) : cause en clair (service injoignable, jeton refusé, câble hors ligne, valeur relue différente, délai dépassé), puis l'heure à régler à la main dans Smart Life et un lien vers la vue Aide.
+  - Réponse incertaine (délai dépassé, relecture impossible) : traitée comme **KO**, avec « vérifiez dans Smart Life ». Jamais d'alerte OK sans relecture conforme.
+- Cas « aucune charge » : le bouton désactive la plage et la charge (T7).
+- Préconditionnement sur la batterie : aucune programmation Smart Life, rien à régler par le service.
 - Politique CSP stricte dans la page : `connect-src` limité à la page et à l'adresse du service.
 
 ### Critères d'acceptation
 
 - [ ] Programmation réussie depuis le Pixel, constatée dans l'écran du câble dans Smart Life
-- [ ] Service coupé, jeton faux, câble hors ligne : message d'erreur distinct, mode manuel rappelé, aide accessible hors ligne
+- [ ] Service coupé, jeton faux, câble hors ligne : alerte KO avec message distinct, mode manuel rappelé, aide accessible hors ligne
+- [ ] Alerte OK affichée seulement avec une valeur relue conforme (vérifié en simulant une relecture différente)
 - [ ] Aucun autre site n'est publié sur `youkier.github.io` (le stockage local, donc le jeton, y serait partagé), ou risque accepté dans `docs/decisions.md`
 - [ ] Une semaine d'usage réel sans intervention manuelle imprévue
 

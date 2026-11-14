@@ -106,14 +106,16 @@ La sonde lit `tools/.env` elle-même ; commandes : `node tools/tuya-probe.mjs <a
 | Test | Résultat | Détails | Date |
 |---|---|---|---|
 | T0a Plage du câble + programmation Smart Life | **Réussi avec effet de bord** | Observé par Mathieu : la plage du câble se règle, s'active et la charge a lieu sur la plage. Quand la programmation Smart Life « marche à 7h » se déclenche, elle **désactive la plage** (celle-ci reste désactivée ensuite). Conséquence : la plage doit être réactivée chaque soir, sinon pas de charge la nuit suivante | 2026-11-11 |
-| T0b Même essai, box coupée | Non fait | | |
+| T0b Même essai, box coupée | **Reporté** avec T4 | À faire avant la mise en service de la phase 2b | 2026-11-14 |
 | T1 Lecture de l'état | **Réussi** | Jeton OK ; état lisible uniquement via `/v2.0/cloud/thing/{id}/shadow/properties` (29 points de données fabricant) ; câble seul visible dans la console (contrôle visuel) | 2026-11-11 |
 | T2 Identification du réglage de plage | **Réussi** | Début de plage changé dans Smart Life (04:00 → 04:30) : seul `x_charge_mode` change, `ss` passe de `"04:00"` à `"04:30"`, rien d'autre ne bouge | 2026-11-11 |
 | T3 Écrire le début de plage par l'API | **Réussi** | Deux écritures réelles (`ecrire-debut --confirmer`) : 04:00 → 23:08 puis 23:08 → 23:05, relues conformes, aucun autre réglage modifié. Smart Life affiche la nouvelle heure (Mathieu). À 23:05 le câble passe `WAIT` → `WORKING`, voiture en charge (Mathieu) : `x_metrics` L1 = [2200, 153, 33] soit 220,0 V, 15,3 A, 3,3 kW ; `cp` 6.5 | 2026-11-11 |
 | T6 (partiel) Écritures répétées | **Réussi pour la partie API** | 3e écriture le même soir (23:05 → 04:00) pendant la charge : relue conforme, une seule plage, courant/plafond/options inchangés. **Le câble applique la nouvelle plage immédiatement** : charge arrêtée en moins de 5 s (`WAIT`, 0 A, `cp` 9.5). Reste à vérifier par Mathieu : programmation de préconditionnement intacte dans Smart Life | 2026-11-11 |
 | T3b Réactivation de la plage par l'API | **Réussi** | Plage désactivée dans Smart Life (charge immédiate en cours, `m` = 0) ; écriture `m` = 2 avec la même plage 04:00–06:00 : relue conforme, charge arrêtée en moins de 5 s (`WAIT`, 0 A, `cp` 9.5), aucun autre réglage modifié | 2026-11-11 |
-| T4 Exécution sans internet | | | |
-| T5 Redémarrage de la charge après 2 h prise éteinte | | | |
+| T6 (suite) Programmation de préconditionnement | **Supprimé** | Plus de programmation Smart Life : préconditionnement sur la batterie | 2026-11-14 |
+| T4 Exécution sans internet | **Reporté** (pas levé) | À faire avant la mise en service de la phase 2b. Raison (Mathieu) : la plage s'exécute de la même façon, réglée à la main ou par l'API | 2026-11-14 |
+| T5 Redémarrage de la charge après 2 h prise éteinte | **Validé par Mathieu** | Constat en usage, pas d'essai instrumenté par la sonde | 2026-11-14 |
+| T7 Désactivation de la charge (soir sans charge) | À faire | Mécanisme à identifier par relevé avant/après un arrêt de charge dans Smart Life. Ne rien écrire avant (`x_do_charge` reste interdit tant que son effet n'est pas observé) | |
 
 ## Décision
 
