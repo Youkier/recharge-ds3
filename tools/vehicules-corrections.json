@@ -31,5 +31,12 @@
     { "marque": "Alpine", "de": "A290 Electric 220 hp", "vers": "A290", "version": "220 ch" }
   ],
   "exclure": [],
-  "ajouter": []
+  "ajouter": [
+    { "marque": "Skoda", "modele": "Elroq", "version": "RS", "an": 2025, "cap": 79, "source": "https://cdn.skoda-storyboard.com/2025/06/Skoda_Elroq_Technical_data_d5686460.pdf", "note": "Fiche Skoda du 05/05/2025 : brute (nette) 84 (79) kWh ; lue le 2026-11-15" },
+    { "marque": "Renault", "modele": "Twingo E-Tech", "version": "27,5 kWh 82 ch", "an": 2026, "cap": 27.5, "source": "https://cdn.group.renault.com/ren/ch/renault-new-cars/pricelists/Renault_Twingo_E-TECH_PL_FRA.pdf", "note": "Tarif officiel Renault Suisse : « capacité utilisable (kWh) 27.5 »" },
+    { "marque": "Peugeot", "modele": "e-208", "version": "54 kWh 156 ch", "an": 2025, "cap": 51, "source": "https://www.bevolt.com/fr-fr/automobile/actualites/batterie/265698-peugeot-e-208-quelle-est-la-vraie-capacite-de-sa-batterie/", "note": "Automobile Propre, 28/04/2025 : 51 kWh utiles pour 54 bruts depuis fin 2024, confirmé par Peugeot (Peugeot annonçait d'abord 48,1)" },
+    { "marque": "Volkswagen", "modele": "ID.3", "version": "Neo 50 kWh 170 ch", "an": 2026, "cap": 50, "source": "https://www.volkswagen-newsroom.com/en/press-releases/world-premiere-of-the-id3-neo-new-name-new-design-new-interior-and-new-technologies-20320", "note": "Newsroom VW du 15/04/2026 : « 50 kWh (net) », 125 kW" },
+    { "marque": "Volkswagen", "modele": "ID.3", "version": "Neo 58 kWh 190 ch", "an": 2026, "cap": 58, "source": "https://www.volkswagen-newsroom.com/en/press-releases/world-premiere-of-the-id3-neo-new-name-new-design-new-interior-and-new-technologies-20320", "note": "« 58-kWh battery (net) and 140 kW »" },
+    { "marque": "Volkswagen", "modele": "ID.3", "version": "Neo 79 kWh 231 ch", "an": 2026, "cap": 79, "source": "https://www.volkswagen-newsroom.com/en/press-releases/world-premiere-of-the-id3-neo-new-name-new-design-new-interior-and-new-technologies-20320", "note": "« 79-kWh battery (net) with 170 kW »" }
+  ]
 }
