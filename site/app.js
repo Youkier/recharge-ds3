@@ -567,5 +567,19 @@ import { validerAdresse, validerJeton, choisirDemande, libelleBouton, consigneMa
     });
   });
 
+  // Stockage persistant : sans lui, Chrome peut vider les réglages et le jeton si le téléphone
+  // manque de place. Chrome l'accorde en général à une page installée, sans fenêtre de demande.
+  // Facultatif : un refus ou une erreur ne change rien au reste de la page.
+  function protegerStockage() {
+    var s = navigator.storage;
+    if (!s || !s.persist || !s.persisted) return;
+    s.persisted().then(function (ok) { return ok || s.persist(); }).then(function (ok) {
+      $("stockNote").textContent = ok
+        ? "Réglages enregistrés dans ce navigateur, protégés contre l'effacement automatique."
+        : "Réglages enregistrés dans ce navigateur. Non protégés : Chrome peut les effacer si le téléphone manque de place (installer la page sur l'écran d'accueil aide).";
+    }).catch(function () { /* stockage ordinaire, la page fonctionne pareil */ });
+  }
+
   load(); loadService(); chargerVehicules(); render(); route(false);
+  protegerStockage();
 })();
