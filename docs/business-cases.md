@@ -17,7 +17,9 @@ Aucune option ne remplace un salaire. Les deux plus réalistes rapportent quelqu
 | Note du câble | 4,5 | Relevé |
 | Écriture de la plage par le cloud | Fonctionne (T1 à T3) | Testé |
 | Cloisonnement d'un projet Tuya | Aucun : les clés ouvrent tout le compte relié | Testé |
-| Pilotage local | Inconnu | Tests L1 à L4 |
+| Pilotage local | Lecture et écriture de la plage en local, protocole Tuya 3.5 (L1 à L3) ; sans internet non testé (L4) | Testé le 2026-11-15/16 |
+| Clé locale pour un client | Invisible dans Smart Life ; obtenue seulement par le cloud Tuya (compte développeur, ou connexion de partage d'appareils avec l'identifiant d'application de Home Assistant) ; change à chaque réappairage | Recherche du 2026-11-16 |
+| Matter, Google Home, Alexa | Aucun (ni logo Matter, ni compatibilité annoncée) | Vérifié par Mathieu |
 | Taux d'achat d'une appli compagnon | 1 % seul, 3 % avec bouche-à-oreille, 10 % avec un lien du fabricant | Hypothèse |
 
 ## Options et priorités
@@ -36,7 +38,7 @@ Points clés par option :
 
 - **A** : profils de voiture, liste d'attente en trois questions (voiture, câble, intérêt pour le réglage automatique), formulaire hébergé en Europe. Objectif : 100 inscrits en 30 jours, dont 20 avec ce câble. Arrêt sous 30 inscrits.
 - **D** : demander d'abord ce qui ne coûte rien au fabricant (contact technique, stabilité du réglage `x_charge_mode`, lien vers l'outil). Forfait plutôt que licence par câble. Même proposition à deux autres marques de câbles Smart Life. Le dépôt étant public, la protection est la rapidité, pas le secret.
-- **B** : rien avant L1 et L2 réussis. Essai gratuit, réglage automatique payant. L'appli relit le format avant chaque écriture et ne l'écrit pas s'il a changé. Contrainte : téléphone sur le Wi-Fi de la maison, à compenser par un réglage automatique à l'arrivée.
+- **B** : L1 à L3 réussis : la commande locale n'est plus le verrou, **la clé locale l'est**. Seule voie acceptable pour un produit : chaque client se connecte avec son propre compte Smart Life (code utilisateur + QR code) depuis l'appli, la clé reste sur son téléphone, puis pilotage local sans serveur ; il faut pour cela **notre propre identifiant d'application Tuya** pour la connexion de partage d'appareils (`tuya-device-sharing-sdk`). Écartés : emprunter l'identifiant de Home Assistant (outils type tuya-local-key, acceptables entre bricoleurs, pas pour une appli vendue), un compte Smart Life générique de l'éditeur auquel les clients partagent leur câble (point unique sensible, données centralisées), extraire la clé de Smart Life ou reflasher le câble. Google Home n'offrirait qu'un marche/arrêt par le cloud (contraire à la règle 1) ; Matter (type borne de recharge, horaires de charge depuis la 1.4) supprimerait le problème mais exige un nouveau firmware du fabricant. Essai gratuit, réglage automatique payant. L'appli relit le format avant chaque écriture et ne l'écrit pas s'il a changé. Contrainte : téléphone sur le Wi-Fi de la maison, à compenser par un réglage automatique à l'arrivée.
 - **G** : pas de bandeau publicitaire. Calcul personnel du coût de recharge par offre, classé par prix, Tempo et tarif réglementé compris, avec une page qui explique le financement (obligation légale des comparateurs). Amazon paie 4,5 à 5 % en Auto & moto. Aucun programme d'affiliation énergie public trouvé hors ekWateur (Affilae) : écrire aux fournisseurs. L'économie d'une offre spéciale voiture électrique est mince (environ 60 € par an).
 - **F** : compléter MyDS (widget, alertes, âge des données) plutôt que la remplacer. Consultation seule d'abord (`data:telemetry`). **Par la voie officielle, un serveur dans l'UE est obligatoire** (échange du jeton avec un secret client, certificat délivré par Stellantis, réception des notifications de commandes) : coûts, sécurité et RGPD à prévoir. L'API permet ensuite de programmer la charge (`nextDelayedTime`) et le préconditionnement (4 programmes). Freins : l'utilisateur doit activer la connectivité partenaires, « Partner Services » n'existe pas dans tous les pays (France à confirmer), consentement global sur le lot demandé, portail non mis à jour depuis mars 2024. Par la voie officieuse (identifiants des applis officielles), le seul code libre des commandes est sous GPL-3.0.
 - **C** : le cloud Tuya ne sert, au mieux, qu'à récupérer une fois la clé locale.
@@ -54,7 +56,7 @@ Points clés par option :
 
 | Quand | Étape | Option |
 |---|---|---|
-| ~~Dès que possible~~ | ~~Demandes à Tuya et à Stellantis~~ : envoyées le 2026-11-14 (ticket Tuya, formulaire mobilisights.com). Relance vers le 5 décembre | B, C, E, F |
+| ~~Dès que possible~~ | ~~Demandes à Tuya et à Stellantis~~ : envoyées le 2026-11-14 (ticket Tuya, formulaire mobilisights.com). Relance vers le 5 décembre, avec la question : un éditeur tiers peut-il obtenir son propre identifiant pour la connexion de partage d'appareils, à quelles conditions et à quel prix ? | B, C, E, F |
 | Après le test local | Page gratuite : profils, liste d'attente, 2 ou 3 liens d'affiliation, page « comment c'est financé » ; présentation sur 2 ou 3 forums | A, G |
 | Après la vidéo | Mail court au fabricant, même proposition à deux autres marques | D |
 | +2 semaines | Relance du fabricant, nouveau relevé des ventes Amazon | D |
@@ -65,6 +67,6 @@ Points clés par option :
 ### Décision du 7 décembre
 
 - Contrat proposé par le fabricant → **D** (panneau Smart Life).
-- Sinon, test local réussi et au moins 20 inscrits avec ce câble → **B**.
+- Sinon, test local réussi, **voie officielle et abordable pour obtenir la clé locale** (réponse de Tuya) et au moins 20 inscrits avec ce câble → **B**. Sans voie officielle, B se réduit à un outil pour bricoleurs, rattaché à A.
 - Test local en échec → **G** et **F** deviennent les pistes principales.
 - Aucune condition remplie → arrêt du volet produit ; l'outil reste pour usage personnel.
