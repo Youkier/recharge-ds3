@@ -32,6 +32,17 @@ Vérification « câble seul » : faite visuellement par Mathieu dans la console
 
 Conclusion : **la sélection d'appareils à la liaison ne cloisonne pas l'accès**. Les clés d'un projet relié à un compte donnent accès aux appareils de tout ce compte. Seul un compte relié qui ne possède que le câble isole réellement.
 
+**Nouveau test d'isolement (2026-11-14, après reprise)** : compte principal délié, câble réappairé sur le compte dédié (propriétaire), nouvel Access Secret. Le câble reste lisible (jeton OK, 29 points de données via shadow, `x_charge_mode` au même format). Lectures tentées sur un appareil du compte principal :
+
+| Appel | Résultat |
+|---|---|
+| `GET /v1.0/iot-03/devices/{autre}` | refusé, `code=1106 permission deny` |
+| `GET /v1.0/devices/{autre}` | refusé, `code=1106 permission deny` |
+| `GET /v1.0/iot-03/devices/{autre}/status` | refusé, `code=1106 permission deny` |
+| `GET /v2.0/cloud/thing/{autre}/shadow/properties` | refusé, `code=40001900 No space permission` |
+
+Conclusion : **isolement vérifié**, condition de reprise de la phase 2a remplie.
+
 ## Vérifié dans la documentation officielle (2026-11-10, aucun appel réel encore)
 
 | Point | Résultat | Source |
