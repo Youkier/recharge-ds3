@@ -8,6 +8,13 @@ import { validerAdresse, validerJeton, choisirDemande, libelleBouton, consigneMa
   var ids = ["cap", "soh", "target", "dep", "hcStart", "hcEnd", "amp", "volt", "eff", "pHC", "pHP", "mode"];
   var NUMS = ["cap", "soh", "target", "amp", "volt", "eff", "pHC", "pHP"];
   var CAR = ["cap", "soh", "amp", "volt", "eff"];
+  // Rendement proposé selon la puissance (courant × tension) : pertes = 3 % + 250 W fixes.
+  // Source : ADAC, mesure du 06/08/2026 (100 à 300 W pour l'électronique de charge ;
+  // 12,7 à 24,2 % de pertes à 2,3 kW). Donne 90 % à 16 A, valeur validée de la page.
+  function effAuto(amp, volt) {
+    var P = amp * volt / 1000;
+    return P > 0 ? Math.max(1, Math.round(100 * (1 - 0.03 - 0.25 / P))) : NaN;
+  }
   var $ = function (id) { return document.getElementById(id); };
   var radios = function () { return document.querySelectorAll('input[name="mode"]'); };
 
@@ -287,6 +294,13 @@ import { validerAdresse, validerJeton, choisirDemande, libelleBouton, consigneMa
   $("socRange").addEventListener("input", function () { $("soc").value = this.value; render(); });
   $("soc").addEventListener("input", function () { if ($("soc").value !== "") $("socRange").value = $("soc").value; render(); });
 
+  // Changer le courant ou la tension recalcule le rendement ; une saisie manuelle reste jusqu'au prochain changement.
+  ["amp", "volt"].forEach(function (k) {
+    $(k).addEventListener("input", function () {
+      var e = effAuto(Number($("amp").value), Number($("volt").value));
+      if (isFinite(e)) $("eff").value = e;
+    });
+  });
   ids.filter(function (k) { return k !== "mode"; }).forEach(function (k) { $(k).addEventListener("input", render); $(k).addEventListener("change", render); });
   Array.prototype.forEach.call(radios(), function (r) { r.addEventListener("change", render); });
   $("resetBtn").addEventListener("click", function () {
