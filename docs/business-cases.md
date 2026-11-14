@@ -28,7 +28,7 @@ Aucune option ne remplace un salaire. Les deux plus réalistes rapportent quelqu
 | 2 | **D.** Fonction vendue au fabricant du câble (panneau Smart Life) | Forfait de 2 000 à 5 000 €, ou un lien qui fait monter B | 2 heures | 5 à 8 week-ends si accord | Le fabricant |
 | 3 | **B.** Appli Android de pilotage local du câble, 6 € | Environ 1 400 € (460 à 4 600 €) | 20 minutes (test local) | 5 à 8 week-ends | Test local, clé locale, Google Play |
 | 4 | **G.** Outil gratuit financé par l'affiliation (offre d'électricité, câble) | Environ 1 100 € (90 à 7 500 €) | 1 soirée | 3 à 5 week-ends | Trafic, programmes d'affiliation |
-| 5 | **F.** Appli tierce qui complète MyDS (consultation d'abord) | Environ 3 200 € (640 à 12 750 €), révocable | 1 soirée d'essai | 4 à 6 week-ends, puis autant pour les commandes | Stellantis, Google Play |
+| 5 | **F.** Appli tierce qui complète MyDS (consultation d'abord) | Environ 3 200 € (640 à 12 750 €) avant frais de serveur, révocable | 1 soirée d'essai | 4 à 6 week-ends, puis autant pour les commandes | Stellantis (accès officiel + serveur), Google Play |
 | 6 | **E.** Programmation de la voiture par Stellantis | Devient une fonction de F | 1 soirée d'essai | 2 à 3 mois | Stellantis ou un intermédiaire |
 | 7 | **C.** Service par le cloud Tuya | Négatif (licence de 5 000 $ la première année) | Un mail | 3 à 5 week-ends | Tuya |
 
@@ -38,7 +38,7 @@ Points clés par option :
 - **D** : demander d'abord ce qui ne coûte rien au fabricant (contact technique, stabilité du réglage `x_charge_mode`, lien vers l'outil). Forfait plutôt que licence par câble. Même proposition à deux autres marques de câbles Smart Life. Le dépôt étant public, la protection est la rapidité, pas le secret.
 - **B** : rien avant L1 et L2 réussis. Essai gratuit, réglage automatique payant. L'appli relit le format avant chaque écriture et ne l'écrit pas s'il a changé. Contrainte : téléphone sur le Wi-Fi de la maison, à compenser par un réglage automatique à l'arrivée.
 - **G** : pas de bandeau publicitaire. Calcul personnel du coût de recharge par offre, classé par prix, Tempo et tarif réglementé compris, avec une page qui explique le financement (obligation légale des comparateurs). Amazon paie 4,5 à 5 % en Auto & moto. Aucun programme d'affiliation énergie public trouvé hors ekWateur (Affilae) : écrire aux fournisseurs. L'économie d'une offre spéciale voiture électrique est mince (environ 60 € par an).
-- **F** : compléter MyDS (widget, alertes, âge des données) plutôt que la remplacer. Consultation seule d'abord : pas d'enrôlement SMS, pas de contrainte GPL, aucun serveur. Les commandes passent par un service plus fragile et le seul code libre est sous GPL-3.0.
+- **F** : compléter MyDS (widget, alertes, âge des données) plutôt que la remplacer. Consultation seule d'abord (`data:telemetry`). **Par la voie officielle, un serveur dans l'UE est obligatoire** (échange du jeton avec un secret client, certificat délivré par Stellantis, réception des notifications de commandes) : coûts, sécurité et RGPD à prévoir. L'API permet ensuite de programmer la charge (`nextDelayedTime`) et le préconditionnement (4 programmes). Freins : l'utilisateur doit activer la connectivité partenaires, « Partner Services » n'existe pas dans tous les pays (France à confirmer), consentement global sur le lot demandé, portail non mis à jour depuis mars 2024. Par la voie officieuse (identifiants des applis officielles), le seul code libre des commandes est sous GPL-3.0.
 - **C** : le cloud Tuya ne sert, au mieux, qu'à récupérer une fois la clé locale.
 
 ## Étapes
@@ -54,7 +54,7 @@ Points clés par option :
 
 | Quand | Étape | Option |
 |---|---|---|
-| Dès que possible | Mails à Tuya (conditions d'accès tiers) et à Stellantis via Mobilisights | B, C, E, F |
+| ~~Dès que possible~~ | ~~Demandes à Tuya et à Stellantis~~ : envoyées le 2026-11-14 (ticket Tuya, formulaire mobilisights.com). Relance vers le 5 décembre | B, C, E, F |
 | Après le test local | Page gratuite : profils, liste d'attente, 2 ou 3 liens d'affiliation, page « comment c'est financé » ; présentation sur 2 ou 3 forums | A, G |
 | Après la vidéo | Mail court au fabricant, même proposition à deux autres marques | D |
 | +2 semaines | Relance du fabricant, nouveau relevé des ventes Amazon | D |

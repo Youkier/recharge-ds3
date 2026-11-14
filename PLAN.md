@@ -211,7 +211,7 @@ T1 à T3 passés le 2026-11-11 (voir `docs/tuya-findings.md`). Compte principal 
 
 Options, priorités, étapes et critères d'arrêt dans `docs/business-cases.md`. Les règles de `CLAUDE.md` s'appliquent aussi à ce volet.
 
-- [ ] Mails envoyés à Tuya et à Stellantis (Mobilisights)
+- [x] Demandes envoyées à Tuya (ticket) et à Stellantis (formulaire Mobilisights), 2026-11-14 ; relance vers le 5 décembre
 - [ ] Page gratuite avec profils de voiture, liste d'attente et liens d'affiliation (options A et G)
 - [ ] Vidéo de démonstration et proposition au fabricant du câble (option D)
 - [ ] Décision vers le 7 décembre : panneau pour le fabricant (D), appli Android du câble (B), affiliation et appli qui complète MyDS (G, F), ou arrêt
