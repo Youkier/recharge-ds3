@@ -38,7 +38,11 @@ import { validerAdresse, validerJeton, choisirDemande, libelleBouton, consigneMa
     try { s = JSON.parse(localStorage.getItem(KEY) || "null"); } catch (e) { s = null; }
     var p = Object.assign({}, DEFAULTS);
     if (s && typeof s === "object") Object.keys(DEFAULTS).forEach(function (k) { if (s[k] !== null && s[k] !== undefined) p[k] = s[k]; });
-    if (AMPS.indexOf(Number(p.amp)) < 0) p.amp = DEFAULTS.amp; // ancienne valeur saisie à la main, absente de la liste
+    if (AMPS.indexOf(Number(p.amp)) < 0) { // ancienne valeur saisie à la main, absente de la liste
+      p.amp = DEFAULTS.amp;
+      var e = effAuto(p.amp, Number(p.volt)); // le rendement suit le courant ramené à 16 A
+      if (isFinite(e)) p.eff = e;
+    }
     ids.forEach(function (k) { setVal(k, p[k]); });
     $("soc").value = p.soc; $("socRange").value = p.soc;
   }
