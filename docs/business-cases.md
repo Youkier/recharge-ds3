@@ -19,6 +19,7 @@ Aucune option ne remplace un salaire. Les deux plus réalistes rapportent quelqu
 | Cloisonnement d'un projet Tuya | Aucun : les clés ouvrent tout le compte relié | Testé |
 | Pilotage local | Lecture et écriture de la plage en local, protocole Tuya 3.5 (L1 à L3) ; sans internet non testé (L4) | Testé le 2026-11-15/16 |
 | Clé locale pour un client | Invisible dans Smart Life ; obtenue seulement par le cloud Tuya (compte développeur, ou connexion de partage d'appareils avec l'identifiant d'application de Home Assistant) ; change à chaque réappairage | Recherche du 2026-11-16 |
+| Essai gratuit IoT Core de Tuya (voie cloud) | Expire le 2026-12-11 ; prolongation de 6 mois à demander, sans garantie de durée | Constaté par Mathieu le 2026-11-15 |
 | Matter, Google Home, Alexa | Aucun (ni logo Matter, ni compatibilité annoncée) | Vérifié par Mathieu |
 | Taux d'achat d'une appli compagnon | 1 % seul, 3 % avec bouche-à-oreille, 10 % avec un lien du fabricant | Hypothèse |
 
@@ -57,16 +58,21 @@ Points clés par option :
 | Quand | Étape | Option |
 |---|---|---|
 | ~~Dès que possible~~ | ~~Demandes à Tuya et à Stellantis~~ : envoyées le 2026-11-14 (ticket Tuya, formulaire mobilisights.com). Relance vers le 5 décembre, avec la question : un éditeur tiers peut-il obtenir son propre identifiant pour la connexion de partage d'appareils, à quelles conditions et à quel prix ? | B, C, E, F |
-| Après le test local | Page gratuite : profils, liste d'attente, 2 ou 3 liens d'affiliation, page « comment c'est financé » ; présentation sur 2 ou 3 forums | A, G |
+| Dès maintenant, en parallèle | **Site public** (`PLAN.md` phase 3a, `docs/cahier-des-charges-site-public.md`) : promesse « la limite de charge à 80 % pour les voitures qui n'en ont pas », une page par modèle, emplacement « Comment régler » qui porte la liste d'attente, le lien du câble et, plus tard, le réglage automatique et les offres d'électricité ; page « comment c'est financé » ; présentation sur 2 ou 3 forums | A, G |
+| Dès maintenant, en parallèle | **Coque Android en pilotage local** (`PLAN.md` phase 3b, `docs/cahier-des-charges-coque-android.md`) : d'abord pour l'usage personnel (plus de dépendance à l'essai IoT Core), prototype de B | B |
 | Après la vidéo | Mail court au fabricant, même proposition à deux autres marques | D |
 | +2 semaines | Relance du fabricant, nouveau relevé des ventes Amazon | D |
-| Vers le 7 décembre | Décision (ci-dessous) | B, D, F, G |
-| +30 jours après la page | Bilan de la liste d'attente | A |
+| Vers le 7 décembre | Décision sur D seulement (ci-dessous) | D |
+| 30 jours après la mise en ligne du site | Bilan : visites, inscrits, dont ceux qui ont ce câble, clics vers le câble | A, G |
+| Début janvier | Décision sur B, G et F (ci-dessous) | B, F, G |
 | En parallèle | Essai personnel de psa_car_controller pendant deux semaines | E, F |
 
-### Décision du 7 décembre
+### Décisions
+
+Revu le 2026-11-15 : il faut 30 jours de mesure après la mise en ligne du site, donc seule l'option D se décide vers le 7 décembre ; le reste début janvier.
 
 - Contrat proposé par le fabricant → **D** (panneau Smart Life).
-- Sinon, test local réussi, **voie officielle et abordable pour obtenir la clé locale** (réponse de Tuya) et au moins 20 inscrits avec ce câble → **B**. Sans voie officielle, B se réduit à un outil pour bricoleurs, rattaché à A.
-- Test local en échec → **G** et **F** deviennent les pistes principales.
+- Sinon, coque Android validée sur le Pixel (phase 3b, lot C3), **voie officielle et abordable pour obtenir la clé locale** (réponse de Tuya) et au moins 20 inscrits avec ce câble → **B**. Sans voie officielle, B se réduit à un outil pour bricoleurs, rattaché à A.
+- Coque Android en échec (lot C3) → **G** et **F** deviennent les pistes principales.
+- Site au-delà de 300 utilisateurs réguliers → **G** : comparaison d'offres d'électricité dans l'emplacement « Comment régler ».
 - Aucune condition remplie → arrêt du volet produit ; l'outil reste pour usage personnel.

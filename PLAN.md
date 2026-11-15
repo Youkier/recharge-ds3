@@ -116,6 +116,9 @@ T1 à T3 passés le 2026-11-11 (voir `docs/tuya-findings.md`). Compte principal 
 - [ ] **Après T7 et la fin des essais sur le câble** : régénérer l'Access Secret Tuya, le poser seulement chez Cloudflare (`wrangler secret put TUYA_ACCESS_SECRET`), puis supprimer `tools/.env` et vider `worker/.dev.vars` (plus aucune clé Tuya sur le PC). **Régénéré et posé chez Cloudflare par Mathieu le 2026-11-15** (secrets du PC périmés) ; `worker/.dev.vars` vidé de ses valeurs (noms seuls, constaté par Mathieu le 2026-11-15) ; reste : supprimer `tools/.env` après L4 (il porte la clé locale)
 - [ ] **À chaque fin de séance** : un seul `git push` (avec résumé des changements de `site/`), puis `npx.cmd wrangler logout`
 - [ ] Tests du pilotage local L1 à L4 (`tools/tuya-local-test.py`, détail dans `docs/tuya-findings.md`) : repli sans internet, et base d'une éventuelle appli (volet produit). **L1, L2, L3 réussis (2026-11-15/16) ; L4 à faire plus tard** (voiture branchée, méthode notée dans `docs/tuya-findings.md`), puis supprimer `tools/.env`
+- [ ] **Essai gratuit IoT Core de Tuya : échéance le 2026-12-11** (constaté par Mathieu le 2026-11-15 ; sans lui, le Worker ne joint plus Tuya). Demander la prolongation de 6 mois vers le 1er décembre (plateforme Tuya → Cloud → Cloud Services → IoT Core → Extend Trial Period), puis à chaque échéance. La sortie durable de cette dépendance est le pilotage local (phase 3b)
+- [ ] **Clé locale du câble copiée dans le gestionnaire de mots de passe de Mathieu** avant toute suppression de `tools/.env` : elle ne se relit que par le cloud Tuya, donc plus du tout si l'essai expire. `tools/.env` n'est supprimé qu'après L4 **et** après le lot C2 de la phase 3b
+- [ ] Réseau de la maison : routeur TP-Link AX55 passé en mode point d'accès (en cours le 2026-11-15), pour que le câble soit joignable depuis les deux Wi-Fi ; adresse du câble réservée dans la box ; puis `scan` et `etat` depuis le Wi-Fi principal
 
 ### Tests du point d'arrêt
 
@@ -209,12 +212,155 @@ T1 à T3 passés le 2026-11-11 (voir `docs/tuya-findings.md`). Compte principal 
 
 ---
 
-## Phase 3 – Volet produit (après la phase 2c)
+## Phase 3 – Volet produit
 
-Options, priorités, étapes et critères d'arrêt dans `docs/business-cases.md`. Les règles de `CLAUDE.md` s'appliquent aussi à ce volet.
+Options, priorités et critères d'arrêt dans `docs/business-cases.md`. Les règles de `CLAUDE.md` s'appliquent aussi à ce volet.
 
-- [x] Demandes envoyées à Tuya (ticket) et à Stellantis (formulaire Mobilisights), 2026-11-14 ; relance vers le 5 décembre
-- [ ] Page gratuite avec profils de voiture, liste d'attente et liens d'affiliation (options A et G)
-- [ ] Vidéo de démonstration et proposition au fabricant du câble (option D)
-- [ ] Décision vers le 7 décembre : panneau pour le fabricant (D), appli Android du câble (B), affiliation et appli qui complète MyDS (G, F), ou arrêt
-- [ ] Toute application Android : `testeur-relecteur` compare ses résultats à `tests/golden-cases.json`
+Décision de Mathieu du 2026-11-15 : **deux pistes avancent en parallèle**, sans attendre la fin de la phase 2c, tant qu'elles ne touchent pas à ce qui sert l'usage personnel.
+
+| Piste | Phase | Cahier des charges | But |
+|---|---|---|---|
+| Site public | 3a | `docs/cahier-des-charges-site-public.md` | Avoir du passage, mesurer la demande, préparer la monétisation |
+| Coque Android | 3b | `docs/cahier-des-charges-coque-android.md` | Pilotage local depuis le Pixel : sécurise l'usage personnel, prototype de l'option B |
+
+### Ordre de priorité à chaque séance
+
+1. **L'usage personnel d'abord** : ce qui reste ouvert dans les phases 2a à 2c (révocation du jeton à tester, T4, L4, semaine d'usage réel, prolongation de l'essai IoT Core avant le 2026-12-11, clé locale mise à l'abri).
+2. Le prochain lot autonome de chaque piste (3a et 3b), lancés en parallèle.
+3. Ce qui attend Mathieu, pour les deux pistes, **en une seule liste** en début et en fin de séance.
+
+### Règles du travail en parallèle
+
+- **Piste site** : écrit seulement dans `public/`, `tools/build-public.mjs` et `tests/public-*.test.mjs`. Ne modifie jamais `site/`, `worker/`, `local/` ni `android/`.
+- **Piste coque** : écrit seulement dans `local/`, `android/`, `tools/tuya-local.mjs`, `tools/gen-vecteurs-tuya-local.py` et `tests/tuya-local*`. Ne modifie `site/` qu'au lot C4.
+- **Fichiers communs** (`PLAN.md`, `CLAUDE.md`, `.gitignore`, `docs/decisions-produit.md`, `tests/README.md`) : modifiés par la session principale seulement, jamais par un sous-agent.
+- Sous-agents : `dev-web` pour la piste site, `tuya-integrateur` pour les lots C1 et C2. Les lots C3 et C4 (Android) sont menés par la session principale.
+- Un commit par lot et par piste. Tous les tests passent avant chaque commit. Relecture par `testeur-relecteur` pour chaque lot qui touche du code. Un seul `git push` en fin de séance, comme avant.
+- Aucune commande qui touche le câble, le téléphone ou une publication sans l'accord de Mathieu, une par une (règle n°11).
+- Rien d'inventé : un fait sur Tuya, Android, Cloudflare, un tarif ou une voiture est lu à sa source et noté avec elle. Si la source est hors des domaines autorisés, la demander à Mathieu.
+
+### Préparation (une fois, avec l'accord de Mathieu)
+
+- [x] Exceptions aux règles n°7 (projet Gradle dans `android/`) et n°9 (pont TCP limité au port 6668 et aux adresses privées) validées et consignées dans `docs/decisions-produit.md` (2026-11-15) ; reste à les reporter dans les règles n°7 et n°9 de `CLAUDE.md`
+- [ ] `.gitignore` : `dist/`, `android/**/build/`, `android/.gradle/`, `android/local.properties`, `*.jks`, `*.keystore`
+- [ ] `tools/hooks/pre-commit` : refuser `*.jks` et `*.keystore`
+- [ ] `.claude/settings.json` : sans demande, `node tools/build-public.mjs*`, le serveur local de `dist/public` (`python -m http.server --bind 127.0.0.1 -d dist/public*`) et la lecture de `developer.android.com` ; avec demande, `node tools/tuya-local.mjs*`, `python tools/gen-vecteurs-tuya-local.py*`, les commandes Gradle et `adb`
+- [ ] `CLAUDE.md` : objectif 3 (les pistes 3a et 3b avancent en parallèle de la phase 2c), structure du dépôt (`public/`, `local/`, `android/`, `dist/`), `tools/tuya-local.mjs` ajouté aux scripts qui chargent `tools/.env` (règle n°3), commandes des deux pistes
+- [ ] `SECURITE.md` : compléments du § 10 du cahier des charges de la coque, avant le lot C4
+
+---
+
+## Phase 3a – Site public
+
+Détail : `docs/cahier-des-charges-site-public.md`. Promesse : « La limite de charge à 80 % pour les voitures qui n'en ont pas, en heures creuses. » Un moteur partagé avec la page personnelle (`calc.js`, liste des véhicules), une interface à part dans `public/`.
+
+### Lots (`dev-web`)
+
+| Lot | Contenu | Autonome ? |
+|---|---|---|
+| S1 | `tools/build-public.mjs`, gabarit de base, accueil avec calcul et première visite en trois questions, tests | Oui |
+| S2 | « Comment régler », `public/donnees/offres.json`, bouton de liste d'attente, lien de partage | Oui |
+| S3 | Guides, pages financement, confidentialité et mentions légales (brouillons), plan du site, balises de partage | Oui, textes à relire par Mathieu |
+| S4 | Pages par modèle : gabarit et contrôles ; aucune page publiée sans source lue | Oui pour le gabarit ; les entrées attendent leurs sources |
+| S5 | Mise en ligne provisoire, non indexable | Non : hébergement à valider |
+| S6 | Nom de domaine, site indexable, mesure d'audience, formulaire, messages sur les forums | Non : Mathieu |
+
+### Ce qu'on attend de Mathieu
+
+Nom du site et domaine ; accord sur l'hébergement ; création du formulaire de liste d'attente ; identité publiée dans les mentions légales ; relecture des textes sur le Pixel ; plus tard, Amazon Partenaires, bouton de don, messages sur les forums. Rien de cela ne bloque les lots S1 à S4.
+
+### Critères d'acceptation
+
+Vérifiés par les tests automatiques :
+
+- [ ] `node tools/build-public.mjs` construit `dist/public/` ; deux constructions de suite donnent les mêmes fichiers
+- [ ] La piste n'a modifié aucun fichier de `site/` ; `calc.js`, `vehicules.js` et `vehicules.json` de `dist/public/` sont identiques à ceux de `site/`
+- [ ] Les cas de `tests/golden-cases.json` sont reproduits par le `calc.js` copié dans `dist/public/`
+- [ ] Chaque page a un seul `<h1>`, un titre et une description uniques, un lien canonique et les balises de partage ; tous les liens internes aboutissent ; le plan du site liste toutes les pages
+- [ ] `dist/public/` ne contient ni adresse `workers.dev`, ni champ de jeton, ni mention de MyDS ; sa CSP n'autorise aucune connexion hors du site (et du domaine de mesure s'il y en a un)
+- [ ] Aucune ressource chargée depuis un autre site (scripts, styles, images, polices)
+- [ ] Lien de partage : les réglages font l'aller-retour sans perte, la batterie du soir n'y figure jamais, les paramètres invalides sont ignorés
+- [ ] Les quatre statuts du calcul (`ok`, `short`, `none`, `err`) affichent chacun leur message
+- [ ] Tout lien rémunéré porte `rel="sponsored nofollow noopener"` et la mention « lien rémunéré » ; le bouton de liste d'attente est absent tant que son adresse est vide
+- [ ] Le script refuse une page de modèle sans source ou absente de `vehicules.json`
+- [ ] Sans `PUBLIC_INDEXABLE=1`, toutes les pages portent `noindex`
+
+À vérifier par Mathieu :
+
+- [ ] Sur le Pixel, à 380 px, thèmes clair et sombre : première visite en moins d'une minute, résultat lisible
+- [ ] Textes de l'accueil, des guides et de la page financement relus
+- [ ] Mise en ligne provisoire ouverte sur le Pixel et sur un iPhone
+- [ ] Nom, domaine, mentions légales et formulaire de liste d'attente en place
+- [ ] Outil de mesure d'audience choisi après lecture de la position de la CNIL ; les clics vers la liste d'attente et vers le câble sont comptés
+- [ ] Site indexable, plan du site déclaré, aperçu de partage correct dans un message
+- [ ] Dix pages de modèles au moins, chacune avec sa source
+
+---
+
+## Phase 3b – Coque Android, pilotage local
+
+Détail : `docs/cahier-des-charges-coque-android.md`. Le protocole local Tuya 3.5 est écrit une fois en JavaScript (`local/tuya-local.js`), vérifié depuis le PC avec Node, puis embarqué dans une coque Android minimale (une WebView et un pont TCP). Mêmes garanties et mêmes réponses que le Worker.
+
+### Lots et points d'arrêt
+
+| Lot | Contenu | Qui | Point d'arrêt |
+|---|---|---|---|
+| C1 | Module `local/tuya-local.js`, transport Node, vecteurs de test produits avec tinytuya et une clé factice, faux câble simulé | `tuya-integrateur`, seul | Primitive absente de Web Crypto : arrêt, on en parle |
+| C2 | Essai réel depuis le PC : lecture, écriture simulée, puis écriture réelle à +5 min, voiture branchée | Session principale, commandes validées une par une | Lecture ou écriture refusée : arrêt |
+| C3 | Coque minimale et page d'essai « Lire l'état » sur le Pixel | Session principale ; Mathieu : outils Android, débogage USB, saisie de la clé | **Essai décisif.** Échec : arrêt, on en parle |
+| C4 | Mode « Local » dans la page, clé chiffrée sur le téléphone, alertes, signature stable de l'APK | Session principale ; après la semaine d'usage réel de la phase 2c, ou accord de Mathieu | |
+| C5 | Deux semaines d'usage réel en mode Local ; L4 et T4 refaits depuis le téléphone, internet coupé | Mathieu | Décision : le Worker reste-t-il en secours ? |
+
+### Ce qu'on attend de Mathieu
+
+Avant C2 : clé locale à l'abri, câble joignable depuis le PC. Avant C3 : Android Studio sur le PC, débogage USB sur le Pixel, clé de signature créée hors du dépôt. Pendant C2, C3 et C5 : validation des commandes, saisie de la clé sur le téléphone, constats sur la voiture.
+
+### Critères d'acceptation
+
+Lot C1 (tests automatiques) :
+
+- [ ] Les trames produites et relues par le module sont celles des vecteurs de tinytuya (négociation, lecture, écriture)
+- [ ] Faux câble : clé fausse, délai dépassé, format inattendu (rien n'est écrit), relecture différente, autre point modifié, heure déjà passée, plage courte, trame coupée : chaque cas donne la réponse prévue, jamais de faux succès
+- [ ] Un test échoue si le module peut écrire autre chose que `ss` et `m` du dp 151
+- [ ] Aucune clé ni identifiant réel dans le dépôt ; la clé n'apparaît dans aucun message d'erreur
+- [ ] Chaque élément du protocole repris de tinytuya est noté dans `docs/tuya-findings.md` avec sa source
+
+Lot C2 (sur le câble) :
+
+- [ ] `etat` lit la même plage que Smart Life et que `tools/tuya-local-test.py`
+- [ ] `ecrire-debut HH:MM` sans `--confirmer` n'envoie rien
+- [ ] Écriture réelle relue conforme, heure visible dans Smart Life, charge démarrée à l'heure (Mathieu)
+
+Lot C3 (sur le Pixel) :
+
+- [ ] APK construit sur le PC de Mathieu à partir du dépôt, installé par USB
+- [ ] La page d'essai lit l'état du câble depuis le Wi-Fi de la maison
+- [ ] Le pont refuse tout autre port que 6668 et toute adresse non privée (tests)
+- [ ] La permission d'accès au réseau local est traitée : son refus donne un message distinct de « câble injoignable »
+
+Lot C4 :
+
+- [ ] Sans le pont (navigateur, GitHub Pages), la page se comporte comme avant (test) ; cas de référence inchangés
+- [ ] Les fichiers de la page embarqués dans l'APK sont identiques à ceux de `site/`
+- [ ] Mode Local : mêmes alertes OK et KO que le service, heure à régler à la main rappelée à chaque échec, pas de bascule silencieuse vers le service
+- [ ] Clé chiffrée sur le téléphone, hors sauvegarde, jamais réaffichée, effaçable ; une mise à jour de l'APK ne la fait pas ressaisir
+- [ ] `SECURITE.md` complété ; relecture sécurité du module et du pont faite une fois avec le modèle le plus capable
+
+Lot C5 :
+
+- [ ] Deux semaines d'usage réel en mode Local sans intervention manuelle imprévue
+- [ ] Écriture réussie et charge démarrée avec internet coupé (L4 et T4, depuis le téléphone)
+- [ ] Décision consignée : Worker gardé en secours ou arrêté ; `tools/.env` supprimé
+
+---
+
+## Phase 3c – Mesure, fabricant et décision
+
+- [x] Demandes envoyées à Tuya (ticket) et à Stellantis (formulaire Mobilisights), 2026-11-14
+- [ ] Vers le 5 décembre : relance de Tuya et de Stellantis
+- [ ] Vidéo de démonstration (filmable sur l'installation actuelle) et mail court au fabricant du câble, même proposition à deux autres marques (option D)
+- [ ] Deux semaines après le mail : relance du fabricant, nouveau relevé des ventes Amazon
+- [ ] Vers le 7 décembre : décision sur l'option D seulement (contrat proposé ou non)
+- [ ] 30 jours après le lot S6 : bilan du site (visites, inscrits, dont ceux qui ont le câble, clics vers le câble)
+- [ ] Début janvier : décision sur la suite, selon `docs/business-cases.md` : publication de l'appli (B), affiliation et comparaison d'offres (G), appli qui complète MyDS (F), ou arrêt du volet produit
+- [ ] Toute application Android publiée : `testeur-relecteur` compare ses résultats à `tests/golden-cases.json`
