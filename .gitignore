@@ -26,3 +26,8 @@ android/local.properties
 # Clés de signature de l'APK : secrets du PC, jamais dans le dépôt
 *.jks
 *.keystore
+*.p12
+*.pfx
+*.pem
+keystore.properties
+signing.properties

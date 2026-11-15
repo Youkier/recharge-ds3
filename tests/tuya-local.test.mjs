@@ -444,9 +444,10 @@ describe('Ligne de commande (tools/tuya-local.mjs) : configuration seulement, ja
     const dir = mkdtempSync(join(tmpdir(), 'tuya-local-'));
     try {
       const chemin = join(dir, 'env-factice');
-      writeFileSync(chemin, `# factice\nTUYA_DEVICE_ID=${V.deviceId}\nTUYA_LOCAL_KEY="${CLE}"\nTUYA_LOCAL_IP=${V.ip}\nsans egal\n`);
-      assert.deepEqual(chargerConfig(chemin, {}), { ip: V.ip, deviceId: V.deviceId, cleLocale: CLE, version: '3.5' });
-      assert.equal(chargerConfig(chemin, { TUYA_LOCAL_IP: '192.0.2.99' }).ip, '192.0.2.99');
+      writeFileSync(chemin, `# factice\nTUYA_DEVICE_ID=${V.deviceId}\nTUYA_LOCAL_KEY="${CLE}"\nTUYA_LOCAL_IP=192.168.0.200\nsans egal\n`);
+      assert.deepEqual(chargerConfig(chemin, {}), { ip: '192.168.0.200', deviceId: V.deviceId, cleLocale: CLE, version: '3.5' });
+      assert.equal(chargerConfig(chemin, { TUYA_LOCAL_IP: '10.0.0.99' }).ip, '10.0.0.99');
+      assert.throws(() => chargerConfig(chemin, { TUYA_LOCAL_IP: V.ip }), /IPv4 privée/); // 192.0.2.x : hors réseau privé
       assert.throws(() => chargerConfig(chemin, { TUYA_LOCAL_VERSION: '3.4' }), /3\.5/);
       writeFileSync(chemin, `TUYA_DEVICE_ID=${V.deviceId}\nTUYA_LOCAL_IP=${V.ip}\n`);
       assert.throws(() => chargerConfig(chemin, {}), (e) => /TUYA_LOCAL_KEY/.test(e.message) && !e.message.includes(V.deviceId));
@@ -455,4 +456,53 @@ describe('Ligne de commande (tools/tuya-local.mjs) : configuration seulement, ja
       assert.deepEqual(parseEnv('export A=1\n#c\nB = "x y"'), { A: '1', B: 'x y' });
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
+});
+
+describe('Relecture du lot C1 : filtre d\'adresses et trames malformées', () => {
+  test('transport Node : port 6668 et IPv4 privée seulement', async () => {
+    const { adresseAutorisee, creerTransportNode } = await import('../local/transport-node.mjs');
+    for (const ip of ['192.168.1.48', '10.0.0.1', '172.16.0.1', '172.31.255.255']) assert.ok(adresseAutorisee(ip, 6668), ip);
+    for (const ip of ['8.8.8.8', '172.32.0.1', '192.169.0.1', '127.0.0.1', '0.0.0.0', '192.168.1.256', '192.168.01.1', 'cable.local', '::1', '']) {
+      assert.ok(!adresseAutorisee(ip, 6668), ip);
+    }
+    assert.ok(!adresseAutorisee('192.168.1.48', 80));
+    await assert.rejects(creerTransportNode().ouvrir('8.8.8.8', 6668, 1000), (e) => e.code === 'hors_ligne');
+  });
+
+  // Transport qui répond aux envois par des octets fixés : jamais de faux succès, réponse rapide, connexion fermée.
+  const transportBrut = (octets) => {
+    let ferme = false, servi = false;
+    return {
+      t: {
+        async ouvrir() {}, async envoyer() {},
+        async recevoir() { if (servi) return new Uint8Array(0); servi = true; return octets; },
+        async fermer() { ferme = true; },
+      },
+      estFerme: () => ferme,
+    };
+  };
+  const entete = (longueur) => {
+    const b = new Uint8Array(18);
+    b.set([0, 0, 0x66, 0x99]);
+    new DataView(b.buffer).setUint32(14, longueur >>> 0);
+    return b;
+  };
+  const cas = {
+    'longueur énorme': entete(0xffffffff),
+    'longueur « négative »': entete(0x80000000),
+    'longueur nulle': entete(0),
+    '100 000 octets nuls': new Uint8Array(100000),
+    'octets parasites': Uint8Array.from({ length: 2000 }, (_, i) => (i * 37) & 0xff),
+  };
+  for (const [nom, octets] of Object.entries(cas)) {
+    test(`trame malformée (${nom}) : échec rapide, connexion fermée`, async () => {
+      const { t, estFerme } = transportBrut(octets);
+      const debut = Date.now();
+      const r = await lireEtat(cfgDe(), t);
+      assert.equal(r.ok, false);
+      assert.ok(['format', 'delai', 'ferme', 'cle', 'hors_ligne'].includes(r.erreur), r.erreur);
+      assert.ok(Date.now() - debut < 5000);
+      assert.ok(estFerme());
+    });
+  }
 });

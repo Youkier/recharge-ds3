@@ -4,7 +4,8 @@
 #
 # Refuse le commit si :
 #  1. un fichier de secrets est indexé (.env…, .dev.vars…), sauf les modèles .env.example
-#     et .dev.vars.example, ou une clé de signature Android (*.jks, *.keystore) ;
+#     et .dev.vars.example, ou une clé de signature Android (*.jks, *.keystore, *.p12, *.pfx, *.pem,
+#     keystore.properties, signing.properties ; casse ignorée) ;
 #  2. un de ces modèles contient une valeur pour un identifiant Tuya ou le jeton d'accès ;
 #  3. une valeur présente dans tools/.env ou worker/.dev.vars apparaît dans les
 #     changements indexés (comparaison exacte, sur ce PC uniquement ; rien n'est affiché
@@ -19,13 +20,17 @@ erreur=0
 fichiers=$(git diff --cached --name-only --diff-filter=ACMR)
 for f in $fichiers; do
   nom=$(basename "$f")
+  # Clés et mots de passe de signature : extension comparée sans tenir compte de la casse
+  # (Windows ignore la casse : « cle.JKS » est une clé).
+  case "$(printf '%s' "$nom" | tr '[:upper:]' '[:lower:]')" in
+    *.jks|*.keystore|*.p12|*.pfx|*.pem|keystore.properties|signing.properties)
+      echo "REFUSÉ : clé de signature indexée : $f (elle reste hors du dépôt)" >&2
+      erreur=1; continue ;;
+  esac
   case "$nom" in
     .env.example|.dev.vars.example) ;;
     .env*|*.dev.vars*)
       echo "REFUSÉ : fichier de secrets indexé : $f" >&2
-      erreur=1 ;;
-    *.jks|*.keystore)
-      echo "REFUSÉ : clé de signature indexée : $f (elle reste hors du dépôt)" >&2
       erreur=1 ;;
   esac
 done

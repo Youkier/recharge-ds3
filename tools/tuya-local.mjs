@@ -15,7 +15,7 @@ import { readFileSync, existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { lireEtat, programmer } from '../local/tuya-local.js';
-import { creerTransportNode } from '../local/transport-node.mjs';
+import { creerTransportNode, adresseAutorisee } from '../local/transport-node.mjs';
 
 const ICI = dirname(fileURLToPath(import.meta.url));
 const HEURE_VALIDE = /^([01]\d|2[0-3]):[0-5]\d$/;
@@ -42,6 +42,7 @@ export function chargerConfig(chemin = join(ICI, '.env'), env = process.env) {
   for (const k of ['TUYA_DEVICE_ID', 'TUYA_LOCAL_KEY']) if (!f[k]) throw new Error(`Variable manquante dans tools/.env : ${k}`);
   const ip = env.TUYA_LOCAL_IP || f.TUYA_LOCAL_IP;
   if (!ip) throw new Error('TUYA_LOCAL_IP manquante (tools/.env ou variable d\'environnement) : adresse du câble sur le Wi-Fi.');
+  if (!adresseAutorisee(ip, 6668)) throw new Error('TUYA_LOCAL_IP refusée : adresse IPv4 privée attendue (192.168.x.x, 10.x.x.x ou 172.16 à 31.x.x).');
   const version = env.TUYA_LOCAL_VERSION || f.TUYA_LOCAL_VERSION || '3.5';
   if (version !== '3.5') throw new Error('Seul le protocole 3.5 est pris en charge (TUYA_LOCAL_VERSION).');
   return { ip, deviceId: f.TUYA_DEVICE_ID, cleLocale: f.TUYA_LOCAL_KEY, version };
@@ -69,6 +70,7 @@ async function main(argv) {
     if (!HEURE_VALIDE.test(args[1] ?? '')) { console.error('Heure invalide : attendu HH:MM (00:00 à 23:59).'); return 1; }
     demande = { allumage: args[1] };
   } else if (action === 'desactiver') {
+    if (args.length > 1) { console.error('desactiver ne prend pas d\'heure.'); return 1; }
     demande = { desactiver: true };
   }
   let cfg;

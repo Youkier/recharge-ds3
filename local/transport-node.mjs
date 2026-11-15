@@ -5,6 +5,17 @@
 
 import net from 'node:net';
 
+// Même filtre que le pont Android prévu : port 6668 et IPv4 privée seulement (10/8, 172.16/12, 192.168/16).
+const PORT_CABLE = 6668;
+export function adresseAutorisee(ip, port) {
+  if (port !== PORT_CABLE || typeof ip !== 'string') return false;
+  const m = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(ip);
+  if (!m) return false;
+  const o = m.slice(1).map(Number);
+  if (o.some((n, i) => n > 255 || String(n) !== m[i + 1])) return false; // pas de zéros de tête
+  return o[0] === 10 || (o[0] === 172 && o[1] >= 16 && o[1] <= 31) || (o[0] === 192 && o[1] === 168);
+}
+
 function erreur(code) {
   const e = new Error(code);
   e.code = code;
@@ -22,6 +33,7 @@ export function creerTransportNode() {
   return {
     ouvrir(ip, port, delaiMs) {
       if (socket) return Promise.reject(erreur('hors_ligne')); // une seule connexion
+      if (!adresseAutorisee(ip, port)) return Promise.reject(erreur('hors_ligne')); // rien n'est ouvert
       return new Promise((resolve, reject) => {
         const s = net.createConnection({ host: ip, port });
         socket = s;

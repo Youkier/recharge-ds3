@@ -256,7 +256,8 @@ function moinsUneMinute(hhmm) {
 // Garde-fou : on n'envoie que le dp 151, et la valeur ne peut différer de la valeur relue que par ss et m.
 function corpsEcriture(actuelle, debut, t) {
   const voulue = { m: 2, dt: actuelle.dt, ss: debut, se: actuelle.se };
-  if (!HEURE_VALIDE.test(voulue.ss) || !HEURE_VALIDE.test(voulue.se) || voulue.dt !== actuelle.dt || voulue.se !== actuelle.se) {
+  // dt et se sont recopiés de la valeur relue (contrôlée par le lecteur) : seuls ss et m peuvent changer.
+  if (!HEURE_VALIDE.test(voulue.ss) || !HEURE_VALIDE.test(voulue.se)) {
     throw new ErreurLocale('format');
   }
   const json = JSON.stringify({ protocol: 5, t, data: { dps: { [DP_PLAGE]: JSON.stringify(voulue) } } });
