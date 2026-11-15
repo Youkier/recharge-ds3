@@ -160,3 +160,26 @@ Constaté le 2026-11-15 : `GET /v1.0/devices/{id}` renvoie bien `local_key` (16 
 
 ## Décision
 
+
+## Protocole local 3.5 en JavaScript (lot C1)
+
+Date : 2026-11-15. Source unique : le code de **tinytuya 1.21.1** (MIT) installé sur le PC (`python -m pip show tinytuya`), lu localement, dossier `tinytuya/core/`. Rien n'est repris d'ailleurs. Implémentation : `local/tuya-local.js` (Web Crypto seulement). Preuve : `tests/tuya-local.test.mjs` contre `tests/tuya-local-vecteurs.json`, produit par `tools/gen-vecteurs-tuya-local.py` (tinytuya fabrique les trames avec une clé factice et des aléas fixés ; les réponses du « câble » y sont fabriquées avec `pack_message` puis relues par `unpack_message` et `_decode_payload`). Le JS envoie et relit exactement les mêmes octets. **Tout ce qui suit est vérifié contre tinytuya, pas encore contre le vrai câble (lot C2).**
+
+| Élément | Valeur reprise | Origine (tinytuya 1.21.1) |
+|---|---|---|
+| Format de trame 3.5 | en-tête 18 octets `>IHIII` : préfixe `0x00006699`, 2 octets nuls, séquence, commande, longueur ; puis IV (12) + chiffré + étiquette GCM (16) ; pied `0x00009966`. Longueur = 12 + clair + 16 | `core/header.py` (`MESSAGE_HEADER_FMT_6699`, `PREFIX_6699_*`, `SUFFIX_6699_*`), `core/message_helper.py` : `pack_message`, `parse_header`, `unpack_message` |
+| Chiffrement d'une trame | AES-128-GCM, IV aléatoire de 12 octets placé dans la trame, AAD = en-tête sans le préfixe (14 octets), étiquette de 128 bits | `core/crypto_helper.py` : `encrypt` / `decrypt` (`iv`, `header`, `tag`) |
+| Code de retour | le clair d'une trame **reçue** commence par 4 octets de code de retour (retirés) ; celui d'une trame envoyée n'en a pas | `message_helper.unpack_message` (`no_retcode=False`), `pack_message` (`retcode` seulement si entier) |
+| Numéros de commande | 3 négociation (début), 4 réponse, 5 fin ; 0x0d écriture (`CONTROL_NEW`) ; 0x10 lecture (`DP_QUERY_NEW`) ; 8 annonce d'état (ignorée) | `core/command_types.py` |
+| Négociation, étape 1 | cmd 3, nonce local de 16 octets, chiffré avec la clé locale, sans en-tête de version | `XenonDevice._negotiate_session_key_generate_step_1`, `header.NO_PROTOCOL_HEADER_CMDS` |
+| Négociation, étape 2 | cmd 4 : nonce du câble (16) + HMAC-SHA256(clé locale, nonce local) (32) ; le client vérifie le HMAC | `_negotiate_session_key_generate_step_3` |
+| Négociation, étape 3 | cmd 5 : HMAC-SHA256(clé locale, nonce du câble) ; aucune réponse lue | `_negotiate_session_key_generate_step_3`, `_negotiate_session_key` |
+| Clé de session | AES-GCM(clé locale, IV = 12 premiers octets du nonce local, sans AAD) de (nonce local XOR nonce câble) ; on garde les 16 premiers octets du chiffré (`[12:28]`) | `_negotiate_session_key_generate_finalize` |
+| Numéro de séquence | compteur du client, démarre à 1, +1 par trame envoyée (négociation comprise) ; les réponses du câble portent leur propre compteur | `XenonDevice.__init__` (`seqno = 1`), `_encode_message` |
+| Lecture | cmd 0x10, corps `{}`, sans en-tête de version ; réponse lue en `dps` ou `data.dps` | `generate_payload` (`payload_dict["v3.5"]`, `DP_QUERY` -> `DP_QUERY_NEW`), `_decode_payload` |
+| Écriture | cmd 0x0d ; corps JSON compact `{"protocol":5,"t":<secondes>,"data":{"dps":{"151":"<texte JSON>"}}}` précédé de l'en-tête de version `3.5` + 12 octets nuls | `payload_dict["v3.5"]` (`CONTROL` -> `CONTROL_NEW`), `generate_payload` (espaces retirés), `Device.set_value`, `_encode_message` |
+| Émulation Web Crypto | **aucune nécessaire** : tout passe par AES-GCM et HMAC-SHA256 de Web Crypto (la dérivation de la clé de session utilise AES-GCM, pas AES-ECB) | |
+
+Choix du module, non fournis par tinytuya : nombre de relectures (3, précédées de pauses de 0,5 s, 1,5 s puis 2,5 s), accusé d'écriture attendu 2 s au plus (son absence n'est pas une erreur, la relecture décide), échéance globale de 20 s.
+
+**À confirmer sur le vrai câble (lot C2)** : forme exacte de l'accusé d'écriture et des annonces d'état (le faux câble en suppose : un accusé cmd 0x0d vide, puis une annonce cmd 8) ; forme de la réponse de lecture (`dps` ou `data.dps`, avec ou sans en-tête de version : le module accepte les trois) ; comportement d'un câble qui reçoit une négociation avec une mauvaise clé (le module conclut `cle` sur trame refusée ou connexion fermée, mais `delai` si le câble se tait) ; comportement du câble quand Smart Life est ouverte sur le même câble ; délai réel de répercussion de l'écriture (trois relectures espacées de 0,5, 1,5 et 2,5 s suffisent-elles ?) ; adresse IPv4 réservée dans la box.
