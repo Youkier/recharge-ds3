@@ -513,3 +513,73 @@ test('point d\'entrée : index.js n\'exporte que le gestionnaire par défaut', a
   assert.deepEqual(Object.keys(mod), ['default']);
   assert.equal(typeof mod.default.fetch, 'function');
 });
+
+// --- Ajouts de relecture (critères 2b) ---
+test('bon jeton : toute autre méthode HTTP est refusée (405), aucun appel Tuya, aucune écriture', async () => {
+  const c = cable();
+  for (const chemin of ['/api/etat', '/api/programmer']) {
+    for (const methode of ['DELETE', 'PATCH', 'PUT', 'HEAD']) {
+      const a = await appel(req(chemin, { methode }), c);
+      assert.equal(a.statut, 405, `${methode} ${chemin}`);
+    }
+  }
+  assert.equal((await appel(req('/api/etat', { methode: 'POST', corps: '{"allumage":"22:30"}' }), c)).statut, 405);
+  assert.equal((await appel(req('/api/programmer', { methode: 'GET' }), c)).statut, 405);
+  // paramètres d'URL ignorés : la route /api/programmer?allumage=... en POST sans corps valide reste un 400
+  assert.equal((await appel(req('/api/programmer?allumage=22:30', { methode: 'POST', corps: '' }), c)).statut, 400);
+  assert.equal(c.appels.length, 0);
+  assert.equal(c.ecritures.length, 0);
+});
+
+test('appareil : toutes les actions (état, programmer, désactiver) ne visent que TUYA_DEVICE_ID', async () => {
+  const c = cable();
+  await appel(req('/api/etat'), c);
+  await appel(post({ allumage: '23:00' }), c);
+  await appel(post({ desactiver: true }), c);
+  const chemins = c.appels.map((a) => a.chemin);
+  assert.ok(chemins.length >= 5);
+  for (const p of chemins) {
+    assert.ok(p === '/v1.0/token' || p === `/v2.0/cloud/thing/${ENV.TUYA_DEVICE_ID}/shadow/properties` || p === `/v2.0/cloud/thing/${ENV.TUYA_DEVICE_ID}/shadow/properties/issue`, p);
+  }
+  // un autre identifiant dans l'env change la cible, jamais autre chose
+  const c2 = cable();
+  const rep = await appel(req('/api/etat'), c2, { ...ENV, TUYA_DEVICE_ID: 'autre-appareil-123' });
+  assert.equal(rep.corps.erreur, 'tuya'); // le câble simulé ne connaît pas cet identifiant : pas de succès
+});
+
+test('erreurs à l\'écriture (POST) : chaque cause reste distincte, jamais ok:true', async () => {
+  const cas = [
+    [{ erreurEcriture: { success: false, code: 2001, msg: 'device is offline' } }, 'hors_ligne'],
+    [{ erreurEcriture: { success: false, code: 1106, msg: 'permission deny' } }, 'jeton'],
+    [{ erreurEcriture: { success: false, code: 999999, msg: 'x' } }, 'tuya'],
+    [{ ignorerEcriture: true }, 'relecture_differente'],
+    [{ pendre: true, delai: true }, 'delai'],
+  ];
+  const vus = new Set();
+  for (const [opt, code] of cas) {
+    reinitialiserCache();
+    const { delai, ...o } = opt;
+    for (const corps of [{ allumage: '22:30' }, { desactiver: true }]) {
+      const c = cable(o);
+      const a = await appel(post(corps), c, ENV, delai ? { delaiMs: 30 } : {});
+      assert.equal(a.corps.ok, false, code);
+      assert.equal(a.corps.erreur, code);
+      assert.ok(a.statut >= 500, code);
+      assert.ok(!('debut' in a.corps));
+      reinitialiserCache();
+    }
+    vus.add(code);
+  }
+  assert.equal(vus.size, 5);
+});
+
+test('journaux du Worker : jamais d\'autre argument qu\'un libellé fixe ou un code numérique (contrôle du source)', async () => {
+  const { readFileSync } = await import('node:fs');
+  const src = readFileSync(new URL('../worker/src/service.js', import.meta.url), 'utf8');
+  const appelsConsole = [...src.matchAll(/console\.(?:log|error|warn|info|debug)\(([^;]*)\);/g)].map((m) => m[1]);
+  assert.ok(appelsConsole.length >= 7);
+  for (const args of appelsConsole) {
+    assert.ok(!/env\.|request|headers|Authorization|msg|json|secret|jeton|token|\.message|\.stack|\be\b(?!\.code)/i.test(args.replace(/'[^']*'/g, "''").replace(/\/\/.*$/, '')) || /^'[^']*'(, type, Number\.isFinite\(code\) \? code : 'inconnu')?/.test(args), args);
+  }
+  assert.ok(!/console\.\w+\([^)]*(env\.|request\.|\.msg|\.stack)/.test(src));
+});

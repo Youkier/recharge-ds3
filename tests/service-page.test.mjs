@@ -294,3 +294,45 @@ describe("Page : enregistrement du jeton et accessibilité (contrôle du source)
     assert.ok(!/setAttribute\("role"/.test(app));
   });
 });
+
+describe("Critères 2c : alerte KO distincte, aide hors ligne, avertissement affiché (contrôle du source)", async () => {
+  const { readFileSync } = await import("node:fs");
+  const lire = (f) => readFileSync(new URL("../site/" + f, import.meta.url), "utf8");
+  const app = lire("app.js"), html = lire("index.html"), sw = lire("sw.js");
+
+  test("service coupé, jeton faux, câble hors ligne : trois messages distincts, heure manuelle rappelée", () => {
+    const sCoupe = envoyer("https://a.workers.dev", "t", prog, { onLine: true, fetch: async () => { throw new TypeError("Failed to fetch"); } });
+    return sCoupe.then((coupe) => {
+      const faux = interpreterReponse(prog, 401, { ok: false, erreur: "non_autorise" });
+      const horsLigne = interpreterReponse(prog, 502, { ok: false, erreur: "hors_ligne" });
+      const msgs = [coupe, faux, horsLigne].map((r) => r.message);
+      assert.equal(new Set(msgs).size, 3);
+      assert.deepEqual([coupe.code, faux.code, horsLigne.code], ["injoignable", "non_autorise", "hors_ligne"]);
+      for (const r of [coupe, faux, horsLigne]) { assert.equal(r.etat, "ko"); assert.match(r.manuel, /00:35/); }
+    });
+  });
+  test("tous les messages d'erreur sont distincts deux à deux", () => {
+    const codes = ["non_autorise", "trop_de_requetes", "hors_ligne", "jeton", "tuya", "delai", "relecture_differente", "requete_invalide", "hors_ligne_navigateur", "injoignable", "delai_page", "illisible", "inattendue"];
+    const msgs = codes.map((c) => resultatKo(prog, c).message);
+    assert.equal(new Set(msgs).size, codes.length);
+  });
+  test("l'alerte KO affichée contient le message, l'heure manuelle et un lien vers #aide", () => {
+    const ko = app.slice(app.indexOf("} else {", app.indexOf("function showAlert")), app.indexOf("alertKey = JSON.stringify(d)"));
+    assert.match(ko, /res\.message/);
+    assert.match(ko, /res\.manuel/);
+    assert.match(ko, /navLink\([^)]*"#aide"/);
+  });
+  test("l'avertissement de fin de plage est affiché dans l'alerte OK, et la fin des Paramètres est transmise", () => {
+    assert.match(app, /if \(res\.avertissement\) a\.appendChild/);
+    assert.match(app, /finHC: fmt\(hm\(cur\.hcEnd\)\)/);
+  });
+  test("l'Aide est dans la page mise en cache : vue #aide dans index.html, index.html et app.js dans le précache", () => {
+    assert.match(html, /id="v-aide"/);
+    const pre = sw.slice(sw.indexOf("const PRECACHE"), sw.indexOf("];", sw.indexOf("const PRECACHE")));
+    for (const f of ["./", "./index.html", "./app.js", "./service.js", "./style.css", "./calc.js"]) assert.ok(pre.includes(`"${f}"`), f);
+  });
+  test("le service worker ne touche jamais aux requêtes vers le service (POST ou autre origine)", () => {
+    assert.match(sw, /request\.method !== "GET"\) return/);
+    assert.match(sw, /url\.origin !== self\.location\.origin\) return/);
+  });
+});

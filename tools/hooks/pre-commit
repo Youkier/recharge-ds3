@@ -47,6 +47,8 @@ for src in $liste; do
   while IFS= read -r ligne || [ -n "$ligne" ]; do
     ligne=$(printf '%s' "$ligne" | tr -d '\r')
     case "$ligne" in ''|'#'*) continue ;; esac
+    # Ligne sans « = » (nom seul) : aucune valeur à chercher.
+    case "$ligne" in *=*) ;; *) continue ;; esac
     cle=$(printf '%s' "${ligne%%=*}" | sed 's/^[[:space:]]*export[[:space:]]*//; s/[[:space:]]//g')
     val=$(printf '%s' "${ligne#*=}" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//; s/^"\(.*\)"$/\1/; s/^'"'"'\(.*\)'"'"'$/\1/')
     [ "$cle" = "TUYA_ENDPOINT" ] && continue
