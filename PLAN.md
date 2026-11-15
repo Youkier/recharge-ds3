@@ -181,7 +181,7 @@ T1 à T3 passés le 2026-11-11 (voir `docs/tuya-findings.md`). Compte principal 
 - [ ] Procédure de révocation du jeton (`SECURITE.md`) testée une fois
 - [x] Aucun secret dans le dépôt ni dans les journaux (tests automatiques, 2026-11-15)
 - [x] Programmation réelle constatée dans l'écran du câble dans Smart Life (depuis le Pixel, 2026-11-14)
-- [x] Relecture sécurité du Worker faite une fois avec le modèle le plus capable (2026-11-15, après le déploiement) : rien de critique ni d'important ; deux points mineurs à trancher (limite d'appels, durée totale bornée)
+- [x] Relecture sécurité du Worker faite une fois avec le modèle le plus capable (2026-11-15, après le déploiement) : rien de critique ni d'important ; deux points mineurs corrigés (30 appels par heure, échéance globale de 20 s)
 
 ---
 
@@ -204,7 +204,7 @@ T1 à T3 passés le 2026-11-11 (voir `docs/tuya-findings.md`). Compte principal 
 - [x] Programmation réussie depuis le Pixel, constatée dans l'écran du câble dans Smart Life (2026-11-14)
 - [x] Service coupé, jeton faux, câble hors ligne : alerte KO avec message distinct, mode manuel rappelé, aide accessible hors ligne (tests automatiques, 2026-11-15)
 - [x] Alerte OK affichée seulement avec une valeur relue conforme (vérifié en simulant une relecture différente) (tests automatiques, 2026-11-15)
-- [ ] Aucun autre site n'est publié sur `youkier.github.io` (le stockage local, donc le jeton, y serait partagé), ou risque accepté dans `docs/decisions.md`
+- [x] Aucun autre site n'est publié sur `youkier.github.io` (le stockage local, donc le jeton, y serait partagé), ou risque accepté dans `docs/decisions.md` (constaté par Mathieu, 2026-11-15)
 - [ ] Une semaine d'usage réel sans intervention manuelle imprévue
 
 ---

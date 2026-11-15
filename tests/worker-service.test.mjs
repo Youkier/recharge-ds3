@@ -583,3 +583,50 @@ test('journaux du Worker : jamais d\'autre argument qu\'un libellé fixe ou un c
   }
   assert.ok(!/console\.\w+\([^)]*(env\.|request\.|\.msg|\.stack)/.test(src));
 });
+
+// --- Corrections après la relecture sécurité (2026-11-15) ---
+test('limite horaire : 30 appels par heure même quand le binding accepte, sans appel Tuya au-delà', async () => {
+  const c = cable(); let n = 0;
+  const env = { ...ENV, EXIGER_LIMITEUR: '1', LIMITEUR: { limit: async () => { n++; return { success: true }; } } };
+  for (let i = 0; i < 30; i++) assert.equal((await appel(req('/api/etat'), c, env)).statut, 200, `appel ${i + 1}`);
+  const nb = c.appels.length;
+  const r = await appel(req('/api/etat'), c, env);
+  assert.equal(r.statut, 429); assert.equal(r.corps.erreur, 'trop_de_requetes'); assert.equal(c.appels.length, nb);
+  assert.equal(n, 31);
+  // une heure plus tard, de nouveau permis
+  const plusTard = new Date(NUIT.getTime() + 3_600_001);
+  assert.equal((await appel(req('/api/etat'), c, env, { now: () => plusTard })).statut, 200);
+});
+test('limite horaire : un refus du binding ne consomme pas le quota horaire', async () => {
+  const c = cable(); let refuser = true;
+  const env = { ...ENV, LIMITEUR: { limit: async () => ({ success: !refuser }) } };
+  for (let i = 0; i < 40; i++) assert.equal((await appel(req('/api/etat'), c, env)).statut, 429);
+  refuser = false;
+  assert.equal((await appel(req('/api/etat'), c, env)).statut, 200);
+});
+test('échéance globale : appels Tuya lents -> « delai » avant 20 s, jamais de succès', async () => {
+  // Horloge simulée : chaque appel Tuya « dure » 8 s ; chaque attente avance aussi l'horloge.
+  for (const corps of [{ allumage: '01:00' }, { desactiver: true }]) {
+    reinitialiserCache();
+    const c = cable(); let t = 0; const fetchLent = c.fetch;
+    c.fetch = async (...a) => { t += 8000; return fetchLent(...a); };
+    const r = await appel(post(corps), c, ENV, { horloge: () => t, sleep: async (ms) => { t += ms; }, attentes: [1500, 2000, 2500] });
+    assert.equal(r.corps.ok, false, JSON.stringify(corps)); assert.equal(r.corps.erreur, 'delai'); assert.equal(r.statut, 504);
+    assert.ok(t <= 24_000, `durée simulée ${t} ms`);
+  }
+});
+test('échéance globale : le délai de chaque appel Tuya est réduit au temps restant', async () => {
+  const c = cable({ pendre: true }); let t = 0; const delais = [];
+  const st = globalThis.setTimeout;
+  globalThis.setTimeout = (f, ms, ...a) => { delais.push(ms); return st(f, 5, ...a); };
+  try {
+    const r = await appel(req('/api/etat'), c, ENV, { horloge: () => t, echeanceMs: 4000 });
+    assert.equal(r.corps.erreur, 'delai');
+  } finally { globalThis.setTimeout = st; }
+  assert.ok(delais.length >= 1 && delais[0] === 4000, `délais : ${delais}`);
+});
+test('échéance globale : requête rapide inchangée (succès normal)', async () => {
+  const c = cable(); let t = 0;
+  const r = await appel(post({ allumage: '01:00' }), c, ENV, { horloge: () => t, sleep: async (ms) => { t += ms; }, attentes: [1500, 2000, 2500] });
+  assert.equal(r.corps.ok, true); assert.equal(r.corps.debut, '01:00');
+});

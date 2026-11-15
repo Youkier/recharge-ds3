@@ -11,7 +11,7 @@ Service Cloudflare minimal : règle le **début** de la plage de charge du câbl
 | `TUYA_ENDPOINT` | variable | `https://openapi.tuyaeu.com` (valeur par défaut) |
 | `ORIGINE_AUTORISEE` | variable | origine GitHub Pages pour le CORS, sans chemin (par exemple `https://<compte>.github.io`) |
 | `EXIGER_LIMITEUR` | variable | `"1"` dans `wrangler.toml` : si le binding `LIMITEUR` manque, toute requête authentifiée reçoit 503 `tuya` (journal `limiteur_absent_exige`), sans repli en mémoire |
-| `LIMITEUR` | binding | limite d'appels (voir `docs/cloudflare-findings.md`) ; repli en mémoire avec avertissement seulement si `EXIGER_LIMITEUR` n'est pas `"1"` |
+| `LIMITEUR` | binding | limite d'appels par minute (voir `docs/cloudflare-findings.md`) ; s'y ajoute toujours une limite de 30 appels par heure en mémoire |
 
 ## En local
 

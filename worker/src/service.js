@@ -12,11 +12,15 @@ const CLES_PLAGE = ['m', 'dt', 'ss', 'se'];
 const MODES_CONNUS = [0, 2]; // 2 = plage active, 0 = désactivée (= charge immédiate sur ce câble)
 const ENDPOINT_DEFAUT = 'https://openapi.tuyaeu.com';
 const DELAI_TUYA_MS = 10_000;
+// Durée totale d'une requête (tous les appels Tuya et attentes de relecture) : le Worker répond
+// « delai » avant que la page n'abandonne (25 s, site/service.js), au lieu d'un faux échec.
+const ECHEANCE_MS = 20_000;
 const TAILLE_MAX_CORPS = 512;
 const LONGUEUR_MIN_JETON = 32; // en dessous, le jeton est jugé trop faible : tout est refusé
 // Relecture après écriture : le câble met quelques secondes à répercuter (la sonde attendait 5 s).
 const ATTENTES_RELECTURE_MS = [1500, 2000, 2500];
-// Repli si le binding de limitation est absent (développement local) : par isolat, donc approximatif.
+// Limite horaire (SECURITE.md, mesure 5) : appliquée toujours, en plus du binding Cloudflare
+// (qui ne permet que des périodes de 10 ou 60 s). En mémoire, par isolat, donc approximative.
 const REPLI_LIMITE = { max: 30, fenetreMs: 3_600_000 };
 
 // Codes d'erreur Tuya, source : https://developer.tuya.com/en/docs/iot/error-code?id=K989ruxx88swc
@@ -121,7 +125,15 @@ function classer(code, msg) {
   return 'tuya';
 }
 
+// Temps restant avant l'échéance globale de la requête ; « delai » s'il est épuisé.
+function tempsRestant(deps) {
+  const restant = deps.echeance - deps.horloge();
+  if (!(restant > 0)) throw new ErreurService('delai');
+  return restant;
+}
+
 async function requeteTuya(cfg, deps, methode, chemin, { query = {}, corps = '', accessToken = '' } = {}) {
+  const delai = Math.min(deps.delaiMs ?? DELAI_TUYA_MS, tempsRestant(deps));
   const t = String(deps.now().getTime());
   const nonce = crypto.randomUUID().replaceAll('-', '');
   const sign = await signer({ clientId: cfg.id, secret: cfg.secret, t, nonce, accessToken, methode, chemin, query, corps });
@@ -129,7 +141,7 @@ async function requeteTuya(cfg, deps, methode, chemin, { query = {}, corps = '',
   if (accessToken) entetes.access_token = accessToken;
   if (corps) entetes['Content-Type'] = 'application/json';
   const ctrl = new AbortController();
-  const minuteur = setTimeout(() => ctrl.abort(), deps.delaiMs ?? DELAI_TUYA_MS);
+  const minuteur = setTimeout(() => ctrl.abort(), delai);
   let json;
   try {
     const rep = await deps.fetch(cfg.endpoint + urlAvecParametres(chemin, query), { method: methode, headers: entetes, body: corps || undefined, signal: ctrl.signal });
@@ -209,6 +221,7 @@ async function etat(env, deps) {
 async function ecrireEtVerifier(cfg, deps, actuelle, voulue, extra = {}) {
   if (!memePlage(actuelle, voulue)) await ecrirePlage(cfg, deps, voulue);
   for (const attente of deps.attentes ?? ATTENTES_RELECTURE_MS) {
+    if (attente >= tempsRestant(deps)) throw new ErreurService('delai'); // plus le temps de relire : résultat incertain
     await deps.sleep(attente);
     const relue = await lireValeurPlage(cfg, deps);
     if (memePlage(relue, voulue)) return reponsePlage(relue, extra);
@@ -239,7 +252,7 @@ async function desactiver(env, deps) {
 
 // --- Limite d'appels ---
 // Mécanisme : binding Rate Limiting de Workers (env.LIMITEUR), voir docs/cloudflare-findings.md.
-// Sans binding (wrangler dev local) : repli en mémoire par isolat, avec un avertissement,
+// Toujours : 30 appels par heure en mémoire, par isolat. Sans binding (wrangler dev local) : avertissement,
 // sauf si EXIGER_LIMITEUR vaut "1" (production) : la requête est alors refusée (503).
 const appelsRepli = [];
 let avertiSansLimiteur = false;
@@ -250,11 +263,10 @@ const limiteurPresent = (env) => Boolean(env.LIMITEUR) && typeof env.LIMITEUR.li
 async function limiteAtteinte(env, deps) {
   if (limiteurPresent(env)) {
     const { success } = await env.LIMITEUR.limit({ key: 'service' });
-    return !success;
-  }
-  if (!avertiSansLimiteur) {
+    if (!success) return true;
+  } else if (!avertiSansLimiteur) {
     avertiSansLimiteur = true;
-    console.warn('limiteur_absent : repli en memoire (30 appels/heure par instance), a ne pas utiliser en production');
+    console.warn('limiteur_absent : limite en memoire seule (30 appels/heure par instance), a ne pas utiliser en production');
   }
   const maintenant = deps.now().getTime();
   while (appelsRepli.length && appelsRepli[0] <= maintenant - REPLI_LIMITE.fenetreMs) appelsRepli.shift();
@@ -295,7 +307,8 @@ export function validerCorps(texte) {
 const ROUTES = { '/api/programmer': 'POST', '/api/etat': 'GET' };
 
 export async function traiter(request, env, deps = {}) {
-  deps = { fetch: (...a) => fetch(...a), now: () => new Date(), sleep: (ms) => new Promise((r) => setTimeout(r, ms)), ...deps };
+  deps = { fetch: (...a) => fetch(...a), now: () => new Date(), sleep: (ms) => new Promise((r) => setTimeout(r, ms)), horloge: () => Date.now(), ...deps };
+  deps.echeance = deps.horloge() + (deps.echeanceMs ?? ECHEANCE_MS);
   const url = new URL(request.url);
   const methode = request.method;
 

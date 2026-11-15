@@ -11,9 +11,9 @@ Source : https://developers.cloudflare.com/workers/runtime-apis/bindings/rate-li
 - Limites propres au mécanisme : compteur **par emplacement Cloudflare** (pas global), approximatif et à cohérence différée. Pour une limite stricte globale, la page recommande un Durable Object (écarté : trop lourd pour ce besoin).
 - **Confirmé le 2026-11-14 : disponible sur le plan gratuit.** Premier `wrangler deploy` (4.162.0) accepté avec le binding listé `env.LIMITEUR (10 requests/60s) Rate Limit`. Ancienne note, conservée pour mémoire : **Non confirmé : disponibilité sur le plan gratuit.** La page ne le dit pas, et la page des limites des Workers (https://developers.cloudflare.com/workers/platform/limits/) ne mentionne pas ce binding. À vérifier au premier déploiement ; si le binding est refusé, retirer le bloc `[[ratelimits]]` (le Worker retombe sur son repli) ou utiliser une règle de limitation de débit WAF de la zone (non étudiée ici, nécessite un domaine).
 
-Choix : 10 appels par période de 60 s, clé fixe (`service`), après contrôle du jeton. C'est plus large que « quelques dizaines par heure » (la période est limitée à 60 s) mais borne un client abusif ; l'usage normal est de quelques appels par soir.
+Choix : 10 appels par période de 60 s, clé fixe (`service`), après contrôle du jeton. **Depuis le 2026-11-15** (relecture sécurité, décision de Mathieu), une limite de **30 appels par heure** en mémoire s'applique toujours en plus du binding : le binding seul permettait jusqu'à 600 appels par heure, de quoi épuiser le quota Tuya avec un jeton volé. Cette limite est par instance (approximative), mais un abus soutenu tombe en pratique sur peu d'instances ; l'usage normal est de quelques appels par soir.
 
-Repli sans binding (`wrangler dev` local, ou binding absent) : fenêtre glissante en mémoire, 30 appels par heure par instance, avec un `console.warn` unique (`limiteur_absent`). Approximatif (chaque instance a son compteur) : **ne pas compter dessus en production**.
+Sans binding (`wrangler dev` local) : seule la limite horaire en mémoire s'applique, avec un `console.warn` unique (`limiteur_absent`).
 
 ## Configuration de déploiement et journaux (lu le 2026-11-14)
 
