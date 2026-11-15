@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'">
+<meta name="color-scheme" content="light dark">
+<title>{{titre}}</title>
+<meta name="description" content="{{description}}">
+{{robots}}<link rel="canonical" href="{{canonique}}">
+<meta property="og:type" content="website">
+<meta property="og:locale" content="fr_FR">
+<meta property="og:title" content="{{titre}}">
+<meta property="og:description" content="{{description}}">
+<meta property="og:url" content="{{canonique}}">
+<meta property="og:image" content="{{image}}">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="{{titre}}">
+<meta name="twitter:description" content="{{description}}">
+<meta name="twitter:image" content="{{image}}">
+<link rel="icon" type="image/svg+xml" href="{{base}}app/icone.svg">
+<link rel="stylesheet" href="{{base}}app/style.css">
+{{scripts}}</head>
+<body>
+<a class="saut" href="#contenu">Aller au contenu</a>
+<header class="entete">
+<nav aria-label="Navigation principale">
+<a href="{{base}}" class="marque-site">Charge à 80 %</a>
+<!-- emplacement S3 : liens Guides et Financement -->
+</nav>
+</header>
+<main id="contenu">
+{{contenu}}
+</main>
+<footer class="pied">
+<p>Aucune donnée n'est envoyée par ce site : vos réglages restent dans votre navigateur.</p>
+<!-- emplacement S3 : liens Financement, Confidentialité, Mentions légales -->
+</footer>
+</body>
+</html>

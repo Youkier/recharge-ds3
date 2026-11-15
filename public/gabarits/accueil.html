@@ -1,0 +1,127 @@
+<section class="intro">
+<h1>La limite de charge à 80 % pour les voitures qui n'en ont pas, en heures creuses</h1>
+<p>Votre voiture n'a pas de réglage « arrêter à 80 % » ? Dites-nous la batterie qu'il vous reste en arrivant : le calcul donne l'heure à laquelle démarrer la charge pour qu'elle se termine à 80 %, au plus tard à la fin de vos heures creuses.</p>
+<ol class="etapes">
+<li>Répondez une fois à trois questions : votre voiture, votre recharge, vos heures.</li>
+<li>Chaque soir, saisissez la batterie à l'arrivée.</li>
+<li>Réglez l'heure de début de charge dans la voiture, le câble ou la borne.</li>
+</ol>
+</section>
+
+<noscript><p class="avis">Le calcul a besoin de JavaScript. Sans lui, la page ne peut pas afficher l'heure de charge.</p></noscript>
+
+<form id="calcul" class="calcul" novalidate data-phc="{{phc}}" data-php="{{php}}">
+
+<details id="reglages" class="bloc" open>
+<summary id="resume-reglages">Mes réglages (trois questions)</summary>
+
+<fieldset>
+<legend>1. Votre voiture</legend>
+<div class="champ"><label for="marque">Marque</label>
+<select id="marque"><option value="">Choisir une marque</option></select></div>
+<div class="champ" id="zone-modele" hidden><label for="modele">Modèle</label>
+<select id="modele"></select></div>
+<div class="champ" id="zone-version" hidden><label for="version">Version</label>
+<select id="version"></select></div>
+<p id="info-cap" class="aide" hidden></p>
+<div class="champ" id="zone-cap" hidden><label for="cap">Capacité utile de la batterie (kWh)</label>
+<input id="cap" type="text" inputmode="decimal" autocomplete="off">
+<p class="aide">La capacité utile figure dans la notice de la voiture ou sur sa fiche technique.</p></div>
+</fieldset>
+
+<fieldset>
+<legend>2. Votre recharge</legend>
+<div class="radios">
+<label><input type="radio" name="courant" value="10"> Prise classique, 10 A</label>
+<label><input type="radio" name="courant" value="16" checked> Prise renforcée, 16 A (3,7 kW)</label>
+<label><input type="radio" name="courant" value="32"> Borne 7,4 kW, 32 A</label>
+<label><input type="radio" name="courant" value="autre"> Autre courant</label>
+</div>
+<div class="champ" id="zone-amp" hidden><label for="amp">Courant de charge (A)</label>
+<input id="amp" type="text" inputmode="decimal" autocomplete="off" value="16"></div>
+<p class="aide">Tension : 230 V, recharge monophasée.</p>
+</fieldset>
+
+<fieldset>
+<legend>3. Vos heures creuses et votre départ</legend>
+<div class="ligne">
+<div class="champ"><label for="hcStart">Début des heures creuses</label>
+<input id="hcStart" type="time" value="22:00"></div>
+<div class="champ"><label for="hcEnd">Fin des heures creuses</label>
+<input id="hcEnd" type="time" value="06:00"></div>
+<div class="champ"><label for="dep">Heure de départ</label>
+<input id="dep" type="time" value="07:30"></div>
+</div>
+<p class="aide">Vos heures creuses figurent sur votre facture.</p>
+</fieldset>
+
+<details id="avance" class="avance">
+<summary>Paramètres avancés</summary>
+<div class="ligne">
+<div class="champ"><label for="target">Batterie visée (%)</label>
+<input id="target" type="text" inputmode="decimal" autocomplete="off" value="80"></div>
+<div class="champ"><label for="soh">État de santé de la batterie (%)</label>
+<input id="soh" type="text" inputmode="decimal" autocomplete="off" value="100"></div>
+<div class="champ"><label for="volt">Tension (V)</label>
+<input id="volt" type="text" inputmode="decimal" autocomplete="off" value="230"></div>
+<div class="champ"><label for="eff">Rendement de charge (%)</label>
+<input id="eff" type="text" inputmode="decimal" autocomplete="off" placeholder="automatique">
+<p id="info-eff" class="aide"></p></div>
+</div>
+<div class="ligne">
+<div class="champ"><label for="pHC">Prix de l'électricité en heures creuses (€/kWh)</label>
+<input id="pHC" type="text" inputmode="decimal" autocomplete="off" value="{{phc}}"></div>
+<div class="champ"><label for="pHP">Prix de l'électricité en heures pleines (€/kWh)</label>
+<input id="pHP" type="text" inputmode="decimal" autocomplete="off" value="{{php}}"></div>
+<div class="champ"><label for="nuits">Recharges par an (pour l'économie annuelle)</label>
+<input id="nuits" type="text" inputmode="numeric" autocomplete="off" value="100"></div>
+</div>
+<p class="aide">Vos prix figurent sur votre facture.</p>
+{{source_tarifs}}
+<div class="radios">
+<label><input type="radio" name="mode" value="end" checked> Finir à la fin des heures creuses</label>
+<label><input type="radio" name="mode" value="start"> Commencer au début des heures creuses</label>
+</div>
+</details>
+
+<p><button type="button" id="valider">Valider mes réglages</button></p>
+</details>
+
+<section class="bloc" aria-labelledby="titre-soir">
+<h2 id="titre-soir">Ce soir</h2>
+<div class="champ"><label for="soc">Batterie à l'arrivée (%)</label>
+<input id="soc" type="text" inputmode="decimal" autocomplete="off" placeholder="par exemple 38"></div>
+<div id="resultat" class="resultat" aria-live="polite" data-statut="attente">
+<p>Saisissez la batterie à l'arrivée pour voir l'heure de début de charge.</p>
+</div>
+<div id="partage" class="partage" hidden>
+<h3>Deux chiffres à partager</h3>
+<ul id="chiffres"></ul>
+<p class="aide" id="mode-calcul"></p>
+</div>
+</section>
+</form>
+
+<!-- emplacement S2 : « Comment lancez-vous la charge ? » (encarts de offres.json) -->
+<!-- emplacement S2 : liste d'attente (bouton masqué sans adresse) -->
+<!-- emplacement S2 : bouton de lien de partage des réglages -->
+
+<section class="questions" aria-labelledby="titre-faq">
+<h2 id="titre-faq">Questions fréquentes</h2>
+<details>
+<summary>Comment l'heure est-elle calculée ?</summary>
+<p>La puissance de charge vient du courant et de la tension, diminuée des pertes du chargeur (le rendement). La durée nécessaire vient de l'écart entre la batterie à l'arrivée et la batterie visée, rapporté à la capacité utile. La charge est placée pour se terminer à la fin de vos heures creuses, ou au départ si celui-ci arrive avant. Les durées sont arrondies à 5 minutes au-dessus.</p>
+</details>
+<details>
+<summary>Comment sont calculés l'économie annuelle et les nuits à 100 % évitées ?</summary>
+<p>Économie annuelle : l'énergie rechargée pendant les heures creuses, multipliée par l'écart entre le prix des heures pleines et celui des heures creuses, puis par le nombre de recharges par an indiqué dans les paramètres avancés (100 par défaut, c'est une hypothèse à ajuster). Elle n'apparaît que si vous avez saisi vos prix. Nuits à 100 % évitées : si la batterie visée est inférieure à 100 %, chaque recharge est une nuit où la batterie ne reste pas pleine ; le nombre est celui des recharges par an.</p>
+</details>
+<details>
+<summary>Quelles sont les limites ?</summary>
+<p>Une seule plage d'heures creuses par nuit, recharge monophasée seulement, et pas de prise en compte du préconditionnement de la voiture. L'estimation dépend de la capacité utile et du rendement : vérifiez le résultat les premiers soirs.</p>
+</details>
+<details>
+<summary>Que devient ce que je saisis ?</summary>
+<p>Rien n'est envoyé. Vos réglages sont conservés dans votre navigateur, sur cet appareil, et vous pouvez les effacer en vidant les données du site. La batterie du soir n'est pas conservée.</p>
+</details>
+</section>

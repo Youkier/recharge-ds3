@@ -1,0 +1,7 @@
+{
+  "_note": "Prix par défaut de l'électricité en €/kWh, tarif réglementé heures creuses et heures pleines. Aucun prix n'est inventé : tant que hc et hp sont null, la page demande à l'utilisateur de saisir ses prix et n'affiche ni coût ni économie. Pour renseigner un prix, remplir hc, hp, source (adresse de la page lue) et date (AAAA-MM-JJ de la lecture).",
+  "hc": null,
+  "hp": null,
+  "source": null,
+  "date": null
+}
