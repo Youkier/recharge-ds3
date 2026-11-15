@@ -167,21 +167,21 @@ T1 à T3 passés le 2026-11-11 (voir `docs/tuya-findings.md`). Compte principal 
 
 ### Critères d'acceptation (`testeur-relecteur`)
 
-- [ ] Tests unitaires de la signature Tuya (vecteurs de test) et du routage
+- [x] Tests unitaires de la signature Tuya (vecteurs de test) et du routage (tests automatiques, 2026-11-15)
 - [x] Appel direct en ligne de commande (pas depuis un navigateur) sans jeton ou avec mauvais jeton : 401 (production, 2026-11-14)
-- [ ] Avec le bon jeton : seules les actions prévues sont possibles, toute autre route ou heure invalide est refusée
-- [ ] Après une programmation : une seule plage, courant et fin de plage inchangés
-- [ ] La réponse n'annonce un succès que si la valeur relue sur le câble est celle demandée ; sinon erreur explicite
-- [ ] Heure déjà passée : comportement conforme à la décision de fin de phase 2a
-- [ ] Câble hors ligne ou Tuya en erreur (simulés) : erreur explicite, jamais de faux succès
-- [ ] Dépassement de la limite d'appels : 429
-- [ ] Origine non autorisée : refusée par CORS (confort navigateur)
-- [ ] Le Worker refuse d'agir sur tout autre appareil que `TUYA_DEVICE_ID` (identifiant jamais fourni par la page)
+- [x] Avec le bon jeton : seules les actions prévues sont possibles, toute autre route ou heure invalide est refusée (tests automatiques, 2026-11-15)
+- [x] Après une programmation : une seule plage, courant et fin de plage inchangés (tests automatiques, 2026-11-15)
+- [x] La réponse n'annonce un succès que si la valeur relue sur le câble est celle demandée ; sinon erreur explicite (tests automatiques, 2026-11-15)
+- [x] Heure déjà passée : comportement conforme à la décision de fin de phase 2a (tests automatiques, 2026-11-15)
+- [x] Câble hors ligne ou Tuya en erreur (simulés) : erreur explicite, jamais de faux succès (tests automatiques, 2026-11-15)
+- [x] Dépassement de la limite d'appels : 429 (tests automatiques avec binding simulé, 2026-11-15 ; limite réelle de 10/min, voir la relecture sécurité)
+- [x] Origine non autorisée : refusée par CORS (confort navigateur) (tests automatiques, 2026-11-15)
+- [x] Le Worker refuse d'agir sur tout autre appareil que `TUYA_DEVICE_ID` (identifiant jamais fourni par la page) (tests automatiques, 2026-11-15)
 - [x] Double authentification activée sur Cloudflare (Mathieu, 2026-11-14)
 - [ ] Procédure de révocation du jeton (`SECURITE.md`) testée une fois
-- [ ] Aucun secret dans le dépôt ni dans les journaux
+- [x] Aucun secret dans le dépôt ni dans les journaux (tests automatiques, 2026-11-15)
 - [x] Programmation réelle constatée dans l'écran du câble dans Smart Life (depuis le Pixel, 2026-11-14)
-- [ ] Relecture sécurité du Worker faite une fois avec le modèle le plus capable, avant le déploiement
+- [x] Relecture sécurité du Worker faite une fois avec le modèle le plus capable (2026-11-15, après le déploiement) : rien de critique ni d'important ; deux points mineurs à trancher (limite d'appels, durée totale bornée)
 
 ---
 
@@ -202,8 +202,8 @@ T1 à T3 passés le 2026-11-11 (voir `docs/tuya-findings.md`). Compte principal 
 ### Critères d'acceptation
 
 - [x] Programmation réussie depuis le Pixel, constatée dans l'écran du câble dans Smart Life (2026-11-14)
-- [ ] Service coupé, jeton faux, câble hors ligne : alerte KO avec message distinct, mode manuel rappelé, aide accessible hors ligne
-- [ ] Alerte OK affichée seulement avec une valeur relue conforme (vérifié en simulant une relecture différente)
+- [x] Service coupé, jeton faux, câble hors ligne : alerte KO avec message distinct, mode manuel rappelé, aide accessible hors ligne (tests automatiques, 2026-11-15)
+- [x] Alerte OK affichée seulement avec une valeur relue conforme (vérifié en simulant une relecture différente) (tests automatiques, 2026-11-15)
 - [ ] Aucun autre site n'est publié sur `youkier.github.io` (le stockage local, donc le jeton, y serait partagé), ou risque accepté dans `docs/decisions.md`
 - [ ] Une semaine d'usage réel sans intervention manuelle imprévue
 
