@@ -4,7 +4,7 @@
 #
 # Refuse le commit si :
 #  1. un fichier de secrets est indexé (.env…, .dev.vars…), sauf les modèles .env.example
-#     et .dev.vars.example ;
+#     et .dev.vars.example, ou une clé de signature Android (*.jks, *.keystore) ;
 #  2. un de ces modèles contient une valeur pour un identifiant Tuya ou le jeton d'accès ;
 #  3. une valeur présente dans tools/.env ou worker/.dev.vars apparaît dans les
 #     changements indexés (comparaison exacte, sur ce PC uniquement ; rien n'est affiché
@@ -23,6 +23,9 @@ for f in $fichiers; do
     .env.example|.dev.vars.example) ;;
     .env*|*.dev.vars*)
       echo "REFUSÉ : fichier de secrets indexé : $f" >&2
+      erreur=1 ;;
+    *.jks|*.keystore)
+      echo "REFUSÉ : clé de signature indexée : $f (elle reste hors du dépôt)" >&2
       erreur=1 ;;
   esac
 done

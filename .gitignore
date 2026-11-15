@@ -14,3 +14,15 @@ node_modules/
 
 # Cache Python (script d'essai du pilotage local)
 __pycache__/
+
+# Sortie de construction du site public (phase 3a)
+dist/
+
+# Coque Android (phase 3b) : sorties de construction, chemin local du SDK
+android/**/build/
+android/.gradle/
+android/local.properties
+
+# Clés de signature de l'APK : secrets du PC, jamais dans le dépôt
+*.jks
+*.keystore

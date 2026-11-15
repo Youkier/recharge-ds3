@@ -118,7 +118,7 @@ T1 à T3 passés le 2026-11-11 (voir `docs/tuya-findings.md`). Compte principal 
 - [ ] Tests du pilotage local L1 à L4 (`tools/tuya-local-test.py`, détail dans `docs/tuya-findings.md`) : repli sans internet, et base d'une éventuelle appli (volet produit). **L1, L2, L3 réussis (2026-11-15/16) ; L4 à faire plus tard** (voiture branchée, méthode notée dans `docs/tuya-findings.md`), puis supprimer `tools/.env`
 - [ ] **Essai gratuit IoT Core de Tuya : échéance le 2026-12-11** (constaté par Mathieu le 2026-11-15 ; sans lui, le Worker ne joint plus Tuya). Demander la prolongation de 6 mois vers le 1er décembre (plateforme Tuya → Cloud → Cloud Services → IoT Core → Extend Trial Period), puis à chaque échéance. La sortie durable de cette dépendance est le pilotage local (phase 3b)
 - [ ] **Clé locale du câble copiée dans le gestionnaire de mots de passe de Mathieu** avant toute suppression de `tools/.env` : elle ne se relit que par le cloud Tuya, donc plus du tout si l'essai expire. `tools/.env` n'est supprimé qu'après L4 **et** après le lot C2 de la phase 3b
-- [ ] Réseau de la maison : routeur TP-Link AX55 passé en mode point d'accès (en cours le 2026-11-15), pour que le câble soit joignable depuis les deux Wi-Fi ; adresse du câble réservée dans la box ; puis `scan` et `etat` depuis le Wi-Fi principal
+- [ ] Réseau de la maison : routeur TP-Link AX55 passé en mode point d'accès (en cours le 2026-11-15), pour que le câble soit joignable depuis les deux Wi-Fi ; adresse du câble réservée dans la box ; puis `scan` et `etat` depuis le Wi-Fi principal. **2026-11-15 : `scan` depuis le Wi-Fi principal ne trouve pas le câble** (PC en 192.168.1.0/24) ; `etat` non lancé, il attend l'adresse réservée du câble
 
 ### Tests du point d'arrêt
 
@@ -241,11 +241,11 @@ Décision de Mathieu du 2026-11-15 : **deux pistes avancent en parallèle**, san
 
 ### Préparation (une fois, avec l'accord de Mathieu)
 
-- [x] Exceptions aux règles n°7 (projet Gradle dans `android/`) et n°9 (pont TCP limité au port 6668 et aux adresses privées) validées et consignées dans `docs/decisions-produit.md` (2026-11-15) ; reste à les reporter dans les règles n°7 et n°9 de `CLAUDE.md`
-- [ ] `.gitignore` : `dist/`, `android/**/build/`, `android/.gradle/`, `android/local.properties`, `*.jks`, `*.keystore`
-- [ ] `tools/hooks/pre-commit` : refuser `*.jks` et `*.keystore`
-- [ ] `.claude/settings.json` : sans demande, `node tools/build-public.mjs*`, le serveur local de `dist/public` (`python -m http.server --bind 127.0.0.1 -d dist/public*`) et la lecture de `developer.android.com` ; avec demande, `node tools/tuya-local.mjs*`, `python tools/gen-vecteurs-tuya-local.py*`, les commandes Gradle et `adb`
-- [ ] `CLAUDE.md` : objectif 3 (les pistes 3a et 3b avancent en parallèle de la phase 2c), structure du dépôt (`public/`, `local/`, `android/`, `dist/`), `tools/tuya-local.mjs` ajouté aux scripts qui chargent `tools/.env` (règle n°3), commandes des deux pistes
+- [x] Exceptions aux règles n°7 (projet Gradle dans `android/`) et n°9 (pont TCP limité au port 6668 et aux adresses privées) validées et consignées dans `docs/decisions-produit.md` (2026-11-15) ; reportées dans les règles n°7 et n°9 de `CLAUDE.md` le 2026-11-15
+- [x] `.gitignore` : `dist/`, `android/**/build/`, `android/.gradle/`, `android/local.properties`, `*.jks`, `*.keystore`
+- [x] `tools/hooks/pre-commit` : refuser `*.jks` et `*.keystore` (vérifié sur un dépôt jetable le 2026-11-15)
+- [x] `.claude/settings.json` : sans demande, `node tools/build-public.mjs*`, le serveur local de `dist/public` (`python -m http.server --bind 127.0.0.1 -d dist/public*`) et la lecture de `developer.android.com` ; avec demande, `node tools/tuya-local.mjs*`, `python tools/gen-vecteurs-tuya-local.py*`, les commandes Gradle et `adb` ; en plus, lecture de `*.jks` et `*.keystore` interdite (2026-11-15)
+- [x] `CLAUDE.md` : objectif 3 (les pistes 3a et 3b avancent en parallèle de la phase 2c), structure du dépôt (`public/`, `local/`, `android/`, `dist/`), `tools/tuya-local.mjs` ajouté aux scripts qui chargent `tools/.env` (règle n°3), commandes des deux pistes
 - [ ] `SECURITE.md` : compléments du § 10 du cahier des charges de la coque, avant le lot C4
 
 ---
