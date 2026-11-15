@@ -58,6 +58,21 @@ test("short : dit de combien la cible est manquée, et le surcoût avec prix", (
   assert.ok(v.lignes.some((l) => l[0] === "Dont hors heures creuses"));
 });
 
+test("short : pas de surcoût négatif si le prix HP est inférieur au prix HC", () => {
+  const entree = { ...avecPrix({ pHC: "0,20", pHP: "0,15" }), cap: "100", amp: "10", courant: "10" };
+  const v = A.resultat(entree, "5");
+  assert.equal(v.statut, "short");
+  assert.ok(!v.lignes.some((l) => l[0] === "Surcoût du dépassement"));
+});
+
+test("nombres : notations exponentielle, hexadécimale et binaire refusées", () => {
+  for (const s of ["1e1", "0x1A", "0b11", "16abc", "-16"]) {
+    const v = A.resultat(sansPrix({ amp: s }), "38");
+    assert.equal(v.statut, "err", `courant « ${s} » accepté`);
+  }
+  assert.equal(A.resultat(sansPrix({ amp: "15,5" }), "38").statut, "ok");
+});
+
 test("short sans manque : la cible est atteinte mais hors heures creuses", () => {
   const v = A.resultat(sansPrix({ cap: "60", amp: "16" }), "10");
   if (v.statut === "short") assert.match(v.message, /(il manquera environ \d+ %|avant vos heures creuses)/);

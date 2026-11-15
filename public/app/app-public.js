@@ -15,7 +15,11 @@ export function effAuto(amp, volt) {
 }
 
 function vide(s) { return s === undefined || s === null || String(s).trim() === ""; }
-function nombre(s) { return vide(s) ? NaN : Number(String(s).trim().replace(",", ".")); }
+// Décimal simple seulement : « 1e1 », « 0x1A » ou « 0b11 » sont refusés.
+function nombre(s) {
+  var t = vide(s) ? "" : String(s).trim();
+  return /^\d+([.,]\d+)?$/.test(t) ? Number(t.replace(",", ".")) : NaN;
+}
 function heureOk(s) {
   var m = /^(\d{1,2}):(\d{2})$/.exec(String(s || "").trim());
   return !!m && Number(m[1]) < 24 && Number(m[2]) < 60;
@@ -100,7 +104,7 @@ export function resultat(brut, soc) {
     if (manque > 0) vue.message = "La cible de " + fr(p.target, 0) + " % ne sera pas atteinte dans vos heures creuses : il manquera environ " + manque + " %. Fin à " + fmt(r.end) + ", batterie vers " + arrondi + " %.";
     else vue.message = "La cible est atteinte, mais il faut commencer avant vos heures creuses. Fin à " + fmt(r.end) + ", batterie vers " + arrondi + " %.";
     if (hp > 0) vue.lignes.push(["Dont hors heures creuses", fdur(hp)]);
-    if (prix && r.kwhHP > 0) vue.lignes.push(["Surcoût du dépassement", eur(r.kwhHP * (p.pHP - p.pHC))]);
+    if (prix && r.kwhHP > 0 && p.pHP > p.pHC) vue.lignes.push(["Surcoût du dépassement", eur(r.kwhHP * (p.pHP - p.pHC))]);
   }
   vue.lignes.unshift(["Fin de la charge", fmt(r.end)], ["Durée", fdur(r.chargeMin)], ["Énergie", fr(r.kwh, 1) + " kWh"]);
   if (prix) vue.lignes.push(["Coût de la nuit", eur(r.cost)]);
@@ -265,8 +269,12 @@ function demarrer() {
 
   var defautsPrix = { pHC: form.dataset.phc || "", pHP: form.dataset.php || "" };
   var sauve = charger();
+  // Rien n'est recalculé ni enregistré avant init : une saisie faite pendant le chargement de
+  // la liste ne doit pas écraser les réglages sauvegardés.
+  var pret = false;
 
   function init(doc) {
+    pret = true;
     if (doc) listeChargee(doc); else listeAbsente();
     restaurer(sauve, defautsPrix);
     if (!doc) $("marque").value = AUTRE;
@@ -279,14 +287,16 @@ function demarrer() {
   fetch("vehicules.json").then(function (r) { if (!r.ok) throw new Error("liste"); return r.json(); })
     .then(init, function () { init(null); });
 
-  form.addEventListener("input", recalculer);
+  form.addEventListener("input", function () { if (pret) recalculer(); });
   form.addEventListener("change", function (e) {
+    if (!pret) return;
     if (e.target.id === "marque") { choixVoiture(e.target.value, "", ""); }
     else if (e.target.id === "modele") { choixVoiture($("marque").value, e.target.value, ""); }
     recalculer();
   });
   form.addEventListener("submit", function (e) { e.preventDefault(); });
   $("valider").addEventListener("click", function () {
+    if (!pret) return;
     var lu = lireReglages(lireBrut());
     if (lu.erreurs.length) {
       afficher({ statut: "err", titre: "Une saisie est à corriger", message: lu.erreurs[0].message, lignes: [], champ: lu.erreurs[0].id, prixManquants: false, chiffres: null });

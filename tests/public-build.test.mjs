@@ -61,7 +61,8 @@ test("calc.js, vehicules.js et vehicules.json sont identiques à ceux de site/",
 });
 
 test("aucun fichier de site/ n'est modifié", () => {
-  const sortie = execFileSync("git", ["diff", "--name-only", "--", "site/"], { cwd: RACINE, encoding: "utf8" });
+  // Indexé, non indexé ou nouveau : git status voit les trois (git diff seul ne voit pas l'index).
+  const sortie = execFileSync("git", ["status", "--porcelain", "--untracked-files=all", "--", "site/"], { cwd: RACINE, encoding: "utf8" });
   assert.equal(sortie.trim(), "");
 });
 
