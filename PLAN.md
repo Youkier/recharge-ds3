@@ -43,7 +43,7 @@ Chaque phase se termine par des critères d'acceptation vérifiés par `testeur-
 - [x] Sur le Pixel : Chrome propose « Installer l'application » ou « Ajouter à l'écran d'accueil », l'icône s'ouvre en plein écran
 - [x] Paramètres modifiés, appli fermée puis rouverte : les paramètres sont conservés
 - [x] Mode avion : la page s'ouvre et calcule
-- [ ] Une nouvelle version publiée apparaît sur le téléphone après au plus deux ouvertures
+- [x] Une nouvelle version publiée apparaît sur le téléphone après au plus deux ouvertures (Pixel, 2026-11-15)
 
 ---
 
@@ -59,11 +59,11 @@ Chaque phase se termine par des critères d'acceptation vérifiés par `testeur-
 
 ### Critères d'acceptation
 
-- [ ] `node --test "tests/**/*.test.mjs"` passe, cas de référence inchangés
-- [ ] Sur le Pixel : le menu ouvre Paramètres et Aide, le bouton retour d'Android ramène à l'accueil
-- [ ] Mode avion : les trois vues s'ouvrent
-- [ ] Paramètres conservés après la mise à jour (aucune perte du stockage local)
-- [ ] La nouvelle version apparaît sur le téléphone après au plus deux ouvertures (clôt le critère resté ouvert en phase 1)
+- [x] `node --test "tests/**/*.test.mjs"` passe, cas de référence inchangés
+- [x] Sur le Pixel : le menu ouvre Paramètres et Aide, le bouton retour d'Android ramène à l'accueil (2026-11-15)
+- [x] Mode avion : les trois vues s'ouvrent (2026-11-15)
+- [x] Paramètres conservés après la mise à jour (aucune perte du stockage local) (2026-11-15)
+- [x] La nouvelle version apparaît sur le téléphone après au plus deux ouvertures (2026-11-15 ; clôt le critère resté ouvert en phase 1)
 
 ---
 
