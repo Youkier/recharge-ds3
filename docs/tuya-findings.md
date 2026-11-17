@@ -183,3 +183,11 @@ Date : 2026-11-15. Source unique : le code de **tinytuya 1.21.1** (MIT) install�
 Choix du module, non fournis par tinytuya : nombre de relectures (3, précédées de pauses de 0,5 s, 1,5 s puis 2,5 s), accusé d'écriture attendu 2 s au plus (son absence n'est pas une erreur, la relecture décide), échéance globale de 20 s.
 
 **À confirmer sur le vrai câble (lot C2)** : forme exacte de l'accusé d'écriture et des annonces d'état (le faux câble en suppose : un accusé cmd 0x0d vide, puis une annonce cmd 8) ; forme de la réponse de lecture (`dps` ou `data.dps`, avec ou sans en-tête de version : le module accepte les trois) ; comportement d'un câble qui reçoit une négociation avec une mauvaise clé (le module conclut `cle` sur trame refusée ou connexion fermée, mais `delai` si le câble se tait) ; comportement du câble quand Smart Life est ouverte sur le même câble ; délai réel de répercussion de l'écriture (trois relectures espacées de 0,5, 1,5 et 2,5 s suffisent-elles ?) ; adresse IPv4 réservée dans la box.
+
+## Recherche automatique du câble (lot C2, partie code, 2026-11-17)
+
+Source : code et tests (`local/recherche.js`, `tests/tuya-local-recherche.test.mjs`), faux réseau seulement ; **rien n'est encore vérifié sur le vrai réseau**.
+
+- Ordre des adresses : `TUYA_LOCAL_IP`, puis `tools/releves/cable-adresse.json` (adresse seule, ignorée si absente, corrompue ou non privée), puis /24 des interfaces IPv4 privées du PC.
+- Une adresse n'est retenue que si `lireEtat()` y réussit (négociation de la clé) ; port 6668 ouvert (sonde 400 ms, 32 en parallèle) ne suffit pas. Zéro ou plusieurs câbles : `hors_ligne`. Échéance globale 30 s. La recherche ne lit ni n'écrit rien d'autre.
+- **À vérifier sur le vrai réseau** : durée d'un balayage /24 réel sous Windows (profil Public, pare-feu) ; le câble tolère-t-il une sonde TCP ouverte puis fermée sans données, suivie de la négociation ; comportement d'un autre appareil au port 6668 ; cas du VPN ou des cartes virtuelles (/24 en plus).

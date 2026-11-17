@@ -11,14 +11,17 @@
 // en option, TUYA_LOCAL_VERSION (3.5 seulement). Aucune valeur secrète n'est jamais affichée (ni clé, ni identifiant).
 // N'agit que sur TUYA_DEVICE_ID, et n'écrit que ss et m du dp 151, comme tools/tuya-local-test.py.
 
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
+import { networkInterfaces } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { lireEtat, programmer } from '../local/tuya-local.js';
-import { creerTransportNode, adresseAutorisee } from '../local/transport-node.mjs';
+import { programmer } from '../local/tuya-local.js';
+import { localiserCable } from '../local/recherche.js';
+import { creerTransportNode, adresseAutorisee, sonderPort } from '../local/transport-node.mjs';
 
 const ICI = dirname(fileURLToPath(import.meta.url));
 const HEURE_VALIDE = /^([01]\d|2[0-3]):[0-5]\d$/;
+const FICHIER_ADRESSE = join(ICI, 'releves', 'cable-adresse.json'); // dossier ignoré par git ; adresse seulement
 const AIDE = 'Actions : etat | ecrire-debut <HH:MM> [--confirmer] | desactiver [--confirmer]';
 
 export function parseEnv(texte) {
@@ -36,16 +39,43 @@ export function parseEnv(texte) {
   return out;
 }
 
-export function chargerConfig(chemin = join(ICI, '.env'), env = process.env) {
+export function chargerConfig(chemin = join(ICI, '.env'), env = process.env, { ipFacultative = false } = {}) {
   if (!existsSync(chemin)) throw new Error('Fichier tools/.env introuvable.');
   const f = parseEnv(readFileSync(chemin, 'utf8'));
   for (const k of ['TUYA_DEVICE_ID', 'TUYA_LOCAL_KEY']) if (!f[k]) throw new Error(`Variable manquante dans tools/.env : ${k}`);
   const ip = env.TUYA_LOCAL_IP || f.TUYA_LOCAL_IP;
-  if (!ip) throw new Error('TUYA_LOCAL_IP manquante (tools/.env ou variable d\'environnement) : adresse du câble sur le Wi-Fi.');
-  if (!adresseAutorisee(ip, 6668)) throw new Error('TUYA_LOCAL_IP refusée : adresse IPv4 privée attendue (192.168.x.x, 10.x.x.x ou 172.16 à 31.x.x).');
+  if (!ip && !ipFacultative) throw new Error('TUYA_LOCAL_IP manquante (tools/.env ou variable d\'environnement) : adresse du câble sur le Wi-Fi.');
+  if (ip && !adresseAutorisee(ip, 6668)) throw new Error('TUYA_LOCAL_IP refusée : adresse IPv4 privée attendue (192.168.x.x, 10.x.x.x ou 172.16 à 31.x.x).');
   const version = env.TUYA_LOCAL_VERSION || f.TUYA_LOCAL_VERSION || '3.5';
   if (version !== '3.5') throw new Error('Seul le protocole 3.5 est pris en charge (TUYA_LOCAL_VERSION).');
   return { ip, deviceId: f.TUYA_DEVICE_ID, cleLocale: f.TUYA_LOCAL_KEY, version };
+}
+
+// Dernière adresse trouvée : adresse seulement, jamais de clé ni d'identifiant. Fichier absent, corrompu ou adresse non privée : ignoré.
+export function lireAdresseEnregistree(chemin = FICHIER_ADRESSE) {
+  try {
+    const ip = JSON.parse(readFileSync(chemin, 'utf8'))?.ip;
+    return typeof ip === 'string' && adresseAutorisee(ip, 6668) ? ip : null;
+  } catch { return null; }
+}
+
+export function enregistrerAdresse(ip, chemin = FICHIER_ADRESSE) {
+  if (!adresseAutorisee(ip, 6668) || lireAdresseEnregistree(chemin) === ip) return;
+  try {
+    mkdirSync(dirname(chemin), { recursive: true });
+    writeFileSync(chemin, JSON.stringify({ ip }) + '\n');
+  } catch { /* l'enregistrement est un confort : son échec ne bloque rien */ }
+}
+
+// Adresses IPv4 privées des interfaces du PC (pour fouiller leur /24 faute d'adresse de départ).
+export function adressesDuPc(interfaces = networkInterfaces()) {
+  const out = [];
+  for (const liste of Object.values(interfaces)) {
+    for (const a of liste ?? []) {
+      if ((a.family === 'IPv4' || a.family === 4) && !a.internal && adresseAutorisee(a.address, 6668)) out.push(a.address);
+    }
+  }
+  return out;
 }
 
 const MESSAGES = {
@@ -74,11 +104,27 @@ async function main(argv) {
     demande = { desactiver: true };
   }
   let cfg;
-  try { cfg = chargerConfig(); } catch (e) { console.error(e.message); return 1; }
+  try { cfg = chargerConfig(undefined, undefined, { ipFacultative: true }); } catch (e) { console.error(e.message); return 1; }
+
+  // Adresse du câble : TUYA_LOCAL_IP, puis la dernière trouvée ; si elle ne répond pas, recherche sur le réseau (lecture seule).
+  const { ip: ipConfig, ...cfgSansIp } = cfg;
+  const loc = await localiserCable({
+    cfg: cfgSansIp, departs: [ipConfig, lireAdresseEnregistree()].filter(Boolean), interfaces: adressesDuPc(),
+    creerTransport: creerTransportNode, sonder: sonderPort,
+    surRecherche: () => console.log('Adresse du câble inconnue ou muette : recherche sur le réseau (jusqu\'à 30 s)...'),
+  });
+  if (!loc.ok) {
+    console.error(`ECHEC (${loc.erreur}) : ${MESSAGES[loc.erreur]}`);
+    if (loc.recherche) console.error('Recherche sur le réseau sans résultat : aucun câble, ou plusieurs appareils acceptent la clé. Rien n\'a été écrit.');
+    return 1;
+  }
+  if (loc.trouve) console.log(`Câble trouvé à ${loc.ip}`);
+  enregistrerAdresse(loc.ip);
+  cfg = { ...cfg, ip: loc.ip };
 
   const transport = creerTransportNode();
   if (action === 'etat') {
-    const r = await lireEtat(cfg, transport);
+    const r = loc.etat;
     if (!r.ok) { console.error(`ECHEC (${r.erreur}) : ${MESSAGES[r.erreur] ?? ''}`); return 1; }
     console.log(`Plage de charge (dp 151) : ${plageTexte(r)}.`);
     return 0;

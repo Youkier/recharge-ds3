@@ -337,16 +337,16 @@ Lot C1 (tests automatiques) :
 
 Lot C2, recherche automatique (tests automatiques, avant l'essai sur le câble) :
 
-- [ ] Adresse connue muette : recherche limitée au réseau /24 de cette adresse (IPv4 privée, port 6668), câble confirmé seulement par la négociation de sa clé ; aucune lecture ni écriture sur un autre appareil
-- [ ] Nouvelle adresse affichée ; deux appareils qui acceptent la clé, ou aucun : échec clair (`hors_ligne`), jamais de choix au hasard
-- [ ] Recherche bornée : parallélisme limité, délai court par adresse, échéance globale respectée ; la clé n'apparaît dans aucun message
+- [x] Adresse connue muette : recherche limitée au réseau /24 de cette adresse (IPv4 privée, port 6668), câble confirmé seulement par la négociation de sa clé ; aucune lecture ni écriture sur un autre appareil
+- [x] Nouvelle adresse affichée ; deux appareils qui acceptent la clé, ou aucun : échec clair (`hors_ligne`), jamais de choix au hasard
+- [x] Recherche bornée : parallélisme limité, délai court par adresse, échéance globale respectée ; la clé n'apparaît dans aucun message
 
 Lot C2 (sur le câble) :
 
-- [ ] Recherche automatique : câble retrouvé après un faux `TUYA_LOCAL_IP` (adresse privée inoccupée)
-- [ ] `etat` lit la même plage que Smart Life et que `tools/tuya-local-test.py`
-- [ ] `ecrire-debut HH:MM` sans `--confirmer` n'envoie rien
-- [ ] Écriture réelle relue conforme, heure visible dans Smart Life, charge démarrée à l'heure (Mathieu)
+- [x] Recherche automatique : câble retrouvé sans adresse de départ (2026-11-17, sur le /24 du PC, « Câble trouvé à 192.168.1.48 », adresse enregistrée puis relue sans recherche) ; essai avec un faux `TUYA_LOCAL_IP` à refaire une fois (couvert par les tests)
+- [x] `etat` lit la même plage que Smart Life et que `tools/tuya-local-test.py` (2026-11-17 : 00:20–06:00, programmée le soir même par la page)
+- [x] `ecrire-debut HH:MM` sans `--confirmer` n'envoie rien (2026-11-17, simulation 00:25)
+- [ ] Écriture réelle relue conforme, heure visible dans Smart Life, charge démarrée à l'heure (Mathieu) : **écrite et relue conforme le 2026-11-17 à 23 h (00:25–06:00, aucun autre point modifié)** ; restent l'affichage dans Smart Life et le démarrage à 00:25 (Mathieu)
 
 Lot C3 (sur le Pixel) :
 

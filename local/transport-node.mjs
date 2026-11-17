@@ -22,6 +22,20 @@ function erreur(code) {
   return e;
 }
 
+// Sonde de port pour la recherche du câble : ouvre puis ferme aussitôt, sans rien envoyer. true si le port 6668 accepte.
+// Même filtre d'adresses que ouvrir() ; ne rejette jamais.
+export function sonderPort(ip, delaiMs) {
+  if (!adresseAutorisee(ip, PORT_CABLE)) return Promise.resolve(false);
+  return new Promise((resolve) => {
+    const s = net.createConnection({ host: ip, port: PORT_CABLE });
+    let fini = false;
+    const terminer = (ouvert) => { if (fini) return; fini = true; clearTimeout(minuteur); s.destroy(); resolve(ouvert); };
+    const minuteur = setTimeout(() => terminer(false), delaiMs);
+    s.once('connect', () => terminer(true));
+    s.once('error', () => terminer(false));
+  });
+}
+
 export function creerTransportNode() {
   let socket = null;
   let recus = []; // morceaux reçus, pas encore rendus
