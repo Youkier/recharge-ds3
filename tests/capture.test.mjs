@@ -40,3 +40,30 @@ test("navigateur : profil jetable, une seule adresse, locale et en dernier", () 
   assert.ok(!a.some((x) => /remote-debugging|load-extension|proxy/.test(x)));
   assert.ok(c.fichier.startsWith(DOSSIER + sep));
 });
+
+test('chemins hostiles refusés : antislash réel, Unicode, retour à la ligne, octet nul, // et caractères de contrôle', () => {
+  for (const chemin of [String.raw`/a\b`, String.raw`\\exemple.com\x`, '/é', '/\uFF0F\uFF0Fexemple.com', '/a\u202eb', '/a\nb', '/a\0b', '/a\r\nHost: x', '/a#x', '/a;b', '/a:80']) {
+    assert.throws(() => preparer(['8081', chemin]), Error, JSON.stringify(chemin));
+  }
+  assert.throws(() => preparer(['8081', '/', '--theme=sombre\n']), Error);
+  assert.throws(() => preparer(['8081', undefined]), Error);
+  assert.throws(() => preparer(['8081', 42]), Error);
+});
+
+test('chemins avec « .. » ou « %2f » : l\'adresse reste 127.0.0.1 sur le port validé, le fichier reste dans dist/captures', () => {
+  for (const chemin of ['/../../x', '/%2e%2e/%2f/x', '/a?b=c&d=%40exemple.com', '/..']) {
+    const c = preparer(['8080', chemin]);
+    const u = new URL(c.url);
+    assert.equal(u.hostname, '127.0.0.1');
+    assert.equal(u.port, '8080');
+    assert.equal(u.protocol, 'http:');
+    assert.ok(c.fichier.startsWith(DOSSIER + sep));
+    assert.ok(!c.fichier.slice(DOSSIER.length + 1).includes(sep));
+  }
+});
+
+test('un chemin commençant par un tiret devient un simple chemin du serveur local, jamais une option du navigateur', () => {
+  const c = preparer(['8081', '--remote-debugging-port=9222']);
+  assert.equal(c.url, 'http://127.0.0.1:8081/--remote-debugging-port=9222');
+  assert.equal(argumentsNavigateur(c, 'P').at(-1), c.url);
+});

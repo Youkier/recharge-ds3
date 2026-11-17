@@ -45,3 +45,12 @@ Après toute révocation : vérifier dans Smart Life que la plage de charge du c
 - La double authentification est active sur les trois comptes.
 - Aucune alerte de fuite dans GitHub (onglet Security).
 - L'accès gratuit à l'API Tuya n'est pas sur le point d'expirer.
+
+## Risque accepté : un agent qui modifie puis lance un outil (2026-11-17)
+
+Pour limiter les demandes d'autorisation, les outils sans secret (`tools/*.mjs` hors scripts protégés, `tests/`) se modifient et se lancent sans demande. Un agent trompé (par un contenu lu sur le web, par exemple) pourrait donc écrire un test ou un outil qui lit `tools/.env` et l'affiche dans la conversation. Accepté par Mathieu le 2026-11-17, avec ces limites :
+
+- `local/` et tous les `tools/*.py` restent protégés : ce sont les chemins directs vers le câble (code exécuté par `node tools/tuya-local.mjs etat`, lancé sans demande) et vers les secrets (un module Python placé dans `tools/` serait chargé par les scripts qui lisent `tools/.env`) ;
+- le test `tests/garde-fous-depot.test.mjs` signale un fichier de `tests/` ou `local/` qui lit un fichier de secrets ou ouvre une connexion ;
+- la relecture par `testeur-relecteur` de chaque lot qui touche `tools/` ou `tests/` ;
+- si une valeur secrète apparaît dans une conversation : la traiter comme fuite (procédures de révocation ci-dessus).
