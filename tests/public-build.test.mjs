@@ -184,7 +184,90 @@ test("prix par défaut : ceux de tarifs.json, avec leur source officielle, rappe
 
 test("les emplacements des lots suivants sont prévus et les champs ont un libellé", () => {
   const h = lire(dirA, "index.html");
-  assert.match(h, /emplacement S2/);
+  assert.match(h, /emplacement S3|Comment lancez-vous la charge/);
   for (const id of [...h.matchAll(/<(?:input|select)[^>]*\sid="([^"]+)"/g)].map((m) => m[1])) assert.match(h, new RegExp(`<label for="${id}"`), id);
   assert.ok(statSync(join(dirA, "index.html")).size + statSync(join(dirA, "app", "app-public.js")).size + statSync(join(dirA, "app", "style.css")).size + statSync(join(dirA, "calc.js")).size < 150000);
+});
+
+// ---- Lot S2 : « Comment régler », liste d'attente, liens rémunérés
+import { cpSync } from "node:fs";
+function avecOffres(modif) {
+  const src = tmp(); cpSync(join(RACINE, "public"), src, { recursive: true });
+  const f = join(src, "donnees", "offres.json");
+  const o = JSON.parse(readFileSync(f, "utf8")); modif(o); writeFileSync(f, JSON.stringify(o));
+  const sortie = tmp();
+  return { src, sortie, construire: () => construire({ sortie, env: envNeutre, source: src }) };
+}
+
+test("Comment régler : question, quatre réponses, un encart par réponse, lus dans offres.json", () => {
+  const h = lire(dirA, "index.html");
+  assert.match(h, /Comment lancez-vous la charge \?/);
+  const offres = JSON.parse(readFileSync(join(RACINE, "public", "donnees", "offres.json"), "utf8"));
+  assert.equal(offres.reponses.length, 4);
+  for (const r of offres.reponses) {
+    assert.ok(h.includes(`value="${r.id}" data-encart="encart-${r.encart}"`), r.id);
+    assert.match(h, new RegExp(`id="encart-${r.encart}" hidden`));
+  }
+  assert.ok(!/prise connectée.*(achet|recommand)/i.test(h));
+});
+
+test("encarts inactifs absents de la page ; l'activer les fait apparaître", () => {
+  const h = lire(dirA, "index.html");
+  const offres = JSON.parse(readFileSync(join(RACINE, "public", "donnees", "offres.json"), "utf8"));
+  for (const id of ["reglage-automatique", "offres-electricite"]) {
+    const e = offres.encarts.find((x) => x.id === id);
+    assert.equal(e.actif, false);
+    assert.ok(!h.includes(`encart-${id}`) && !h.includes(e.titre), id);
+  }
+  const t = avecOffres((o) => { o.encarts.find((x) => x.id === "reglage-automatique").actif = true; });
+  t.construire();
+  assert.ok(lire(t.sortie, "index.html").includes('id="encart-reglage-automatique"'));
+});
+
+test("liste d'attente : bouton absent si l'adresse est vide, présent sinon", () => {
+  const h = lire(dirA, "index.html");
+  assert.ok(!/liste d'attente|Vous voulez que ça se règle tout seul/.test(h));
+  const t = avecOffres((o) => { o.liste_attente.url = "https://formulaire.exemple.eu/inscription"; });
+  t.construire();
+  const p = lire(t.sortie, "index.html");
+  assert.match(p, /Vous voulez que ça se règle tout seul \?/);
+  assert.match(p, /<a class="bouton" href="https:\/\/formulaire\.exemple\.eu\/inscription" rel="noopener">Ouvrir le formulaire de la liste d'attente<\/a>/);
+});
+
+test("lien rémunéré : rel et mention imposés par la construction ; lien vide non affiché", () => {
+  assert.ok(!/sponsored|lien rémunéré/.test(lire(dirA, "index.html")), "adresse vide : aucun lien");
+  const t = avecOffres((o) => { o.encarts.find((x) => x.id === "solutions").liens = [
+    { texte: "Un câble", url: "https://partenaire.exemple.com/a?b=1&c=2", remunere: true },
+    { texte: "Un guide", url: "https://exemple.org/guide", remunere: false },
+  ]; });
+  t.construire();
+  const p = lire(t.sortie, "index.html");
+  assert.match(p, /<a href="https:\/\/partenaire\.exemple\.com\/a\?b=1&amp;c=2" rel="sponsored nofollow noopener">Un câble<\/a> <span class="remunere">lien rémunéré<\/span>/);
+  assert.match(p, /<a href="https:\/\/exemple\.org\/guide" rel="noopener">Un guide<\/a><\/p>/);
+  assert.equal((p.match(/lien rémunéré/g) || []).length, 1);
+});
+
+test("offres.json invalide refusé par la construction", () => {
+  const cas = [
+    [(o) => { o.liste_attente.url = "http://pas-https.example"; }, /liste_attente/],
+    [(o) => { o.liste_attente.url = "javascript:alert(1)"; }, /liste_attente/],
+    [(o) => { o.encarts[0].liens = [{ texte: "x", url: "ftp://x", remunere: false }]; }, /adresse/],
+    [(o) => { o.encarts[0].liens = [{ texte: "x", url: "", remunere: "oui" }]; }, /remunere/],
+    [(o) => { o.encarts[0].actif = "non"; }, /actif/],
+    [(o) => { o.reponses[0].encart = "inconnu"; }, /réponse invalide/],
+    [(o) => { o.encarts.push({ ...o.encarts[0] }); }, /en double/],
+    [(o) => { o.encarts[0].titre = ""; }, /titre/],
+  ];
+  for (const [modif, motif] of cas) assert.throws(() => avecOffres(modif).construire(), motif);
+});
+
+test("lien de partage : bouton présent, aucun champ de batterie dans le lien, canonique inchangée", () => {
+  const h = lire(dirA, "index.html");
+  assert.match(h, /id="copier-lien"/);
+  assert.match(h, /id="zone-partage"[^>]* hidden/);
+  assert.match(h, /rel="canonical" href="https:\/\/exemple\.invalid\/"/);
+  assert.ok(!/<input[^>]+(?:readonly)[^>]*value=/.test(h));
+  const js = lire(dirA, "app/app-public.js");
+  const fn = js.slice(js.indexOf("export function lienPartage"), js.indexOf("export function lireLien"));
+  assert.ok(!/soc|pHC|pHP|soh/.test(fn), "lienPartage ne lit ni la batterie ni les prix");
 });

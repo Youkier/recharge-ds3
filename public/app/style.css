@@ -59,3 +59,8 @@ button { min-height: 2.75rem; padding: .5rem 1rem; font: inherit; font-weight: 6
   h1 { font-size: 1.3rem; }
   .bloc { padding: .75rem; }
 }
+.encart { border-left: 6px solid var(--accent); padding: .25rem 1rem; margin: .75rem 0; background: var(--fond); border-radius: 6px; }
+.encart h3 { margin-top: .5rem; }
+.remunere { font-size: .85rem; color: var(--doux); border: 1px solid var(--bord); border-radius: 4px; padding: 0 .35rem; white-space: nowrap; }
+a.bouton { display: inline-flex; align-items: center; min-height: 2.75rem; padding: .5rem 1rem; font-weight: 600; color: var(--sur-accent); background: var(--accent); border-radius: 8px; text-decoration: none; }
+#lancement { border: 0; padding: 0; margin: .5rem 0; }

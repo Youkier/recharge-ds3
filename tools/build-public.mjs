@@ -44,6 +44,78 @@ function lirePrix(dossier) {
   return t;
 }
 
+const REL_REMUNERE = "sponsored nofollow noopener";
+const ID = /^[a-z0-9-]+$/;
+const texte = (x) => typeof x === "string" && x.trim() !== "";
+const urlVideOuHttps = (x) => typeof x === "string" && (x === "" || /^https:\/\/[^\s"'<>]+$/.test(x));
+
+// offres.json : toute entrée mal formée arrête la construction (jamais de lien ou d'encart à moitié rendu).
+function lireOffres(dossier) {
+  const o = JSON.parse(readFileSync(join(dossier, "donnees", "offres.json"), "utf8"));
+  const fail = (m) => { throw new Error("offres.json : " + m); };
+  if (!o || typeof o !== "object" || !o.liste_attente || !urlVideOuHttps(o.liste_attente.url)) fail("« liste_attente.url » doit être vide ou commencer par https://");
+  if (!Array.isArray(o.encarts) || !Array.isArray(o.reponses)) fail("« encarts » et « reponses » doivent être des listes");
+  const encarts = new Map();
+  for (const e of o.encarts) {
+    if (!e || !ID.test(e.id || "") || encarts.has(e.id)) fail(`identifiant d'encart invalide ou en double (${e && e.id})`);
+    if (typeof e.actif !== "boolean") fail(`encart ${e.id} : « actif » doit valoir true ou false`);
+    if (!texte(e.titre)) fail(`encart ${e.id} : titre manquant`);
+    for (const k of ["paragraphes", "points", "liens"]) if (e[k] !== undefined && !Array.isArray(e[k])) fail(`encart ${e.id} : « ${k} » doit être une liste`);
+    if (![...(e.paragraphes || []), ...(e.points || [])].every(texte)) fail(`encart ${e.id} : texte vide`);
+    for (const l of e.liens || []) {
+      if (!texte(l.texte)) fail(`encart ${e.id} : lien sans texte`);
+      if (!urlVideOuHttps(l.url)) fail(`encart ${e.id} : l'adresse « ${l.url} » doit être vide ou commencer par https://`);
+      if (typeof l.remunere !== "boolean") fail(`encart ${e.id} : « remunere » doit valoir true ou false pour chaque lien`);
+    }
+    encarts.set(e.id, e);
+  }
+  const ids = new Set();
+  for (const r of o.reponses) {
+    if (!r || !ID.test(r.id || "") || ids.has(r.id) || !texte(r.libelle) || !encarts.has(r.encart)) fail(`réponse invalide (${r && r.id})`);
+    ids.add(r.id);
+  }
+  return o;
+}
+
+function htmlLien(l) {
+  if (l.url === "") return "";
+  const rel = l.remunere ? REL_REMUNERE : "noopener";
+  return `<p><a href="${esc(l.url)}" rel="${rel}">${esc(l.texte)}</a>${l.remunere ? ' <span class="remunere">lien rémunéré</span>' : ""}</p>`;
+}
+function htmlEncart(e, masque) {
+  const h = [`<div class="encart" id="encart-${e.id}"${masque ? " hidden" : ""}>`, `<h3>${esc(e.titre)}</h3>`];
+  for (const p of e.paragraphes || []) h.push(`<p>${esc(p)}</p>`);
+  if ((e.points || []).length) h.push("<ul>" + e.points.map((p) => `<li>${esc(p)}</li>`).join("") + "</ul>");
+  for (const l of e.liens || []) h.push(htmlLien(l));
+  h.push("</div>");
+  return h.join("\n");
+}
+// Seuls les encarts actifs sont écrits. Ceux que désigne une réponse s'affichent à son choix ; les autres, toujours.
+function htmlCommentRegler(o) {
+  const parId = new Map(o.encarts.map((e) => [e.id, e]));
+  const reponses = o.reponses.filter((r) => parId.get(r.encart).actif);
+  const designes = new Set(o.reponses.map((r) => r.encart));
+  const h = ['<section class="bloc" id="comment-regler" aria-labelledby="titre-regler">', '<h2 id="titre-regler">Comment régler ?</h2>'];
+  if (reponses.length) {
+    h.push('<fieldset class="radios" id="lancement"><legend>Comment lancez-vous la charge ?</legend>');
+    for (const r of reponses) h.push(`<label><input type="radio" name="lancement" value="${r.id}" data-encart="encart-${r.encart}"> ${esc(r.libelle)}</label>`);
+    h.push("</fieldset>");
+    for (const r of reponses) h.push(htmlEncart(parId.get(r.encart), true));
+  }
+  for (const e of o.encarts) if (e.actif && !designes.has(e.id)) h.push(htmlEncart(e, false));
+  h.push("</section>");
+  return h.join("\n");
+}
+function htmlListeAttente(o) {
+  if (o.liste_attente.url === "") return "";
+  return `<section class="bloc" id="liste-attente" aria-labelledby="titre-attente">
+<h2 id="titre-attente">Vous voulez que ça se règle tout seul ?</h2>
+<p>Nous étudions un réglage automatique de l'heure de charge pour certains câbles et bornes connectés. Laissez-nous votre adresse e-mail pour être prévenu quand il sera prêt.</p>
+<p class="aide">Le formulaire s'ouvre sur un autre site. Il demande votre voiture, la marque et le modèle de votre câble ou de votre borne, et votre adresse e-mail.</p>
+<p><a class="bouton" href="${esc(o.liste_attente.url)}" rel="noopener">Ouvrir le formulaire de la liste d'attente</a></p>
+</section>`;
+}
+
 function listerFichiers(dossier, base = dossier) {
   const out = [];
   for (const n of readdirSync(dossier).sort()) {
@@ -69,12 +141,14 @@ function preparerSortie(sortie) {
   return s;
 }
 
-export function construire({ sortie = SORTIE_PAR_DEFAUT, env = process.env } = {}) {
-  const pub = join(RACINE, "public");
+// source : dossier à la forme de public/ (les tests y mettent un offres.json de leur choix).
+export function construire({ sortie = SORTIE_PAR_DEFAUT, env = process.env, source = join(RACINE, "public") } = {}) {
+  const pub = source;
   const indexable = env.PUBLIC_INDEXABLE === "1";
   let origine = (env.PUBLIC_ORIGINE || ORIGINE_PAR_DEFAUT).replace(/\/$/, "");
   if (!/^https?:\/\/[^\s/?#"'<>]+$/.test(origine)) throw new Error("PUBLIC_ORIGINE doit ressembler à https://exemple.fr (sans chemin)");
   const tarifs = lirePrix(pub);
+  const offres = lireOffres(pub);
   const s = preparerSortie(sortie);
 
   // Moteur partagé, copié à l'identique depuis site/.
@@ -95,7 +169,7 @@ export function construire({ sortie = SORTIE_PAR_DEFAUT, env = process.env } = {
     const gab = p.gabarit === "404"
       ? readFileSync(join(pub, "contenu", "404.html"), "utf8")
       : readFileSync(join(pub, "gabarits", `${p.gabarit}.html`), "utf8");
-    const contenu = rendre(gab, { base: p.base, phc: esc(phc), php: esc(php), source_tarifs: sourceTarifs }, p.gabarit);
+    const contenu = rendre(gab, { base: p.base, phc: esc(phc), php: esc(php), source_tarifs: sourceTarifs, comment_regler: htmlCommentRegler(offres), liste_attente: htmlListeAttente(offres) }, p.gabarit);
     const canonique = origine + p.chemin;
     const html = rendre(base, {
       titre: esc(p.titre), description: esc(p.description), canonique: esc(canonique),

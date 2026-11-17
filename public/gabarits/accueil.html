@@ -102,9 +102,16 @@
 </section>
 </form>
 
-<!-- emplacement S2 : « Comment lancez-vous la charge ? » (encarts de offres.json) -->
-<!-- emplacement S2 : liste d'attente (bouton masqué sans adresse) -->
-<!-- emplacement S2 : bouton de lien de partage des réglages -->
+{{comment_regler}}
+{{liste_attente}}
+<section class="bloc" id="zone-partage" aria-labelledby="titre-lien" hidden>
+<h2 id="titre-lien">Partager mes réglages</h2>
+<p class="aide">Le lien contient votre voiture, votre courant, vos heures creuses, votre départ et votre batterie visée. Il ne contient pas la batterie du soir.</p>
+<p><button type="button" id="copier-lien">Copier le lien de mes réglages</button></p>
+<p id="etat-lien" class="aide" role="status"></p>
+<div class="champ" id="zone-lien" hidden><label for="lien-partage">Lien à copier à la main</label>
+<input id="lien-partage" type="text" readonly></div>
+</section>
 
 <section class="questions" aria-labelledby="titre-faq">
 <h2 id="titre-faq">Questions fréquentes</h2>

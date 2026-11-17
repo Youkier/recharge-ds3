@@ -1,0 +1,67 @@
+{
+  "_note": "Liens sortants et encarts de « Comment lancez-vous la charge ? ». Ajouter une offre ou activer un encart = modifier ce fichier, sans toucher au code. Une adresse (« url ») vide n'est pas affichée. Toute adresse commence par https://. Un lien avec \"remunere\": true reçoit rel=\"sponsored nofollow noopener\" et la mention « lien rémunéré », imposés par la construction. Aucune adresse réelle n'existe encore : rien n'est inventé.",
+  "liste_attente": { "url": "" },
+  "reponses": [
+    { "id": "cable-borne", "libelle": "Un câble ou une borne avec une appli", "encart": "plage-horaire" },
+    { "id": "voiture", "libelle": "La charge différée de la voiture", "encart": "charge-differee" },
+    { "id": "rien", "libelle": "Rien de programmable", "encart": "solutions" },
+    { "id": "ne-sais-pas", "libelle": "Je ne sais pas", "encart": "trois-questions" }
+  ],
+  "encarts": [
+    {
+      "id": "plage-horaire", "actif": true,
+      "titre": "Régler une plage horaire dans l'appli",
+      "paragraphes": [
+        "Ouvrez l'appli de votre câble ou de votre borne et cherchez « charge différée », « programmation » ou « plage horaire ».",
+        "Réglez l'heure de début affichée dans le résultat. Si l'appli demande aussi une heure de fin, mettez celle du résultat.",
+        "Si l'appli ne propose qu'une seule plage, c'est elle qu'il faut modifier chaque soir : l'heure de début change avec la batterie."
+      ],
+      "liens": []
+    },
+    {
+      "id": "charge-differee", "actif": true,
+      "titre": "Régler la charge différée de la voiture",
+      "paragraphes": [
+        "Dans l'écran de charge de la voiture, ou dans son appli, cherchez « charge différée » ou « départ différé ».",
+        "Entrez l'heure de début affichée dans le résultat.",
+        "Attention : certaines voitures n'acceptent qu'une heure de début, sans heure de fin. La charge continue alors jusqu'à la batterie pleine ou jusqu'au débranchement, et la batterie peut dépasser votre cible. Vérifiez dans la notice de votre modèle."
+      ],
+      "liens": []
+    },
+    {
+      "id": "solutions", "actif": true,
+      "titre": "Deux solutions possibles",
+      "paragraphes": [
+        "Regardez d'abord si votre voiture propose une charge différée (réponse précédente).",
+        "Sinon, un câble ou une borne de recharge programmable permet de choisir l'heure de début. Prenez un équipement prévu pour la recharge d'un véhicule, adapté à votre courant de charge.",
+        "Évitez les prises connectées d'usage général pour recharger une voiture : sur une charge longue à fort courant, elles peuvent chauffer."
+      ],
+      "liens": [
+        { "texte": "Voir un câble de recharge programmable", "url": "", "remunere": true }
+      ]
+    },
+    {
+      "id": "trois-questions", "actif": true,
+      "titre": "Trois questions pour s'y retrouver",
+      "paragraphes": [],
+      "points": [
+        "Votre voiture propose-t-elle une « charge différée » dans son écran ou son appli ? Si oui, choisissez « La charge différée de la voiture ».",
+        "Avez-vous un câble ou une borne avec une appli ? Si oui, choisissez « Un câble ou une borne avec une appli ».",
+        "Aucun des deux ? Choisissez « Rien de programmable »."
+      ],
+      "liens": []
+    },
+    {
+      "id": "reglage-automatique", "actif": false,
+      "titre": "Réglage automatique",
+      "paragraphes": ["Prévu, pas encore disponible : l'heure serait envoyée au câble sans passer par son appli."],
+      "liens": []
+    },
+    {
+      "id": "offres-electricite", "actif": false,
+      "titre": "Comparer les offres d'électricité",
+      "paragraphes": ["Prévu, pas encore disponible : comparer les offres à heures creuses."],
+      "liens": []
+    }
+  ]
+}

@@ -127,6 +127,60 @@ export function modeCalcul(c) {
   return "Hypothèse : " + c.recharges + " recharges par an. Économie = énergie rechargée en heures creuses × (prix heures pleines − prix heures creuses) × recharges par an. Nuits à 100 % évitées = recharges par an, si la batterie visée est inférieure à 100 %.";
 }
 
+// ---------------------------------------------------------------- Lien de partage
+// Réglages partagés : voiture, courant, heures creuses, départ, cible. Jamais la batterie du soir.
+var HEURE = /^[0-9]{2}:[0-9]{2}$/;
+function texteCourt(s) { return typeof s === "string" && s.length > 0 && s.length <= 120; }
+
+// brut : réglages tels que lireBrut() les rend. Rend l'adresse complète : base (sans paramètres) + ?...
+export function lienPartage(brut, base) {
+  var b = Object.assign({}, DEFAUTS, brut || {});
+  var q = new URLSearchParams();
+  if (b.marque === AUTRE) { q.set("marque", "autre"); if (b.cap) q.set("cap", String(b.cap).trim()); }
+  else if (b.marque) {
+    q.set("marque", b.marque);
+    if (b.modele) q.set("modele", b.modele);
+    if (b.version) q.set("version", b.version);
+  }
+  q.set("courant", b.courant);
+  if (b.courant === "autre") q.set("amp", String(b.amp).trim());
+  q.set("hcStart", b.hcStart); q.set("hcEnd", b.hcEnd); q.set("dep", b.dep); q.set("target", b.target);
+  return String(base).split(/[?#]/)[0] + "?" + q.toString();
+}
+
+// Rend les seuls réglages valides trouvés dans la partie « ?... » d'une adresse ; le reste est ignoré.
+// lignes : liste des véhicules (lignesValides) pour contrôler marque, modèle et version ; sans elle, la voiture est ignorée.
+export function lireLien(recherche, lignes) {
+  var q = new URLSearchParams(String(recherche || ""));
+  var o = {};
+  var marque = q.get("marque");
+  if (marque === "autre") {
+    var c = nombre(q.get("cap"));
+    if (isFinite(c) && c > 0 && c <= 250) { o.marque = AUTRE; o.cap = String(c); }
+  } else if (texteCourt(marque) && lignes && marques(lignes).indexOf(marque) >= 0) {
+    o.marque = marque;
+    var mo = q.get("modele");
+    if (texteCourt(mo) && modeles(lignes, marque).indexOf(mo) >= 0) {
+      o.modele = mo;
+      var v = q.get("version");
+      if (texteCourt(v) && versions(lignes, marque, mo).some(function (x) { return x.libelle === v; })) o.version = v;
+    }
+  }
+  var courant = q.get("courant");
+  if (["10", "16", "32"].indexOf(courant) >= 0) o.courant = courant;
+  else if (courant === "autre") {
+    var a = nombre(q.get("amp"));
+    if (isFinite(a) && a > 0 && a <= 80) { o.courant = "autre"; o.amp = String(a); }
+  }
+  ["hcStart", "hcEnd", "dep"].forEach(function (k) {
+    var t = q.get(k);
+    if (t !== null && HEURE.test(t) && heureOk(t)) o[k] = t;
+  });
+  var cible = nombre(q.get("target"));
+  if (isFinite(cible) && cible > 0 && cible <= 100) o.target = String(cible);
+  return o;
+}
+
 // ---------------------------------------------------------------- DOM
 function demarrer() {
   var $ = function (id) { return document.getElementById(id); };
@@ -273,10 +327,23 @@ function demarrer() {
   // la liste ne doit pas écraser les réglages sauvegardés.
   var pret = false;
 
+  // Adresse partagée : ses réglages valides prennent le pas sur ceux enregistrés ; le reste est ignoré.
+  function appliquerLien() {
+    var l = lireLien(location.search, lignes);
+    if (!Object.keys(l).length) return;
+    var b = Object.assign({}, DEFAUTS, defautsPrix);
+    if (sauve) Object.keys(DEFAUTS).forEach(function (k) { if (typeof sauve[k] === "string") b[k] = sauve[k]; });
+    if (l.marque) { b.marque = l.marque; b.modele = l.modele || ""; b.version = l.version || ""; if (l.cap) b.cap = l.cap; }
+    ["courant", "amp", "hcStart", "hcEnd", "dep", "target"].forEach(function (k) { if (l[k]) b[k] = l[k]; });
+    restaurer(b, defautsPrix);
+    try { history.replaceState(null, "", location.pathname); } catch (e) { /* sans importance */ }
+  }
+
   function init(doc) {
     pret = true;
     if (doc) listeChargee(doc); else listeAbsente();
     restaurer(sauve, defautsPrix);
+    appliquerLien();
     if (!doc) $("marque").value = AUTRE;
     // Réglages déjà complets : le bloc des questions est replié, il reste modifiable.
     var lu = lireReglages(lireBrut());
@@ -286,6 +353,31 @@ function demarrer() {
 
   fetch("vehicules.json").then(function (r) { if (!r.ok) throw new Error("liste"); return r.json(); })
     .then(init, function () { init(null); });
+
+  // « Comment régler » : un encart par réponse.
+  var radiosLancement = document.querySelectorAll('input[name="lancement"]');
+  Array.prototype.forEach.call(radiosLancement, function (r) {
+    r.addEventListener("change", function () {
+      Array.prototype.forEach.call(radiosLancement, function (x) { var e = $(x.dataset.encart); if (e) e.hidden = !x.checked; });
+    });
+  });
+
+  // Lien de partage : presse-papiers si disponible, sinon le lien est affiché, prêt à être copié à la main.
+  var zonePartage = $("zone-partage");
+  if (zonePartage) {
+    zonePartage.hidden = false;
+    $("copier-lien").addEventListener("click", function () {
+      var lien = lienPartage(lireBrut(), location.origin + location.pathname);
+      var champ = $("lien-partage"), etat = $("etat-lien");
+      function manuel() {
+        champ.value = lien; $("zone-lien").hidden = false; champ.focus(); champ.select();
+        etat.textContent = "Copie automatique impossible : copiez le lien ci-dessous.";
+      }
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(lien).then(function () { $("zone-lien").hidden = true; etat.textContent = "Lien copié."; }, manuel);
+      } else manuel();
+    });
+  }
 
   form.addEventListener("input", function () { if (pret) recalculer(); });
   form.addEventListener("change", function (e) {
