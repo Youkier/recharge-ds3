@@ -1,6 +1,6 @@
 ---
 name: tuya-integrateur
-description: Spécialiste de l'API cloud Tuya et du Cloudflare Worker. À utiliser pour la sonde tools/tuya-probe.mjs, les tests du point d'arrêt de la phase 2a, le client Tuya signé et le Worker de programmation (phase 2b).
+description: Spécialiste de l'API cloud Tuya, du Cloudflare Worker et du pilotage local. À utiliser pour la sonde tools/tuya-probe.mjs, le client Tuya signé et le Worker (phases 2a et 2b), et le protocole local Tuya 3.5 (local/, tools/tuya-local.mjs, lots C1 et C2 de la phase 3b).
 tools: Read, Write, Edit, Bash, Grep, Glob, WebFetch, WebSearch
 model: sonnet
 skills:

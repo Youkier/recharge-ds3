@@ -55,16 +55,26 @@ Mathieu intervient pour : les tests physiques (voiture, câble, Pixel), les choi
 - délègue chaque tâche au sous-agent compétent, avec un brief précis (objectif, fichiers concernés, critère de fin) ;
 - ne délègue pas ce qui prend moins de temps à faire qu'à expliquer ;
 - intègre les résultats et lance `node --test "tests/**/*.test.mjs"` après chaque modification de code ;
-- demande une relecture à `testeur-relecteur` **une fois par lot, avant le push**, si le lot touche `site/*.js`, `site/index.html`, `site/sw.js`, `worker/`, `tools/`, `.github/` ou `.claude/`, et toujours en fin de phase. Pas de relecture pour le CSS, les textes de l'interface ou la documentation seuls ;
+- demande une relecture à `testeur-relecteur` **une fois par lot, avant le push**, si le lot touche `site/*.js`, `site/index.html`, `site/sw.js`, `public/app/*.js`, `local/`, `worker/`, `tools/`, `.github/` ou `.claude/`, et toujours en fin de phase. Pas de relecture du code pour le CSS, les textes de l'interface ou la documentation seuls (s'ils changent ce que voit l'utilisateur, c'est l'`ergonome` qui les regarde) ;
 - s'arrête et demande à Mathieu à chaque point d'arrêt et avant toute action qui nécessite ses comptes (GitHub, Tuya, Cloudflare) ; le déploiement en production passe par la demande d'autorisation (règle 11).
 
-**Sous-agents** (dans `.claude/agents/`) :
+**Sous-agents** (dans `.claude/agents/`). Un agent n'est appelé que sur son déclencheur ; les sous-agents ne s'appellent pas entre eux, c'est le chef de projet qui enchaîne.
 
-| Agent | Rôle |
-|---|---|
-| `dev-web` | Page, PWA (manifest, service worker, icônes), interface du bouton, publication GitHub Pages |
-| `tuya-integrateur` | Exploration et tests de l'API Tuya, client Tuya et Worker Cloudflare |
-| `testeur-relecteur` | Tests automatiques, relecture indépendante, sécurité, vérification des critères d'acceptation |
+| Agent | Rôle | Appelé quand |
+|---|---|---|
+| `dev-web` | Page personnelle, PWA, site public | Lots de `site/` et de `public/` |
+| `tuya-integrateur` | API Tuya, Worker, protocole local | Lots du Worker et du pilotage local |
+| `testeur-relecteur` | Tests, relecture du code, sécurité, critères d'acceptation | Une fois par lot qui touche du code, avant le push ; fin de phase |
+| `ergonome` | Design et expérience utilisateur, accessibilité ; regarde les pages | Chaque nouvelle page, écran ou parcours, et chaque refonte visible, avant le commit du lot |
+| `testeur-inconnu` | Visiteur simulé, ne voit que la page (jamais le code) | En même temps que l'ergonome quand le parcours d'un visiteur change ; avant S5 et S6 |
+| `tech-lead` | Architecture d'ensemble, simplicité, performance mesurée | Avant un lot structurant (C3, C4, S5), avant une nouvelle brique ou dépendance, fin de phase |
+| `business-dev` | KPIs du volet produit, tableau de bord privé de Mathieu | Définition, relevé mensuel, avant chaque date de décision |
+
+**Nouvelle page ou nouvel écran** : `dev-web` construit et lance les tests → captures (`node tools/capture.mjs`) → `ergonome` et, pour un parcours de visiteur, `testeur-inconnu`, en parallèle sur les mêmes captures → une seule passe de corrections → `testeur-relecteur` si le code a changé → commit.
+
+**Coût des agents** : chaque appel repart de zéro. Brief précis, rapport plafonné (10 points au plus, triés), et leurs conclusions remontent à Mathieu dans la liste unique de la séance. Le `testeur-inconnu` est une simulation : il ne remplace pas de vrais visiteurs.
+
+**Indicateurs** : définitions dans `docs/kpi.md` ; valeurs seulement dans le tableau de bord privé de Mathieu sur claude.ai, jamais dans le dépôt (il est public).
 
 **Skills** (dans `.claude/skills/`) : `calcul-recharge`, `tuya-openapi`, `deploiement`. Chaque agent lit la skill de son domaine avant de commencer.
 
@@ -79,7 +89,7 @@ android/         coque Android minimale (phase 3b) : WebView et pont TCP
 dist/            sorties de construction (ignoré par git)
 tools/           scripts d'exploration (sonde Tuya, pilotage local) et de construction
 tests/           cas de référence et tests Node (node --test)
-docs/            journal des décisions, résultats Tuya, volet produit (business-cases.md, decisions-produit.md)
+docs/            journal des décisions, résultats Tuya, volet produit (business-cases.md, decisions-produit.md, kpi.md)
 .claude/         agents, skills, réglages
 ```
 
@@ -89,9 +99,10 @@ docs/            journal des décisions, résultats Tuya, volet produit (busines
 - Servir la page en local : `python -m http.server --bind 127.0.0.1 -d site 8080` (toujours `--bind 127.0.0.1` : sinon la page, et tout dossier servi par erreur, est visible du Wi-Fi)
 - Worker en local (phase 2) : `cd worker && npx wrangler dev` (demande d'autorisation : il charge `worker/.dev.vars`)
 - Site public (phase 3a) : `node tools/build-public.mjs` construit `dist/public/` ; le servir : `python -m http.server --bind 127.0.0.1 -d dist/public 8081`
+- Captures d'écran (ergonome, testeur inconnu) : `node tools/capture.mjs <8080|8081> <chemin> [--largeur=500] [--hauteur=800] [--theme=clair|sombre]` écrit `dist/captures/*.png` (serveur local lancé ; Edge sans fenêtre, profil jetable ; 500 px de large au minimum, la vue à 380 px se vérifie sur le Pixel)
 - Pilotage local (phase 3b) : `node tools/tuya-local.mjs etat | ecrire-debut HH:MM [--confirmer] | desactiver` (demande d'autorisation : il charge `tools/.env` et parle au câble) ; vecteurs de test : `python tools/gen-vecteurs-tuya-local.py` (clé factice, demande d'autorisation) ; Gradle et `adb` : demande d'autorisation
 
-Sans autorisation : modifications de fichiers (sauf `.claude/`, `tools/hooks/`, `.github/`, les scripts `tools/*.mjs` et `tools/*.py`, `worker/wrangler.toml`, `.gitignore`, `CLAUDE.md` et `SECURITE.md`), tests, `git status|diff|log|show|add|commit|grep` (sauf les options qui lisent hors du dépôt ou forcent l'ajout de fichiers ignorés), serveur local de la page (`python -m http.server --bind 127.0.0.1 -d site 8080`) et du site public (`-d dist/public`), `node tools/gen-icons.mjs`, `node tools/build-public.mjs`, lecture de `developer.tuya.com`, `developers.cloudflare.com` et `developer.android.com`. Avec autorisation : tout ce qui est listé dans `ask` de `.claude/settings.json`. Toute autre commande déclenche aussi une demande : si elle revient souvent et ne touche ni la prise, ni les secrets, ni la publication, proposer à Mathieu de l'ajouter à `allow`.
+Sans autorisation : modifications de fichiers, sauf ceux qui fixent la sécurité (`.claude/settings.json`, `tools/hooks/`, `.github/`, `worker/wrangler.toml`, `.gitignore`, `CLAUDE.md`, `SECURITE.md`) et les scripts qui chargent un fichier de secrets (`tools/tuya-probe.mjs`, `tools/tuya-local.mjs`, `tools/essai-worker.mjs`, `tools/tuya-local-test.py`) ; les agents et les autres outils se modifient sans demande depuis le 2026-11-17, à la demande de Mathieu ; tests, `git status|diff|log|show|add|commit|grep` (sauf les options qui lisent hors du dépôt ou forcent l'ajout de fichiers ignorés), serveur local de la page (`python -m http.server --bind 127.0.0.1 -d site 8080`) et du site public (`-d dist/public`), `node tools/gen-icons.mjs`, `node tools/build-public.mjs`, `node tools/capture.mjs`, lecture de `developer.tuya.com`, `developers.cloudflare.com` et `developer.android.com`. Avec autorisation : tout ce qui est listé dans `ask` de `.claude/settings.json`. Toute autre commande déclenche aussi une demande : si elle revient souvent et ne touche ni la prise, ni les secrets, ni la publication, proposer à Mathieu de l'ajouter à `allow`.
 
 ## Journal
 

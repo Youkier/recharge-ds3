@@ -234,7 +234,17 @@ Décision de Mathieu du 2026-11-15 : **deux pistes avancent en parallèle**, san
 - **Piste site** : écrit seulement dans `public/`, `tools/build-public.mjs` et `tests/public-*.test.mjs`. Ne modifie jamais `site/`, `worker/`, `local/` ni `android/`.
 - **Piste coque** : écrit seulement dans `local/`, `android/`, `tools/tuya-local.mjs`, `tools/gen-vecteurs-tuya-local.py` et `tests/tuya-local*`. Ne modifie `site/` qu'au lot C4.
 - **Fichiers communs** (`PLAN.md`, `CLAUDE.md`, `.gitignore`, `docs/decisions-produit.md`, `tests/README.md`) : modifiés par la session principale seulement, jamais par un sous-agent.
-- Sous-agents : `dev-web` pour la piste site, `tuya-integrateur` pour les lots C1 et C2. Les lots C3 et C4 (Android) sont menés par la session principale.
+- Sous-agents : `dev-web` pour la piste site, `tuya-integrateur` pour les lots C1 et C2. Les lots C3 et C4 (Android) sont menés par la session principale. `ergonome`, `testeur-inconnu`, `tech-lead` et `business-dev` sont appelés sur leurs déclencheurs (`CLAUDE.md`, « Organisation de l'équipe ») ; ils ne modifient aucun fichier, sauf `business-dev` qui tient `docs/kpi.md`.
+
+### Équipe élargie (2026-11-17)
+
+- [x] Agents `ergonome`, `testeur-inconnu`, `tech-lead`, `business-dev` créés ; `tools/capture.mjs` pour regarder les pages (Edge sans fenêtre, profil jetable ; 500 px au minimum, constaté : en dessous, Edge met la page en page à 500 px)
+- [ ] `ergonome` et `testeur-inconnu` sur le lot S1 (accueil, première visite)
+- [ ] `business-dev` : `docs/kpi.md` et structure du tableau de bord privé ; résoudre « au-delà de 300 utilisateurs réguliers » (`docs/business-cases.md`), non mesurable sans identifiant alors que le site n'en pose aucun
+- [ ] Tableau de bord privé publié sur claude.ai (session principale), valeurs saisies à chaque relevé
+- [ ] `tech-lead` : revue d'ensemble avant le lot C3 (rendement recopié dans `site/app.js` et `public/app/app-public.js`, partage entre `site/` et `public/`, forme du pont Android)
+- [ ] Trois vrais visiteurs, proches de Mathieu et sans explication préalable, avant le lot S6 : le `testeur-inconnu` ne les remplace pas
+- [ ] Vue téléphone à 380 px dans les captures : émulation mobile du navigateur, à faire si les revues sur le Pixel ne suffisent pas
 - Un commit par lot et par piste. Tous les tests passent avant chaque commit. Relecture par `testeur-relecteur` pour chaque lot qui touche du code. Un seul `git push` en fin de séance, comme avant.
 - Aucune commande qui touche le câble, le téléphone ou une publication sans l'accord de Mathieu, une par une (règle n°11).
 - Rien d'inventé : un fait sur Tuya, Android, Cloudflare, un tarif ou une voiture est lu à sa source et noté avec elle. Si la source est hors des domaines autorisés, la demander à Mathieu.
