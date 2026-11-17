@@ -6,6 +6,7 @@ import { lignesValides, marques, modeles, versions, trouver } from "../vehicules
 export const CLE = "recharge-public-v1"; // différente de la clé de la page personnelle
 export const AUTRE = "__autre";
 export const DEFAUTS = { marque: "", modele: "", version: "", cap: "", courant: "16", amp: "16", volt: "230", eff: "", hcStart: "22:00", hcEnd: "06:00", dep: "07:30", target: "80", soh: "100", pHC: "", pHP: "", nuits: "100", mode: "end" };
+export const MESSAGE_LIEN = "Réglages du lien appliqués : vérifiez-les.";
 export const LIBELLES = { cap: "Capacité utile", amp: "Courant de charge", volt: "Tension", eff: "Rendement de charge", hcStart: "Début des heures creuses", hcEnd: "Fin des heures creuses", dep: "Heure de départ", target: "Batterie visée", soh: "État de santé de la batterie", pHC: "Prix en heures creuses", pHP: "Prix en heures pleines", nuits: "Recharges par an", soc: "Batterie à l'arrivée" };
 
 // Rendement proposé selon la puissance : pertes = 3 % + 250 W fixes (même règle que la page personnelle).
@@ -281,6 +282,8 @@ function demarrer() {
     var tc = vue.chiffres ? texteChiffres(vue.chiffres) : [];
     tc.forEach(function (t) { ul.appendChild(el("li", t)); });
     part.hidden = !tc.length;
+    var zp = $("zone-partage");
+    if (zp) zp.hidden = !vue.chiffres;
     $("mode-calcul").textContent = vue.chiffres ? modeCalcul(vue.chiffres) : "";
   }
 
@@ -326,6 +329,7 @@ function demarrer() {
   // Rien n'est recalculé ni enregistré avant init : une saisie faite pendant le chargement de
   // la liste ne doit pas écraser les réglages sauvegardés.
   var pret = false;
+  var lienApplique = false;
 
   // Adresse partagée : ses réglages valides prennent le pas sur ceux enregistrés ; le reste est ignoré.
   function appliquerLien() {
@@ -336,6 +340,7 @@ function demarrer() {
     if (l.marque) { b.marque = l.marque; b.modele = l.modele || ""; b.version = l.version || ""; if (l.cap) b.cap = l.cap; }
     ["courant", "amp", "hcStart", "hcEnd", "dep", "target"].forEach(function (k) { if (l[k]) b[k] = l[k]; });
     restaurer(b, defautsPrix);
+    lienApplique = true;
     try { history.replaceState(null, "", location.pathname); } catch (e) { /* sans importance */ }
   }
 
@@ -347,7 +352,10 @@ function demarrer() {
     if (!doc) $("marque").value = AUTRE;
     // Réglages déjà complets : le bloc des questions est replié, il reste modifiable.
     var lu = lireReglages(lireBrut());
-    if (sauve && !lu.erreurs.length) { $("reglages").open = false; $("resume-reglages").textContent = "Mes réglages (modifier)"; }
+    if (lienApplique) {
+      $("reglages").open = true;
+      $("etat-reglages").textContent = MESSAGE_LIEN;
+    } else if (sauve && !lu.erreurs.length) { $("reglages").open = false; $("resume-reglages").textContent = "Mes réglages (modifier)"; }
     recalculer();
   }
 
@@ -365,7 +373,6 @@ function demarrer() {
   // Lien de partage : presse-papiers si disponible, sinon le lien est affiché, prêt à être copié à la main.
   var zonePartage = $("zone-partage");
   if (zonePartage) {
-    zonePartage.hidden = false;
     $("copier-lien").addEventListener("click", function () {
       var lien = lienPartage(lireBrut(), location.origin + location.pathname);
       var champ = $("lien-partage"), etat = $("etat-lien");
@@ -397,6 +404,8 @@ function demarrer() {
     $("reglages").open = false;
     $("resume-reglages").textContent = "Mes réglages (modifier)";
     $("soc").focus();
+    var soir = $("bloc-soir");
+    if (soir && soir.scrollIntoView) soir.scrollIntoView({ block: "start" });
     recalculer();
   });
 }

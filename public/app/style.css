@@ -29,7 +29,11 @@ h3 { font-size: 1.05rem; margin: 1rem 0 .25rem; }
 .avis { padding: .75rem; border: 1px solid var(--alerte); border-radius: 8px; }
 .bloc { background: var(--carte); border: 1px solid var(--bord); border-radius: 10px; padding: 1rem; margin: 1rem 0; }
 details.bloc > summary { font-weight: 700; }
-summary { cursor: pointer; min-height: 2.75rem; display: flex; align-items: center; }
+summary { cursor: pointer; min-height: 2.75rem; display: flex; align-items: center; gap: .5rem; }
+summary::before { content: ""; flex: none; width: 0; height: 0; border-style: solid; border-width: .35rem 0 .35rem .55rem; border-color: transparent transparent transparent var(--accent); }
+details[open] > summary::before { border-width: .55rem .35rem 0 .35rem; border-color: var(--accent) transparent transparent transparent; }
+summary::-webkit-details-marker { display: none; }
+::placeholder { color: var(--doux); opacity: 1; }
 fieldset { border: 1px solid var(--bord); border-radius: 8px; margin: 1rem 0; padding: .5rem 1rem 1rem; }
 legend { font-weight: 700; padding: 0 .4rem; }
 .champ { margin: .75rem 0; flex: 1 1 10rem; }

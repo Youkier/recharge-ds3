@@ -4,7 +4,7 @@
 <ol class="etapes">
 <li>Répondez une fois à trois questions : votre voiture, votre recharge, vos heures.</li>
 <li>Chaque soir, saisissez la batterie à l'arrivée.</li>
-<li>Réglez l'heure de début de charge dans la voiture, le câble ou la borne.</li>
+<li>Réglez l'heure de début de charge dans la voiture, le câble ou la borne. Ce site calcule l'heure ; c'est vous qui la réglez.</li>
 </ol>
 </section>
 
@@ -14,6 +14,7 @@
 
 <details id="reglages" class="bloc" open>
 <summary id="resume-reglages">Mes réglages (trois questions)</summary>
+<p id="etat-reglages" class="aide" role="status"></p>
 
 <fieldset>
 <legend>1. Votre voiture</legend>
@@ -31,19 +32,22 @@
 
 <fieldset>
 <legend>2. Votre recharge</legend>
+<p class="aide">Valeurs proposées : vérifiez-les.</p>
 <div class="radios">
-<label><input type="radio" name="courant" value="10"> Prise classique, 10 A</label>
-<label><input type="radio" name="courant" value="16" checked> Prise renforcée, 16 A (3,7 kW)</label>
+<label><input type="radio" name="courant" value="10"> Prise ordinaire, 10 A</label>
+<label><input type="radio" name="courant" value="16" checked> Prise renforcée ou câble réglé sur 16 A (3,7 kW)</label>
 <label><input type="radio" name="courant" value="32"> Borne 7,4 kW, 32 A</label>
 <label><input type="radio" name="courant" value="autre"> Autre courant</label>
 </div>
 <div class="champ" id="zone-amp" hidden><label for="amp">Courant de charge (A)</label>
 <input id="amp" type="text" inputmode="decimal" autocomplete="off" value="16"></div>
+<p class="aide">Choisissez le courant réglé sur votre câble ou votre borne (à la maison, souvent 10 A ou 16 A).</p>
 <p class="aide">Tension : 230 V, recharge monophasée.</p>
 </fieldset>
 
 <fieldset>
 <legend>3. Vos heures creuses et votre départ</legend>
+<p class="aide">Valeurs proposées : vérifiez-les.</p>
 <div class="ligne">
 <div class="champ"><label for="hcStart">Début des heures creuses</label>
 <input id="hcStart" type="time" value="22:00"></div>
@@ -52,7 +56,7 @@
 <div class="champ"><label for="dep">Heure de départ</label>
 <input id="dep" type="time" value="07:30"></div>
 </div>
-<p class="aide">Vos heures creuses figurent sur votre facture.</p>
+<p class="aide">Vos heures creuses figurent sur votre facture. Une seule plage par nuit. Si vos heures creuses sont en deux plages, indiquez celle de la nuit.</p>
 </fieldset>
 
 <details id="avance" class="avance">
@@ -87,7 +91,7 @@
 <p><button type="button" id="valider">Valider mes réglages</button></p>
 </details>
 
-<section class="bloc" aria-labelledby="titre-soir">
+<section class="bloc" id="bloc-soir" aria-labelledby="titre-soir">
 <h2 id="titre-soir">Ce soir</h2>
 <div class="champ"><label for="soc">Batterie à l'arrivée (%)</label>
 <input id="soc" type="text" inputmode="decimal" autocomplete="off" placeholder="par exemple 38"></div>
@@ -95,7 +99,7 @@
 <p>Saisissez la batterie à l'arrivée pour voir l'heure de début de charge.</p>
 </div>
 <div id="partage" class="partage" hidden>
-<h3>Deux chiffres à partager</h3>
+<h3>Ce que vous économisez</h3>
 <ul id="chiffres"></ul>
 <p class="aide" id="mode-calcul"></p>
 </div>
@@ -105,7 +109,7 @@
 {{comment_regler}}
 {{liste_attente}}
 <section class="bloc" id="zone-partage" aria-labelledby="titre-lien" hidden>
-<h2 id="titre-lien">Partager mes réglages</h2>
+<h2 id="titre-lien">Envoyer mes réglages à quelqu'un</h2>
 <p class="aide">Le lien contient votre voiture, votre courant, vos heures creuses, votre départ et votre batterie visée. Il ne contient pas la batterie du soir.</p>
 <p><button type="button" id="copier-lien">Copier le lien de mes réglages</button></p>
 <p id="etat-lien" class="aide" role="status"></p>

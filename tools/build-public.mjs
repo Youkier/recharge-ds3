@@ -97,10 +97,12 @@ function htmlCommentRegler(o) {
   const designes = new Set(o.reponses.map((r) => r.encart));
   const h = ['<section class="bloc" id="comment-regler" aria-labelledby="titre-regler">', '<h2 id="titre-regler">Comment régler ?</h2>'];
   if (reponses.length) {
-    h.push('<fieldset class="radios" id="lancement"><legend>Comment lancez-vous la charge ?</legend>');
+    h.push('<fieldset class="radios" id="lancement"><legend>Comment lancez-vous la charge ?</legend>', '<p class="aide">Choisissez votre cas pour voir quoi régler et où.</p>');
     for (const r of reponses) h.push(`<label><input type="radio" name="lancement" value="${r.id}" data-encart="encart-${r.encart}"> ${esc(r.libelle)}</label>`);
     h.push("</fieldset>");
+    h.push('<div id="encarts-lancement" aria-live="polite">');
     for (const r of reponses) h.push(htmlEncart(parId.get(r.encart), true));
+    h.push("</div>");
   }
   for (const e of o.encarts) if (e.actif && !designes.has(e.id)) h.push(htmlEncart(e, false));
   h.push("</section>");

@@ -13,7 +13,7 @@
       "titre": "Régler une plage horaire dans l'appli",
       "paragraphes": [
         "Ouvrez l'appli de votre câble ou de votre borne et cherchez « charge différée », « programmation » ou « plage horaire ».",
-        "Réglez l'heure de début affichée dans le résultat. Si l'appli demande aussi une heure de fin, mettez celle du résultat.",
+        "Réglez l'heure « Démarrer la charge à … » du résultat. Si l'appli demande aussi une heure de fin, mettez « Fin de la charge ».",
         "Si l'appli ne propose qu'une seule plage, c'est elle qu'il faut modifier chaque soir : l'heure de début change avec la batterie."
       ],
       "liens": []
@@ -23,8 +23,8 @@
       "titre": "Régler la charge différée de la voiture",
       "paragraphes": [
         "Dans l'écran de charge de la voiture, ou dans son appli, cherchez « charge différée » ou « départ différé ».",
-        "Entrez l'heure de début affichée dans le résultat.",
-        "Attention : certaines voitures n'acceptent qu'une heure de début, sans heure de fin. La charge continue alors jusqu'à la batterie pleine ou jusqu'au débranchement, et la batterie peut dépasser votre cible. Vérifiez dans la notice de votre modèle."
+        "Attention : certaines voitures n'acceptent qu'une heure de début, sans heure de fin. La charge continue alors jusqu'à la batterie pleine ou jusqu'au débranchement, et la batterie peut dépasser votre cible. Vérifiez dans la notice de votre modèle.",
+        "Entrez l'heure « Démarrer la charge à … » du résultat."
       ],
       "liens": []
     },
@@ -32,8 +32,8 @@
       "id": "solutions", "actif": true,
       "titre": "Deux solutions possibles",
       "paragraphes": [
-        "Regardez d'abord si votre voiture propose une charge différée (réponse précédente).",
-        "Sinon, un câble ou une borne de recharge programmable permet de choisir l'heure de début. Prenez un équipement prévu pour la recharge d'un véhicule, adapté à votre courant de charge.",
+        "Sans rien acheter : branchez la voiture à l'heure « Démarrer la charge à … ». Sans heure de fin, elle chargera jusqu'à la batterie pleine : débranchez-la à l'heure « Fin de la charge » du résultat, sinon la batterie dépassera votre cible.",
+        "Autre solution : un câble ou une borne de recharge programmable permet de choisir l'heure de début. Prenez un équipement prévu pour la recharge d'un véhicule, adapté à votre courant de charge. Regardez aussi si la charge différée de la voiture suffit.",
         "Évitez les prises connectées d'usage général pour recharger une voiture : sur une charge longue à fort courant, elles peuvent chauffer."
       ],
       "liens": [

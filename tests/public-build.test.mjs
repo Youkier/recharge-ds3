@@ -271,3 +271,36 @@ test("lien de partage : bouton présent, aucun champ de batterie dans le lien, c
   const fn = js.slice(js.indexOf("export function lienPartage"), js.indexOf("export function lireLien"));
   assert.ok(!/soc|pHC|pHP|soh/.test(fn), "lienPartage ne lit ni la batterie ni les prix");
 });
+
+test("accueil : limite des heures creuses, valeurs proposées, le site ne pilote rien", () => {
+  const h = lire(dirA, "index.html");
+  assert.match(h, /Une seule plage par nuit\. Si vos heures creuses sont en deux plages, indiquez celle de la nuit\./);
+  assert.equal((h.match(/Valeurs proposées : vérifiez-les\./g) || []).length, 2);
+  assert.match(h, /Choisissez le courant réglé sur votre câble ou votre borne/);
+  assert.match(h, /Prise ordinaire, 10 A/);
+  assert.match(h, /Prise renforcée ou câble réglé sur 16 A \(3,7 kW\)/);
+  assert.ok(!/Prise classique/.test(h));
+  assert.match(h, /value="16" checked/);
+  assert.match(h, /Ce site calcule l'heure ; c'est vous qui la réglez\./);
+});
+
+test("accueil : question de lancement sans choix par défaut, encarts annoncés, solution sans achat", () => {
+  const h = lire(dirA, "index.html");
+  assert.match(h, /Choisissez votre cas pour voir quoi régler et où\./);
+  assert.ok(!/name="lancement"[^>]*checked/.test(h));
+  assert.match(h, /id="encarts-lancement" aria-live="polite"/);
+  const rien = h.slice(h.indexOf('id="encart-solutions"'));
+  assert.ok(rien.indexOf("Sans rien acheter") < rien.indexOf("Autre solution"));
+  assert.ok(!/réponse précédente|affichée dans le résultat/.test(h));
+  const diff = h.slice(h.indexOf('id="encart-charge-differee"'));
+  assert.ok(diff.indexOf("Attention") < diff.indexOf("Entrez l'heure"));
+});
+
+test("accueil : bloc d'envoi des réglages masqué au départ, titres de partage renommés", () => {
+  const h = lire(dirA, "index.html");
+  assert.match(h, /id="zone-partage"[^>]*hidden/);
+  assert.match(h, /Envoyer mes réglages à quelqu'un/);
+  assert.match(h, /Ce que vous économisez/);
+  assert.ok(!/Deux chiffres à partager|>Partager mes réglages</.test(h));
+  assert.match(h, /id="etat-reglages"[^>]*role="status"/);
+});

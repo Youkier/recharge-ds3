@@ -156,3 +156,7 @@ test("lien de partage : paramètres invalides ou inconnus ignorés", async () =>
   assert.deepEqual(A.lireLien(new URLSearchParams({ marque: m[0], modele: "Modèle inexistant", version: m[2] }).toString(), lignes), { marque: m[0] });
   assert.deepEqual(A.lireLien(new URLSearchParams({ marque: m[0] }).toString(), null), {}, "sans liste, la voiture est ignorée");
 });
+
+test("message affiché quand un lien de partage est appliqué", () => {
+  assert.equal(A.MESSAGE_LIEN, "Réglages du lien appliqués : vérifiez-les.");
+});
