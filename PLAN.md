@@ -118,7 +118,7 @@ T1 à T3 passés le 2026-11-11 (voir `docs/tuya-findings.md`). Compte principal 
 - [ ] Tests du pilotage local L1 à L4 (`tools/tuya-local-test.py`, détail dans `docs/tuya-findings.md`) : repli sans internet, et base d'une éventuelle appli (volet produit). **L1, L2, L3 réussis (2026-11-15/16) ; L4 à faire plus tard** (voiture branchée, méthode notée dans `docs/tuya-findings.md`), puis supprimer `tools/.env`
 - [ ] **Essai gratuit IoT Core de Tuya : échéance le 2026-12-11** (constaté par Mathieu le 2026-11-15 ; sans lui, le Worker ne joint plus Tuya). **Prolongation demandée par Mathieu le 2026-11-15**, réponse à vérifier dans la console. Demander la prolongation de 6 mois vers le 1er décembre (plateforme Tuya → Cloud → Cloud Services → IoT Core → Extend Trial Period), puis à chaque échéance. La sortie durable de cette dépendance est le pilotage local (phase 3b)
 - [ ] **Clé locale du câble copiée dans le gestionnaire de mots de passe de Mathieu** avant toute suppression de `tools/.env` : elle ne se relit que par le cloud Tuya, donc plus du tout si l'essai expire. `tools/.env` n'est supprimé qu'après L4 **et** après le lot C2 de la phase 3b
-- [ ] Réseau de la maison : routeur TP-Link AX55 passé en mode point d'accès (en cours le 2026-11-15), pour que le câble soit joignable depuis les deux Wi-Fi ; adresse du câble réservée dans la box ; puis `scan` et `etat` depuis le Wi-Fi principal. **2026-11-15 : `scan` depuis le Wi-Fi principal ne trouve pas le câble** : le profil Windows du Wi-Fi « Bbox-ext 2 » est « Public », le pare-feu bloque les annonces UDP. Câble rebranché : port 6668 ouvert à **192.168.1.48** ; **`etat` réussi** avec `TUYA_LOCAL_IP=192.168.1.48` et `TUYA_LOCAL_VERSION=3.5` (11 points lus, plage `{"m":2,"dt":0,"ss":"23:00","se":"06:00"}`). Reste : réserver 192.168.1.48 dans la Bbox
+- [ ] Réseau de la maison : routeur TP-Link AX55 passé en mode point d'accès (en cours le 2026-11-15), pour que le câble soit joignable depuis les deux Wi-Fi ; adresse du câble réservée dans la box ; puis `scan` et `etat` depuis le Wi-Fi principal. **2026-11-15 : `scan` depuis le Wi-Fi principal ne trouve pas le câble** : le profil Windows du Wi-Fi « Bbox-ext 2 » est « Public », le pare-feu bloque les annonces UDP. Câble rebranché : port 6668 ouvert à **192.168.1.48** ; **`etat` réussi** avec `TUYA_LOCAL_IP=192.168.1.48` et `TUYA_LOCAL_VERSION=3.5` (11 points lus, plage `{"m":2,"dt":0,"ss":"23:00","se":"06:00"}`). **Pas de réservation dans la Bbox** (décision de Mathieu du 2026-11-17) : recherche automatique du câble en secours, lot C2
 
 ### Tests du point d'arrêt
 
@@ -325,8 +325,15 @@ Lot C1 (tests automatiques) :
 - [ ] Aucune clé ni identifiant réel dans le dépôt ; la clé n'apparaît dans aucun message d'erreur
 - [ ] Chaque élément du protocole repris de tinytuya est noté dans `docs/tuya-findings.md` avec sa source
 
+Lot C2, recherche automatique (tests automatiques, avant l'essai sur le câble) :
+
+- [ ] Adresse connue muette : recherche limitée au réseau /24 de cette adresse (IPv4 privée, port 6668), câble confirmé seulement par la négociation de sa clé ; aucune lecture ni écriture sur un autre appareil
+- [ ] Nouvelle adresse affichée ; deux appareils qui acceptent la clé, ou aucun : échec clair (`hors_ligne`), jamais de choix au hasard
+- [ ] Recherche bornée : parallélisme limité, délai court par adresse, échéance globale respectée ; la clé n'apparaît dans aucun message
+
 Lot C2 (sur le câble) :
 
+- [ ] Recherche automatique : câble retrouvé après un faux `TUYA_LOCAL_IP` (adresse privée inoccupée)
 - [ ] `etat` lit la même plage que Smart Life et que `tools/tuya-local-test.py`
 - [ ] `ecrire-debut HH:MM` sans `--confirmer` n'envoie rien
 - [ ] Écriture réelle relue conforme, heure visible dans Smart Life, charge démarrée à l'heure (Mathieu)

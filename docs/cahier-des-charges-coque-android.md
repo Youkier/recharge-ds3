@@ -85,7 +85,7 @@ ouvrir(ip, port, delaiMs) · envoyer(octets) · recevoir(delaiMs) → octets · 
 - **Pont TCP** (`@JavascriptInterface` ou canal de messages) : `ouvrir`, `envoyer`, `recevoir`, `fermer`, octets échangés en base64. Il refuse tout port autre que 6668 et toute adresse qui n'est pas une IPv4 privée (10/8, 172.16/12, 192.168/16). Une seule connexion ouverte. Délais sur chaque opération.
 - **Permission réseau local.** Depuis Android 17, une appli qui cible le SDK 37 doit déclarer et demander `ACCESS_LOCAL_NETWORK` ; sans elle, une connexion TCP locale échoue par dépassement de délai, ce qui ressemble à un câble hors ligne. Source : https://developer.android.com/privacy-and-security/local-network-permission. À relire avant de fixer le SDK cible ; l'appli doit distinguer « permission refusée » de « câble injoignable ».
 - **Clé locale et identifiant du câble :** saisis une fois par Mathieu dans la vue Paramètres de la coque (champ masqué, jamais réaffiché), stockés chiffrés par le magasin de clés d'Android, hors des sauvegardes (`allowBackup="false"`). Ils ne passent jamais par Claude, ni par le dépôt, ni par un journal. Un bouton « Effacer la clé ».
-- **Adresse du câble :** saisie à la main en version 1 (adresse réservée dans la box). La recherche automatique sur le réseau est hors périmètre.
+- **Adresse du câble :** saisie une fois, puis **recherche automatique en secours** si elle ne répond plus (décision du 2026-11-17, `docs/decisions-produit.md`) : port 6668 sur le réseau /24 de l'adresse connue, par le même pont, câble confirmé par sa clé ; la nouvelle adresse est enregistrée. Pas de réservation dans la box.
 - **Signature :** une clé de signature stable, créée sur le PC de Mathieu et gardée **hors du dépôt**. Sans elle, chaque nouvelle version obligerait à désinstaller l'appli, donc à ressaisir la clé du câble.
 - Version minimale d'Android : celle du Pixel 9 suffit.
 
@@ -139,4 +139,4 @@ Au lot C4, changement minimal et gardé dans `site/` : si le pont est présent (
 
 ## 11. Hors périmètre
 
-Publication sur le Play Store, paiement, récupération de la clé par QR code (attend la réponse de Tuya), recherche automatique du câble, réglage automatique à l'arrivée sur le Wi-Fi, iPhone, autres modèles de câbles.
+Publication sur le Play Store, paiement, récupération de la clé par QR code (attend la réponse de Tuya), découverte du câble sans adresse de départ (la recherche de secours part toujours de l'adresse connue), réglage automatique à l'arrivée sur le Wi-Fi, iPhone, autres modèles de câbles.
