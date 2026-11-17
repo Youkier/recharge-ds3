@@ -1,7 +1,9 @@
 {
-  "_note": "Prix par défaut de l'électricité en €/kWh, tarif réglementé heures creuses et heures pleines. Aucun prix n'est inventé : tant que hc et hp sont null, la page demande à l'utilisateur de saisir ses prix et n'affiche ni coût ni économie. Pour renseigner un prix, remplir hc, hp, source (adresse de la page lue) et date (AAAA-MM-JJ de la lecture).",
-  "hc": null,
-  "hp": null,
-  "source": null,
-  "date": null
+  "_note": "Prix par défaut de l'électricité en €/kWh TTC, tarif réglementé (Tarif Bleu résidentiel, option Heures Creuses, identiques de 3 à 36 kVA). Aucun prix n'est inventé : chaque valeur est lue à sa source officielle. « source » est le libellé affiché sur la page, « url » l'adresse du document lu, « date » le jour de la lecture (AAAA-MM-JJ), « applicable_le » la date d'entrée en vigueur. Prochain mouvement prévu : 1er février 2027 (communiqué de la CRE du 16 juillet 2026).",
+  "hc": 0.1589,
+  "hp": 0.2142,
+  "source": "grille officielle du Tarif Bleu d'EDF, tarif réglementé applicable au 1er août 2026 (option Heures Creuses)",
+  "url": "https://particulier.edf.fr/content/dam/2-Actifs/Documents/Offres/Grille_prix_Tarif_Bleu.pdf",
+  "date": "2026-11-17",
+  "applicable_le": "2026-08-01"
 }

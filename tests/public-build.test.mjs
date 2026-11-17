@@ -165,12 +165,21 @@ test("sans PUBLIC_INDEXABLE : noindex partout et robots.txt interdit tout ; avec
   assert.throws(() => construire({ sortie: tmp(), env: { PUBLIC_ORIGINE: "ftp://x/y" } }), /PUBLIC_ORIGINE/);
 });
 
-test("prix vides : aucun prix inventé dans la page, rappel de la facture présent", () => {
+test("prix par défaut : ceux de tarifs.json, avec leur source officielle, rappel de la facture présent", () => {
   const h = lire(dirA, "index.html");
-  assert.match(h, /data-phc="" data-php=""/);
-  assert.match(h, /figurent sur votre facture/);
   const t = JSON.parse(readFileSync(join(RACINE, "public", "donnees", "tarifs.json"), "utf8"));
-  assert.equal(t.hc, null); assert.equal(t.hp, null); assert.equal(t.source, null); assert.equal(t.date, null);
+  assert.match(h, /figurent sur votre facture/);
+  if (t.hc === null) {
+    assert.match(h, /data-phc="" data-php=""/);
+    return;
+  }
+  const fr = (x) => String(x).replace(".", ",");
+  assert.match(h, new RegExp(`data-phc="${fr(t.hc)}" data-php="${fr(t.hp)}"`));
+  assert.ok(h.includes(`Prix par défaut : ${t.source}, lus le ${t.date}.`));
+  // Source officielle et traçable : grille du fournisseur historique, CRE ou Journal officiel.
+  assert.match(t.url, /^https:\/\/([a-z0-9-]+\.)*(edf\.fr|cre\.fr|legifrance\.gouv\.fr)\//);
+  assert.match(t.applicable_le, /^\d{4}-\d{2}-\d{2}$/);
+  assert.ok(t.hp > t.hc, "heures pleines plus chères que les heures creuses");
 });
 
 test("les emplacements des lots suivants sont prévus et les champs ont un libellé", () => {
