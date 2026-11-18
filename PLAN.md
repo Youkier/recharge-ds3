@@ -240,7 +240,7 @@ Décision de Mathieu du 2026-11-15 : **deux pistes avancent en parallèle**, san
 
 - [x] Agents `ergonome`, `testeur-inconnu`, `tech-lead`, `business-dev` créés ; `tools/capture.mjs` pour regarder les pages (Edge sans fenêtre, profil jetable ; 500 px au minimum, constaté : en dessous, Edge met la page en page à 500 px)
 - [x] `ergonome` et `testeur-inconnu` sur le lot S1 (accueil, première visite)
-- [ ] (proposition écrite le 2026-11-18, à valider par Mathieu) `business-dev` : `docs/kpi.md` et structure du tableau de bord privé ; résoudre « au-delà de 300 utilisateurs réguliers » (`docs/business-cases.md`), non mesurable sans identifiant alors que le site n'en pose aucun
+- [x] (proposition acceptée par Mathieu le 2026-11-18) `business-dev` : `docs/kpi.md` et structure du tableau de bord privé ; résoudre « au-delà de 300 utilisateurs réguliers » (`docs/business-cases.md`), non mesurable sans identifiant alors que le site n'en pose aucun
 - [ ] Tableau de bord privé publié sur claude.ai (session principale), valeurs saisies à chaque relevé
 - [ ] `tech-lead` : revue d'ensemble avant le lot C3 (rendement recopié dans `site/app.js` et `public/app/app-public.js`, partage entre `site/` et `public/`, forme du pont Android)
 - [ ] Trois vrais visiteurs, proches de Mathieu et sans explication préalable, avant le lot S6 : le `testeur-inconnu` ne les remplace pas

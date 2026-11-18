@@ -1,6 +1,6 @@
 # Indicateurs du volet produit
 
-Définitions seulement. Aucune valeur n'est écrite ici : le dépôt est public. Les valeurs vont dans le tableau de bord privé de Mathieu. Les seuils sont des **propositions** (`business-dev`, 2026-11-18) tant que Mathieu ne les a pas consignés dans `docs/decisions-produit.md`.
+Définitions seulement. Aucune valeur n'est écrite ici : le dépôt est public. Les valeurs vont dans le tableau de bord privé de Mathieu. Proposition de `business-dev` **acceptée par Mathieu le 2026-11-18** (`docs/decisions-produit.md`) ; les seuils pourront être revus après 30 jours de mesure.
 
 ## Règle de mesure
 
