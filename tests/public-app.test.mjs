@@ -160,3 +160,24 @@ test("lien de partage : paramètres invalides ou inconnus ignorés", async () =>
 test("message affiché quand un lien de partage est appliqué", () => {
   assert.equal(A.MESSAGE_LIEN, "Réglages du lien appliqués : vérifiez-les.");
 });
+
+test("résumé des réglages : valeurs réellement utilisées, sans DOM", () => {
+  const lu = A.lireReglages({ ...base, target: "100", soh: "92", amp: "10", courant: "10", hcStart: "23:00", hcEnd: "07:00", dep: "08:15" }, "38");
+  assert.equal(A.resumeReglages(lu.p), "Calculé avec : cible 100 %, SOH 92 %, 10 A, heures creuses 23:00–07:00, départ 08:15");
+  assert.match(A.resultat(base, "38").resume, /^Calculé avec : cible 80 %, SOH 100 %, 16 A/);
+  assert.equal(A.resultat(base, "").resume, "");
+  assert.equal(A.resultat({ ...base, cap: "" }, "38").resume, "");
+});
+
+test("page : cible et SOH hors du bloc avancé, résumé et bouton présents", async () => {
+  const { readFileSync } = await import("node:fs");
+  const html = readFileSync(join(d, "index.html"), "utf8");
+  const avance = html.slice(html.indexOf('<details id="avance"'), html.indexOf("</details>", html.indexOf('<details id="avance"')));
+  for (const id of ["target", "soh"]) {
+    assert.ok(html.includes('id="' + id + '"'), id + " présent");
+    assert.ok(!avance.includes('id="' + id + '"'), id + " hors des paramètres avancés");
+    assert.equal(html.split('id="' + id + '"').length, 2, id + " une seule fois");
+  }
+  assert.ok(html.indexOf('id="target"') > html.indexOf('id="titre-soir"'));
+  assert.ok(html.includes('id="modifier-reglages"') && html.includes('id="calcule-avec"'));
+});

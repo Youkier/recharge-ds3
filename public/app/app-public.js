@@ -69,10 +69,15 @@ export function lireReglages(brut, soc) {
   return { p: p, erreurs: erreurs, prix: prix };
 }
 
+// Résumé des réglages réellement utilisés (p vient de lireReglages). Texte seul, sans DOM.
+export function resumeReglages(p) {
+  return "Calculé avec : cible " + fr(p.target, 0) + " %, SOH " + fr(p.soh, 0) + " %, " + fr(p.amp, 0) + " A, heures creuses " + p.hcStart + "–" + p.hcEnd + ", départ " + p.dep;
+}
+
 // Rend le modèle de vue : { statut, titre, message, lignes:[[libellé, valeur]], champ, prixManquants, chiffres }.
 export function resultat(brut, soc) {
   var lu = lireReglages(brut, soc);
-  var vue = { statut: "", titre: "", message: "", lignes: [], champ: null, prixManquants: false, chiffres: null };
+  var vue = { statut: "", titre: "", message: "", lignes: [], champ: null, prixManquants: false, chiffres: null, resume: "" };
   if (lu.erreurs.length) {
     vue.statut = "err";
     vue.titre = "Une saisie est à corriger";
@@ -83,6 +88,7 @@ export function resultat(brut, soc) {
   var p = lu.p, prix = lu.prix;
   var r = plan(p);
   vue.statut = r.status;
+  if (r.status !== "err") vue.resume = resumeReglages(p);
   vue.prixManquants = !prix;
   if (r.status === "err") {
     vue.titre = "Calcul impossible";
@@ -277,6 +283,8 @@ function demarrer() {
       bp.addEventListener("click", function () { $("reglages").open = true; $("avance").open = true; $("pHC").focus(); });
       res.appendChild(bp);
     }
+    $("texte-calcule-avec").textContent = vue.resume || "";
+    $("calcule-avec").hidden = !vue.resume;
     var part = $("partage"), ul = $("chiffres");
     ul.textContent = "";
     var tc = vue.chiffres ? texteChiffres(vue.chiffres) : [];
@@ -385,6 +393,13 @@ function demarrer() {
       } else manuel();
     });
   }
+
+  $("modifier-reglages").addEventListener("click", function () {
+    $("reglages").open = true;
+    var c = $("marque");
+    if (c) c.focus();
+    if ($("reglages").scrollIntoView) $("reglages").scrollIntoView({ block: "start" });
+  });
 
   form.addEventListener("input", function () { if (pret) recalculer(); });
   form.addEventListener("change", function (e) {
