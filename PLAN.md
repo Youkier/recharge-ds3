@@ -118,7 +118,7 @@ T1 à T3 passés le 2026-11-11 (voir `docs/tuya-findings.md`). Compte principal 
 - [ ] Tests du pilotage local L1 à L4 (`tools/tuya-local-test.py`, détail dans `docs/tuya-findings.md`) : repli sans internet, et base d'une éventuelle appli (volet produit). **L1, L2, L3 réussis (2026-11-15/16) ; L4 à faire plus tard** (voiture branchée, méthode notée dans `docs/tuya-findings.md`), puis supprimer `tools/.env`
 - [ ] **Essai gratuit IoT Core de Tuya : échéance le 2026-12-11** (constaté par Mathieu le 2026-11-15 ; sans lui, le Worker ne joint plus Tuya). **Prolongation demandée par Mathieu le 2026-11-15**, réponse à vérifier dans la console. Demander la prolongation de 6 mois vers le 1er décembre (plateforme Tuya → Cloud → Cloud Services → IoT Core → Extend Trial Period), puis à chaque échéance. La sortie durable de cette dépendance est le pilotage local (phase 3b)
 - [x] **Clé locale du câble copiée dans le gestionnaire de mots de passe de Mathieu** (fait le 2026-11-17) avant toute suppression de `tools/.env` : elle ne se relit que par le cloud Tuya, donc plus du tout si l'essai expire. `tools/.env` n'est supprimé qu'après L4 **et** après le lot C2 de la phase 3b
-- [ ] Réseau de la maison : routeur TP-Link AX55 passé en mode point d'accès (en cours le 2026-11-15), pour que le câble soit joignable depuis les deux Wi-Fi ; adresse du câble réservée dans la box ; puis `scan` et `etat` depuis le Wi-Fi principal. **2026-11-15 : `scan` depuis le Wi-Fi principal ne trouve pas le câble** : le profil Windows du Wi-Fi « Bbox-ext 2 » est « Public », le pare-feu bloque les annonces UDP. Câble rebranché : port 6668 ouvert à **192.168.1.48** ; **`etat` réussi** avec `TUYA_LOCAL_IP=192.168.1.48` et `TUYA_LOCAL_VERSION=3.5` (11 points lus, plage `{"m":2,"dt":0,"ss":"23:00","se":"06:00"}`). **Pas de réservation dans la Bbox** (décision de Mathieu du 2026-11-17) : recherche automatique du câble en secours, lot C2
+- [x] Réseau de la maison : routeur TP-Link AX55 passé en mode point d'accès (en cours le 2026-11-15), pour que le câble soit joignable depuis les deux Wi-Fi ; adresse du câble réservée dans la box ; puis `scan` et `etat` depuis le Wi-Fi principal. **2026-11-15 : `scan` depuis le Wi-Fi principal ne trouve pas le câble** : le profil Windows du Wi-Fi « Bbox-ext 2 » est « Public », le pare-feu bloque les annonces UDP. Câble rebranché : port 6668 ouvert à **192.168.1.48** ; **`etat` réussi** avec `TUYA_LOCAL_IP=192.168.1.48` et `TUYA_LOCAL_VERSION=3.5` (11 points lus, plage `{"m":2,"dt":0,"ss":"23:00","se":"06:00"}`). **Pas de réservation dans la Bbox** (décision de Mathieu du 2026-11-17) : recherche automatique du câble en secours, lot C2
 
 ### Tests du point d'arrêt
 
@@ -239,8 +239,8 @@ Décision de Mathieu du 2026-11-15 : **deux pistes avancent en parallèle**, san
 ### Équipe élargie (2026-11-17)
 
 - [x] Agents `ergonome`, `testeur-inconnu`, `tech-lead`, `business-dev` créés ; `tools/capture.mjs` pour regarder les pages (Edge sans fenêtre, profil jetable ; 500 px au minimum, constaté : en dessous, Edge met la page en page à 500 px)
-- [ ] `ergonome` et `testeur-inconnu` sur le lot S1 (accueil, première visite)
-- [ ] `business-dev` : `docs/kpi.md` et structure du tableau de bord privé ; résoudre « au-delà de 300 utilisateurs réguliers » (`docs/business-cases.md`), non mesurable sans identifiant alors que le site n'en pose aucun
+- [x] `ergonome` et `testeur-inconnu` sur le lot S1 (accueil, première visite)
+- [ ] (proposition écrite le 2026-11-18, à valider par Mathieu) `business-dev` : `docs/kpi.md` et structure du tableau de bord privé ; résoudre « au-delà de 300 utilisateurs réguliers » (`docs/business-cases.md`), non mesurable sans identifiant alors que le site n'en pose aucun
 - [ ] Tableau de bord privé publié sur claude.ai (session principale), valeurs saisies à chaque relevé
 - [ ] `tech-lead` : revue d'ensemble avant le lot C3 (rendement recopié dans `site/app.js` et `public/app/app-public.js`, partage entre `site/` et `public/`, forme du pont Android)
 - [ ] Trois vrais visiteurs, proches de Mathieu et sans explication préalable, avant le lot S6 : le `testeur-inconnu` ne les remplace pas
@@ -283,17 +283,17 @@ Nom du site et domaine ; accord sur l'hébergement ; création du formulaire de 
 
 Vérifiés par les tests automatiques :
 
-- [ ] `node tools/build-public.mjs` construit `dist/public/` ; deux constructions de suite donnent les mêmes fichiers
-- [ ] La piste n'a modifié aucun fichier de `site/` ; `calc.js`, `vehicules.js` et `vehicules.json` de `dist/public/` sont identiques à ceux de `site/`
-- [ ] Les cas de `tests/golden-cases.json` sont reproduits par le `calc.js` copié dans `dist/public/`
-- [ ] Chaque page a un seul `<h1>`, un titre et une description uniques, un lien canonique et les balises de partage ; tous les liens internes aboutissent ; le plan du site liste toutes les pages
-- [ ] `dist/public/` ne contient ni adresse `workers.dev`, ni champ de jeton, ni mention de MyDS ; sa CSP n'autorise aucune connexion hors du site (et du domaine de mesure s'il y en a un)
-- [ ] Aucune ressource chargée depuis un autre site (scripts, styles, images, polices)
-- [ ] Lien de partage : les réglages font l'aller-retour sans perte, la batterie du soir n'y figure jamais, les paramètres invalides sont ignorés
-- [ ] Les quatre statuts du calcul (`ok`, `short`, `none`, `err`) affichent chacun leur message
-- [ ] Tout lien rémunéré porte `rel="sponsored nofollow noopener"` et la mention « lien rémunéré » ; le bouton de liste d'attente est absent tant que son adresse est vide
+- [x] `node tools/build-public.mjs` construit `dist/public/` ; deux constructions de suite donnent les mêmes fichiers
+- [x] (état de l'arbre de travail, test `git status`) La piste n'a modifié aucun fichier de `site/` ; `calc.js`, `vehicules.js` et `vehicules.json` de `dist/public/` sont identiques à ceux de `site/`
+- [x] Les cas de `tests/golden-cases.json` sont reproduits par le `calc.js` copié dans `dist/public/`
+- [x] Chaque page a un seul `<h1>`, un titre et une description uniques, un lien canonique et les balises de partage ; tous les liens internes aboutissent ; le plan du site liste toutes les pages
+- [x] `dist/public/` ne contient ni adresse `workers.dev`, ni champ de jeton, ni mention de MyDS ; sa CSP n'autorise aucune connexion hors du site (et du domaine de mesure s'il y en a un)
+- [x] Aucune ressource chargée depuis un autre site (scripts, styles, images, polices)
+- [x] Lien de partage : les réglages font l'aller-retour sans perte, la batterie du soir n'y figure jamais, les paramètres invalides sont ignorés
+- [x] Les quatre statuts du calcul (`ok`, `short`, `none`, `err`) affichent chacun leur message
+- [x] Tout lien rémunéré porte `rel="sponsored nofollow noopener"` et la mention « lien rémunéré » ; le bouton de liste d'attente est absent tant que son adresse est vide
 - [ ] Le script refuse une page de modèle sans source ou absente de `vehicules.json`
-- [ ] Sans `PUBLIC_INDEXABLE=1`, toutes les pages portent `noindex`
+- [x] Sans `PUBLIC_INDEXABLE=1`, toutes les pages portent `noindex`
 
 À vérifier par Mathieu :
 
@@ -329,11 +329,11 @@ Avant C2 : clé locale à l'abri, câble joignable depuis le PC. Avant C3 : Andr
 
 Lot C1 (tests automatiques) :
 
-- [ ] Les trames produites et relues par le module sont celles des vecteurs de tinytuya (négociation, lecture, écriture)
-- [ ] Faux câble : clé fausse, délai dépassé, format inattendu (rien n'est écrit), relecture différente, autre point modifié, heure déjà passée, plage courte, trame coupée : chaque cas donne la réponse prévue, jamais de faux succès
-- [ ] Un test échoue si le module peut écrire autre chose que `ss` et `m` du dp 151
-- [ ] Aucune clé ni identifiant réel dans le dépôt ; la clé n'apparaît dans aucun message d'erreur
-- [ ] Chaque élément du protocole repris de tinytuya est noté dans `docs/tuya-findings.md` avec sa source
+- [x] Les trames produites et relues par le module sont celles des vecteurs de tinytuya (négociation, lecture, écriture)
+- [x] Faux câble : clé fausse, délai dépassé, format inattendu (rien n'est écrit), relecture différente, autre point modifié, heure déjà passée, plage courte, trame coupée : chaque cas donne la réponse prévue, jamais de faux succès
+- [x] Un test échoue si le module peut écrire autre chose que `ss` et `m` du dp 151
+- [x] Aucune clé ni identifiant réel dans le dépôt ; la clé n'apparaît dans aucun message d'erreur (messages et vecteurs par les tests ; le dépôt par le contrôle avant commit)
+- [x] Chaque élément du protocole repris de tinytuya est noté dans `docs/tuya-findings.md` avec sa source
 
 Lot C2, recherche automatique (tests automatiques, avant l'essai sur le câble) :
 
