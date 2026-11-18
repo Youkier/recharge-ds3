@@ -152,6 +152,8 @@ export function lienPartage(brut, base) {
   q.set("courant", b.courant);
   if (b.courant === "autre") q.set("amp", String(b.amp).trim());
   q.set("hcStart", b.hcStart); q.set("hcEnd", b.hcEnd); q.set("dep", b.dep); q.set("target", b.target);
+  // SOH : même voiture partagée en couple ou en famille (décision de Mathieu du 2026-11-18).
+  if (b.soh !== undefined && String(b.soh).trim() !== "") q.set("soh", String(b.soh).trim());
   return String(base).split(/[?#]/)[0] + "?" + q.toString();
 }
 
@@ -185,6 +187,8 @@ export function lireLien(recherche, lignes) {
   });
   var cible = nombre(q.get("target"));
   if (isFinite(cible) && cible > 0 && cible <= 100) o.target = String(cible);
+  var soh = nombre(q.get("soh"));
+  if (isFinite(soh) && soh > 0 && soh <= 100) o.soh = String(soh);
   return o;
 }
 

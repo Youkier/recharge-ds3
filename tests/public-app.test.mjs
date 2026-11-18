@@ -131,11 +131,12 @@ test("lien de partage : aller-retour sans perte, batterie absente", async () => 
   const brut = { marque: m[0], modele: m[1], version: m[2], courant: "32", amp: "32", hcStart: "23:30", hcEnd: "07:00", dep: "08:15", target: "85", soc: "37", pHC: "0,15", pHP: "0,2", soh: "90" };
   const lien = A.lienPartage(brut, "https://exemple.org/chemin/");
   assert.ok(lien.startsWith("https://exemple.org/chemin/?"));
-  assert.ok(!/[?&](soc|pHC|pHP|soh)=/.test(lien));
+  assert.ok(!/[?&](soc|pHC|pHP)=/.test(lien));
   const lu = A.lireLien(lien.slice(lien.indexOf("?")), lignes);
-  assert.deepEqual(lu, { marque: m[0], modele: m[1], version: m[2], courant: "32", hcStart: "23:30", hcEnd: "07:00", dep: "08:15", target: "85" });
-  const autre = A.lienPartage({ marque: A.AUTRE, cap: "52,5", courant: "autre", amp: "12", hcStart: "01:00", hcEnd: "07:00", dep: "08:00", target: "80" }, "https://x.fr/");
-  assert.deepEqual(A.lireLien(autre.split("?")[1], lignes), { marque: A.AUTRE, cap: "52.5", courant: "autre", amp: "12", hcStart: "01:00", hcEnd: "07:00", dep: "08:00", target: "80" });
+  assert.deepEqual(lu, { marque: m[0], modele: m[1], version: m[2], courant: "32", hcStart: "23:30", hcEnd: "07:00", dep: "08:15", target: "85", soh: "90" });
+  const autre = A.lienPartage({ marque: A.AUTRE, cap: "52,5", courant: "autre", amp: "12", hcStart: "01:00", hcEnd: "07:00", dep: "08:00", target: "80", soh: "92,5" }, "https://x.fr/");
+  assert.deepEqual(A.lireLien(autre.split("?")[1], lignes), { marque: A.AUTRE, cap: "52.5", courant: "autre", amp: "12", hcStart: "01:00", hcEnd: "07:00", dep: "08:00", target: "80", soh: "92.5" });
+  for (const mauvais of ["soh=0", "soh=101", "soh=abc", "soh=1e2", "soh=-5"]) assert.deepEqual(A.lireLien(mauvais, lignes), {}, mauvais);
 });
 
 test("lien de partage : la batterie du soir passée dans l'adresse est ignorée", async () => {

@@ -269,7 +269,7 @@ test("lien de partage : bouton présent, aucun champ de batterie dans le lien, c
   assert.ok(!/<input[^>]+(?:readonly)[^>]*value=/.test(h));
   const js = lire(dirA, "app/app-public.js");
   const fn = js.slice(js.indexOf("export function lienPartage"), js.indexOf("export function lireLien"));
-  assert.ok(!/soc|pHC|pHP|soh/.test(fn), "lienPartage ne lit ni la batterie ni les prix");
+  assert.ok(!/soc|pHC|pHP/.test(fn), "lienPartage ne lit ni la batterie du soir ni les prix (le SOH, oui : même voiture en famille)");
 });
 
 test("accueil : limite des heures creuses, valeurs proposées, le site ne pilote rien", () => {
