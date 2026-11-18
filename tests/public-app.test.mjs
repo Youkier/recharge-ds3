@@ -139,6 +139,20 @@ test("lien de partage : aller-retour sans perte, batterie absente", async () => 
   for (const mauvais of ["soh=0", "soh=101", "soh=abc", "soh=1e2", "soh=-5"]) assert.deepEqual(A.lireLien(mauvais, lignes), {}, mauvais);
 });
 
+test("fusionnerLien applique tout ce que lireLien rend (dont le SOH)", async () => {
+  const lignes = await vehicules();
+  const m = lignes[0];
+  const lien = A.lienPartage({ marque: m[0], modele: m[1], version: m[2], courant: "autre", amp: "12", hcStart: "23:30", hcEnd: "07:00", dep: "08:15", target: "85", soh: "88" }, "https://x.fr/");
+  const l = A.lireLien(lien.split("?")[1], lignes);
+  const r = A.fusionnerLien({ ...A.DEFAUTS, soh: "100", target: "80", pHC: "0,15" }, l);
+  for (const k of Object.keys(l)) assert.equal(r[k], l[k], `clé ${k} non appliquée`);
+  assert.equal(r.soh, "88");
+  assert.equal(r.pHC, "0,15", "les réglages absents du lien sont gardés");
+  const autre = A.lireLien(A.lienPartage({ marque: A.AUTRE, cap: "50", courant: "16", target: "80", soh: "90" }, "https://x.fr/").split("?")[1], lignes);
+  const r2 = A.fusionnerLien({ ...A.DEFAUTS }, autre);
+  for (const k of Object.keys(autre)) assert.equal(r2[k], autre[k], `clé ${k} non appliquée`);
+});
+
 test("lien de partage : la batterie du soir passée dans l'adresse est ignorée", async () => {
   const lu = A.lireLien("soc=40&batterie=40&courant=16", await vehicules());
   assert.deepEqual(lu, { courant: "16" });

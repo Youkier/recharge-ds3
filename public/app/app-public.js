@@ -157,6 +157,15 @@ export function lienPartage(brut, base) {
   return String(base).split(/[?#]/)[0] + "?" + q.toString();
 }
 
+// Applique à des réglages b ceux, déjà validés par lireLien, d'un lien de partage l. Rend un nouvel objet.
+// Toute clé rendue par lireLien est appliquée (test « fusionnerLien applique tout ce que lireLien rend »).
+export function fusionnerLien(b, l) {
+  var r = Object.assign({}, b);
+  if (l.marque) { r.marque = l.marque; r.modele = l.modele || ""; r.version = l.version || ""; if (l.cap) r.cap = l.cap; }
+  ["courant", "amp", "hcStart", "hcEnd", "dep", "target", "soh"].forEach(function (k) { if (l[k]) r[k] = l[k]; });
+  return r;
+}
+
 // Rend les seuls réglages valides trouvés dans la partie « ?... » d'une adresse ; le reste est ignoré.
 // lignes : liste des véhicules (lignesValides) pour contrôler marque, modèle et version ; sans elle, la voiture est ignorée.
 export function lireLien(recherche, lignes) {
@@ -349,9 +358,7 @@ function demarrer() {
     if (!Object.keys(l).length) return;
     var b = Object.assign({}, DEFAUTS, defautsPrix);
     if (sauve) Object.keys(DEFAUTS).forEach(function (k) { if (typeof sauve[k] === "string") b[k] = sauve[k]; });
-    if (l.marque) { b.marque = l.marque; b.modele = l.modele || ""; b.version = l.version || ""; if (l.cap) b.cap = l.cap; }
-    ["courant", "amp", "hcStart", "hcEnd", "dep", "target"].forEach(function (k) { if (l[k]) b[k] = l[k]; });
-    restaurer(b, defautsPrix);
+    restaurer(fusionnerLien(b, l), defautsPrix);
     lienApplique = true;
     try { history.replaceState(null, "", location.pathname); } catch (e) { /* sans importance */ }
   }
