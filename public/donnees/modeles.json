@@ -1,0 +1,25 @@
+{
+  "_note": "Modèles qui ont une page /limite-de-charge/<slug>/. Une entrée publiée exige : « marque » et « modele » tels qu'écrits dans site/vehicules.json, « limite_native » (true, false ou \"inconnu\"), « charge_differee » (\"debut_seul\", \"debut_et_fin\", \"aucune\" ou \"inconnu\"), au moins une source LUE (« url » https, « lu_le » AAAA-MM-JJ, « ce_que_dit_la_source » : ce que la page dit, en une phrase), et « particularites » : un ou plusieurs paragraphes écrits à partir des sources, propres à ce modèle. Une entrée marquée \"a_verifier\": true n'est JAMAIS publiée : la construction l'ignore et le dit. Rien n'est écrit ici sans source lue.",
+  "modeles": [
+    {
+      "slug": "peugeot-e-208",
+      "marque": "Peugeot", "modele": "e-208",
+      "a_verifier": true,
+      "limite_native": "inconnu",
+      "charge_differee": "inconnu",
+      "sources": [],
+      "particularites": [],
+      "a_faire": "Exemple de structure. Lire la notice du constructeur ou un essai de presse avant de renseigner limite_native, charge_differee, les sources et les particularités, puis retirer « a_verifier »."
+    },
+    {
+      "slug": "opel-corsa-e",
+      "marque": "Opel / Vauxhall", "modele": "Corsa-e",
+      "a_verifier": true,
+      "limite_native": "inconnu",
+      "charge_differee": "inconnu",
+      "sources": [],
+      "particularites": [],
+      "a_faire": "Exemple de structure. Même démarche que pour la e-208 : aucune page tant qu'une source n'a pas été lue."
+    }
+  ]
+}

@@ -27,11 +27,34 @@ function empreintes(d) {
 }
 const lire = (d, f) => readFileSync(join(d, f), "utf8");
 
+import { cpSync } from "node:fs";
+// Copie de public/ dont les marqueurs « [À SOURCER … ] » et « [À COMPLÉTER … ] » sont remplacés par un texte neutre.
+function sansMarqueurs(modif) {
+  const src = tmp(); cpSync(join(RACINE, "public"), src, { recursive: true });
+  for (const f of readdirSync(join(src, "contenu"))) {
+    const c = join(src, "contenu", f);
+    writeFileSync(c, readFileSync(c, "utf8").replace(/\[À (?:SOURCER|COMPLÉTER)[^\]]*\]/g, "Texte vérifié."));
+  }
+  if (modif) modif(src);
+  return src;
+}
+
 let dirA;
 before(() => { dirA = tmp(); construire({ sortie: dirA, env: envNeutre }); });
 process.on("exit", () => { for (const d of temporaires) rmSync(d, { recursive: true, force: true }); });
 
-const pagesHtml = () => readdirSync(dirA).filter((f) => f.endsWith(".html"));
+// Toutes les pages HTML, y compris celles des sous-dossiers (chemins relatifs à la racine, avec « / »).
+function listerHtml(d) {
+  const out = [];
+  (function parcourir(c) {
+    for (const n of readdirSync(c).sort()) {
+      const p = join(c, n);
+      if (statSync(p).isDirectory()) parcourir(p); else if (n.endsWith(".html")) out.push(p.slice(d.length + 1).split(sep).join("/"));
+    }
+  })(d);
+  return out;
+}
+const pagesHtml = () => listerHtml(dirA);
 
 test("construction déterministe : deux constructions donnent les mêmes fichiers", () => {
   const dirB = tmp();
@@ -109,7 +132,7 @@ test("liens et ressources internes aboutissent", () => {
   for (const f of pagesHtml()) {
     const h = lire(dirA, f);
     const cibles = [...h.matchAll(/(?:href|src)="([^"]+)"/g)].map((m) => m[1]).filter((u) => !/^(https?:|#|mailto:)/.test(u));
-    const baseUrl = f === "404.html" ? "/" : "/";
+    const baseUrl = f === "404.html" ? "/" : "/" + f.replace(/index\.html$/, "");
     for (const u of cibles) {
       const chemin = new URL(u, "http://local" + baseUrl).pathname;
       const fichier = chemin.endsWith("/") ? chemin + "index.html" : chemin;
@@ -121,14 +144,17 @@ test("liens et ressources internes aboutissent", () => {
   assert.ok(existsSync(join(dirA, "app", "partage.svg")));
 });
 
-test("le plan du site liste les pages indexables existantes", () => {
+test("le plan du site liste toutes les pages indexables, et seulement elles", () => {
   const s = lire(dirA, "sitemap.xml");
   assert.match(s, /<loc>https:\/\/exemple\.invalid\/<\/loc>/);
   assert.ok(!s.includes("404"));
+  const locs = [...s.matchAll(/<loc>([^<]+)<\/loc>/g)].map((m) => m[1]).sort();
+  const attendu = pagesHtml().filter((f) => f !== "404.html").map((f) => "https://exemple.invalid/" + f.replace(/index\.html$/, "")).sort();
+  assert.deepEqual(locs, attendu);
 });
 
 test("aucune ressource externe, ni workers.dev, ni jeton, ni MyDS, ni matériel imposé", () => {
-  const fichiers = ["index.html", "404.html", "app/app-public.js", "app/style.css", "robots.txt", "sitemap.xml"];
+  const fichiers = [...pagesHtml(), "app/app-public.js", "app/style.css", "robots.txt", "sitemap.xml"];
   for (const f of pagesHtml()) {
     const h = lire(dirA, f);
     for (const m of h.matchAll(/(?:src|href)="(https?:[^"]+)"/g)) {
@@ -157,7 +183,8 @@ test("sans PUBLIC_INDEXABLE : noindex partout et robots.txt interdit tout ; avec
   for (const f of pagesHtml()) assert.match(lire(dirA, f), /<meta name="robots" content="noindex">/);
   assert.match(lire(dirA, "robots.txt"), /Disallow: \//);
   const d = tmp();
-  construire({ sortie: d, env: { PUBLIC_INDEXABLE: "1", PUBLIC_ORIGINE: "https://exemple.org/" } });
+  // Les marqueurs « [À SOURCER » et « [À COMPLÉTER » bloquent l'indexation : on les retire d'une copie des contenus.
+  construire({ sortie: d, env: { PUBLIC_INDEXABLE: "1", PUBLIC_ORIGINE: "https://exemple.org/" }, source: sansMarqueurs() });
   assert.ok(!/noindex/.test(lire(d, "index.html")));
   assert.match(lire(d, "404.html"), /noindex/);
   assert.match(lire(d, "index.html"), /href="https:\/\/exemple\.org\/"/);
@@ -190,7 +217,6 @@ test("les emplacements des lots suivants sont prévus et les champs ont un libel
 });
 
 // ---- Lot S2 : « Comment régler », liste d'attente, liens rémunérés
-import { cpSync } from "node:fs";
 function avecOffres(modif) {
   const src = tmp(); cpSync(join(RACINE, "public"), src, { recursive: true });
   const f = join(src, "donnees", "offres.json");

@@ -1,6 +1,7 @@
 {
-  "_note": "Liens sortants et encarts de « Comment lancez-vous la charge ? ». Ajouter une offre ou activer un encart = modifier ce fichier, sans toucher au code. Une adresse (« url ») vide n'est pas affichée. Toute adresse commence par https://. Un lien avec \"remunere\": true reçoit rel=\"sponsored nofollow noopener\" et la mention « lien rémunéré », imposés par la construction. Aucune adresse réelle n'existe encore : rien n'est inventé.",
+  "_note": "Liens sortants et encarts de « Comment lancez-vous la charge ? ». Ajouter une offre ou activer un encart = modifier ce fichier, sans toucher au code. Une adresse (« url ») vide n'est pas affichée. Toute adresse commence par https://. Un lien avec \"remunere\": true reçoit rel=\"sponsored nofollow noopener\" et la mention « lien rémunéré », imposés par la construction. Aucune adresse réelle n'existe encore : rien n'est inventé. « don.url » : adresse de la page de don, vide tant qu'elle n'existe pas (le bouton de la page Financement n'est pas affiché). « guide » d'un encart : lien vers une page du site (« chemin » relatif à la racine, par exemple guides/…/), vérifié par la construction.",
   "liste_attente": { "url": "" },
+  "don": { "url": "" },
   "reponses": [
     { "id": "cable-borne", "libelle": "Un câble ou une borne avec une appli", "encart": "plage-horaire" },
     { "id": "voiture", "libelle": "La charge différée de la voiture", "encart": "charge-differee" },
@@ -11,6 +12,7 @@
     {
       "id": "plage-horaire", "actif": true,
       "titre": "Régler une plage horaire dans l'appli",
+      "guide": { "texte": "Lire le guide : régler un câble ou une borne programmable", "chemin": "guides/cable-ou-borne-programmable/" },
       "paragraphes": [
         "Ouvrez l'appli de votre câble ou de votre borne et cherchez « charge différée », « programmation » ou « plage horaire ».",
         "Réglez l'heure « Démarrer la charge à … » du résultat. Si l'appli demande aussi une heure de fin, mettez « Fin de la charge ».",
@@ -21,6 +23,7 @@
     {
       "id": "charge-differee", "actif": true,
       "titre": "Régler la charge différée de la voiture",
+      "guide": { "texte": "Lire le guide : régler la charge différée de la voiture", "chemin": "guides/charge-differee-de-la-voiture/" },
       "paragraphes": [
         "Dans l'écran de charge de la voiture, ou dans son appli, cherchez « charge différée » ou « départ différé ».",
         "Attention : certaines voitures n'acceptent qu'une heure de début, sans heure de fin. La charge continue alors jusqu'à la batterie pleine ou jusqu'au débranchement, et la batterie peut dépasser votre cible. Vérifiez dans la notice de votre modèle.",
@@ -31,6 +34,7 @@
     {
       "id": "solutions", "actif": true,
       "titre": "Deux solutions possibles",
+      "guide": { "texte": "Lire le guide : câble ou borne programmable, ce qu'il faut regarder", "chemin": "guides/cable-ou-borne-programmable/" },
       "paragraphes": [
         "Sans rien acheter : branchez la voiture à l'heure « Démarrer la charge à … ». Sans heure de fin, elle chargera jusqu'à la batterie pleine : débranchez-la à l'heure « Fin de la charge » du résultat, sinon la batterie dépassera votre cible.",
         "Autre solution : un câble ou une borne de recharge programmable permet de choisir l'heure de début. Prenez un équipement prévu pour la recharge d'un véhicule, adapté à votre courant de charge. Regardez aussi si la charge différée de la voiture suffit.",

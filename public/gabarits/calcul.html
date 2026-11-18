@@ -1,0 +1,103 @@
+<noscript><p class="avis">Le calcul a besoin de JavaScript. Sans lui, la page ne peut pas afficher l'heure de charge.</p></noscript>
+
+<form id="calcul" class="calcul" novalidate data-phc="{{phc}}" data-php="{{php}}"{{lien_voiture}}>
+
+<details id="reglages" class="bloc" open>
+<summary id="resume-reglages">Mes réglages (trois questions)</summary>
+<p id="etat-reglages" class="aide" role="status"></p>
+
+<fieldset>
+<legend>1. Votre voiture</legend>
+<div class="champ"><label for="marque">Marque</label>
+<select id="marque"><option value="">Choisir une marque</option></select></div>
+<div class="champ" id="zone-modele" hidden><label for="modele">Modèle</label>
+<select id="modele"></select></div>
+<div class="champ" id="zone-version" hidden><label for="version">Version</label>
+<select id="version"></select></div>
+<p id="info-cap" class="aide" hidden></p>
+<div class="champ" id="zone-cap" hidden><label for="cap">Capacité utile de la batterie (kWh)</label>
+<input id="cap" type="text" inputmode="decimal" autocomplete="off">
+<p class="aide">La capacité utile figure dans la notice de la voiture ou sur sa fiche technique.</p></div>
+<div class="champ"><label for="soh">État de santé de la batterie (SOH), en %</label>
+<input id="soh" type="text" inputmode="decimal" autocomplete="off" value="100">
+<p class="aide">Indiqué dans l'appli ou le bilan de la voiture ; laissez 100 si vous ne savez pas.</p></div>
+</fieldset>
+
+<fieldset>
+<legend>2. Votre recharge</legend>
+<p class="aide">Valeurs proposées : vérifiez-les.</p>
+<div class="radios">
+<label><input type="radio" name="courant" value="10"> Prise ordinaire, 10 A</label>
+<label><input type="radio" name="courant" value="16" checked> Prise renforcée ou câble réglé sur 16 A (3,7 kW)</label>
+<label><input type="radio" name="courant" value="32"> Borne 7,4 kW, 32 A</label>
+<label><input type="radio" name="courant" value="autre"> Autre courant</label>
+</div>
+<div class="champ" id="zone-amp" hidden><label for="amp">Courant de charge (A)</label>
+<input id="amp" type="text" inputmode="decimal" autocomplete="off" value="16"></div>
+<p class="aide">Choisissez le courant réglé sur votre câble ou votre borne (à la maison, souvent 10 A ou 16 A).</p>
+<p class="aide">Tension : 230 V, recharge monophasée.</p>
+</fieldset>
+
+<fieldset>
+<legend>3. Vos heures creuses et votre départ</legend>
+<p class="aide">Valeurs proposées : vérifiez-les.</p>
+<div class="ligne">
+<div class="champ"><label for="hcStart">Début des heures creuses</label>
+<input id="hcStart" type="time" value="22:00"></div>
+<div class="champ"><label for="hcEnd">Fin des heures creuses</label>
+<input id="hcEnd" type="time" value="06:00"></div>
+<div class="champ"><label for="dep">Heure de départ</label>
+<input id="dep" type="time" value="07:30"></div>
+</div>
+<p class="aide">Vos heures creuses figurent sur votre facture. Une seule plage par nuit. Si vos heures creuses sont en deux plages, indiquez celle de la nuit.</p>
+</fieldset>
+
+<details id="avance" class="avance">
+<summary>Paramètres avancés</summary>
+<div class="ligne">
+<div class="champ"><label for="volt">Tension (V)</label>
+<input id="volt" type="text" inputmode="decimal" autocomplete="off" value="230"></div>
+<div class="champ"><label for="eff">Rendement de charge (%)</label>
+<input id="eff" type="text" inputmode="decimal" autocomplete="off" placeholder="automatique">
+<p id="info-eff" class="aide"></p></div>
+</div>
+<div class="ligne">
+<div class="champ"><label for="pHC">Prix de l'électricité en heures creuses (€/kWh)</label>
+<input id="pHC" type="text" inputmode="decimal" autocomplete="off" value="{{phc}}"></div>
+<div class="champ"><label for="pHP">Prix de l'électricité en heures pleines (€/kWh)</label>
+<input id="pHP" type="text" inputmode="decimal" autocomplete="off" value="{{php}}"></div>
+<div class="champ"><label for="nuits">Recharges par an (pour l'économie annuelle)</label>
+<input id="nuits" type="text" inputmode="numeric" autocomplete="off" value="100"></div>
+</div>
+<p class="aide">Vos prix figurent sur votre facture.</p>
+{{source_tarifs}}
+<div class="radios">
+<label><input type="radio" name="mode" value="end" checked> Finir à la fin des heures creuses</label>
+<label><input type="radio" name="mode" value="start"> Commencer au début des heures creuses</label>
+</div>
+</details>
+
+<p><button type="button" id="valider">Valider mes réglages</button></p>
+</details>
+
+<section class="bloc" id="bloc-soir" aria-labelledby="titre-soir">
+<h2 id="titre-soir">Ce soir</h2>
+<div class="champ"><label for="soc">Batterie à l'arrivée (%)</label>
+<input id="soc" type="text" inputmode="decimal" autocomplete="off" placeholder="par exemple 38"></div>
+<div class="champ"><label for="target">Batterie visée (%)</label>
+<input id="target" type="text" inputmode="decimal" autocomplete="off" value="80">
+<p class="aide">80 % par défaut ; mettez 100 avant un long trajet.</p></div>
+<div id="resultat" class="resultat" aria-live="polite" data-statut="attente">
+<p>Saisissez la batterie à l'arrivée pour voir l'heure de début de charge.</p>
+</div>
+<div id="calcule-avec" class="calcule-avec" hidden>
+<p class="aide" id="texte-calcule-avec"></p>
+<button type="button" id="modifier-reglages">Modifier les réglages</button>
+</div>
+<div id="partage" class="partage" hidden>
+<h3>Ce que vous économisez</h3>
+<ul id="chiffres"></ul>
+<p class="aide" id="mode-calcul"></p>
+</div>
+</section>
+</form>

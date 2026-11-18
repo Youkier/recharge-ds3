@@ -26,7 +26,11 @@
 <header class="entete">
 <nav aria-label="Navigation principale">
 <a href="{{base}}" class="marque-site">Charge à 80 %</a>
-<!-- emplacement S3 : liens Guides et Financement -->
+<ul class="menu">
+<li><a href="{{base}}"{{cur_accueil}}>Accueil</a></li>
+<li><a href="{{base}}guides/"{{cur_guides}}>Guides</a></li>
+<li><a href="{{base}}financement/"{{cur_financement}}>Financement</a></li>
+</ul>
 </nav>
 </header>
 <main id="contenu">
@@ -34,7 +38,7 @@
 </main>
 <footer class="pied">
 <p>Aucune donnée n'est envoyée par ce site : vos réglages restent dans votre navigateur.</p>
-<!-- emplacement S3 : liens Financement, Confidentialité, Mentions légales -->
+<p class="liens-pied"><a href="{{base}}financement/">Financement</a> · <a href="{{base}}confidentialite/">Confidentialité</a> · <a href="{{base}}mentions-legales/">Mentions légales</a></p>
 </footer>
 </body>
 </html>

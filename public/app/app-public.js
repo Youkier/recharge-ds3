@@ -7,6 +7,7 @@ export const CLE = "recharge-public-v1"; // différente de la clé de la page pe
 export const AUTRE = "__autre";
 export const DEFAUTS = { marque: "", modele: "", version: "", cap: "", courant: "16", amp: "16", volt: "230", eff: "", hcStart: "22:00", hcEnd: "06:00", dep: "07:30", target: "80", soh: "100", pHC: "", pHP: "", nuits: "100", mode: "end" };
 export const MESSAGE_LIEN = "Réglages du lien appliqués : vérifiez-les.";
+export const MESSAGE_MODELE = "Voiture de cette page déjà choisie : vérifiez la version et vos autres réglages.";
 export const LIBELLES = { cap: "Capacité utile", amp: "Courant de charge", volt: "Tension", eff: "Rendement de charge", hcStart: "Début des heures creuses", hcEnd: "Fin des heures creuses", dep: "Heure de départ", target: "Batterie visée", soh: "État de santé de la batterie", pHC: "Prix en heures creuses", pHP: "Prix en heures pleines", nuits: "Recharges par an", soc: "Batterie à l'arrivée" };
 
 // Rendement proposé selon la puissance : pertes = 3 % + 250 W fixes (même règle que la page personnelle).
@@ -351,16 +352,21 @@ function demarrer() {
   // la liste ne doit pas écraser les réglages sauvegardés.
   var pret = false;
   var lienApplique = false;
+  var messageLien = MESSAGE_LIEN;
 
   // Adresse partagée : ses réglages valides prennent le pas sur ceux enregistrés ; le reste est ignoré.
   function appliquerLien() {
     var l = lireLien(location.search, lignes);
+    var duModele = false;
+    // Page d'un modèle : sans lien de partage, la voiture de la page est préremplie (attribut data-lien de la construction).
+    if (!Object.keys(l).length && form.dataset.lien) { l = lireLien("?" + form.dataset.lien, lignes); duModele = true; }
     if (!Object.keys(l).length) return;
     var b = Object.assign({}, DEFAUTS, defautsPrix);
     if (sauve) Object.keys(DEFAUTS).forEach(function (k) { if (typeof sauve[k] === "string") b[k] = sauve[k]; });
     restaurer(fusionnerLien(b, l), defautsPrix);
     lienApplique = true;
-    try { history.replaceState(null, "", location.pathname); } catch (e) { /* sans importance */ }
+    messageLien = duModele ? MESSAGE_MODELE : MESSAGE_LIEN;
+    if (!duModele) { try { history.replaceState(null, "", location.pathname); } catch (e) { /* sans importance */ } }
   }
 
   function init(doc) {
@@ -373,12 +379,12 @@ function demarrer() {
     var lu = lireReglages(lireBrut());
     if (lienApplique) {
       $("reglages").open = true;
-      $("etat-reglages").textContent = MESSAGE_LIEN;
+      $("etat-reglages").textContent = messageLien;
     } else if (sauve && !lu.erreurs.length) { $("reglages").open = false; $("resume-reglages").textContent = "Mes réglages (modifier)"; }
     recalculer();
   }
 
-  fetch("vehicules.json").then(function (r) { if (!r.ok) throw new Error("liste"); return r.json(); })
+  fetch(new URL("../vehicules.json", import.meta.url)).then(function (r) { if (!r.ok) throw new Error("liste"); return r.json(); })
     .then(init, function () { init(null); });
 
   // « Comment régler » : un encart par réponse.
