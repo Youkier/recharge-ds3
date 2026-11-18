@@ -33,6 +33,17 @@ Recherche automatique du câble : adresse mémorisée remplacée par une adresse
 
 **Tests à prévoir pour C3** : modules sans rien de propre à Node (étendre le test à `tuya-local.js`) ; pont simulé avec identifiants de connexion ; tests JUnit du filtre d'adresses, du port, des tailles et de l'ordre des appels ; sur le Pixel, rejouer les vecteurs et les cas de référence dans la WebView, permission refusée, mode avion, mesure d'une vraie recherche, aucune connexion restée ouverte, rien dans Logcat.
 
-## Tech lead
+## Tech lead : décisions proposées (à valider par Mathieu)
 
-À venir.
+Mesures : page personnelle 33 Ko compressés, accueil public 22,7 Ko ; tests en 2 s.
+
+1. **Pont par `addWebMessageListener`** (androidx.webkit, déjà requis), origine `https://appassets.androidplatform.net` seulement ; `addJavascriptInterface` écarté : synchrone et sans contrôle d'origine (developer.android.com, JSBridge), il gèlerait l'écran et rendrait la recherche impossible en 30 s.
+2. **`targetSdk = 36` tant que l'APK n'est pas publié** : sous le SDK 37, l'accès au réseau local est accordé avec INTERNET (developer.android.com, local-network-permission). Pas de permission à demander ; le critère C3 « permission » devient « SDK cible vérifié ». **Rend sans objet, pour l'instant, la demande de permission décidée avec l'ergonome.**
+3. **Lot C3 réduit** à « Lire l'état » : adresse et clé saisies dans la page d'essai (clé en mémoire seulement), signature de mise au point ; recherche, magasin de clés et clé de signature dédiée au C4.
+4. **Assets de l'APK copiés par liste blanche** (`site/**`, `local/tuya-local.js`, `local/recherche.js`) : jamais la racine du dépôt (elle contient `tools/.env`) ; un test de la liste blanche remplace les empreintes.
+5. **`sw.js` non servi dans l'APK** (404) : sinon risque d'ancien code en cache après une mise à jour.
+6. **Pas de bouton « par le service » dans l'APK** : le Worker n'accepte que l'adresse github.io (CORS) ; le mode service reste dans la PWA Chrome. **Contredit la proposition de l'ergonome acceptée (secours par le service).**
+7. **Recherche** : sondes en parallèle (32 au plus, comptées à part par le pont), lectures une à une ; une seule session TCP à la fois. Répond à la question « sonde ou plusieurs connexions » : sonde séparée.
+8. **`effAuto` dans `site/calc.js`**, importé par la page personnelle et le site public (une seule règle de rendement, cas de référence inchangés).
+
+À surveiller : `site/app.js` (600 lignes) : le mode Local dans un module à part ; messages `cle`, `format` à ajouter à `site/service.js` ; la clé est en clair dans le JS à chaque action (le magasin de clés ne protège que le disque) ; après la fin de l'essai IoT Core, un réappairage du câble ferait tomber le mode Local ; au C4, appeler `programmer` à l'adresse connue et ne chercher qu'en cas d'échec (une connexion au lieu de deux ; pire cas actuel 50 s contre 25 s d'attente dans la page).
