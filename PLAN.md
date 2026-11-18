@@ -343,7 +343,7 @@ Lot C2, recherche automatique (tests automatiques, avant l'essai sur le câble) 
 
 Lot C2 (sur le câble) :
 
-- [x] Recherche automatique : câble retrouvé sans adresse de départ (2026-11-17, sur le /24 du PC, « Câble trouvé à 192.168.1.48 », adresse enregistrée puis relue sans recherche) ; essai avec un faux `TUYA_LOCAL_IP` à refaire une fois (couvert par les tests)
+- [x] Recherche automatique : câble retrouvé sans adresse de départ (2026-11-17, sur le /24 du PC, « Câble trouvé à 192.168.1.48 », adresse enregistrée puis relue sans recherche) . Changement d'adresse simulé le 2026-11-18 (adresse mémorisée remplacée par 192.168.1.250, inoccupée) : câble retrouvé en 16 s, adresse corrigée, lecture suivante en 0,45 s
 - [x] `etat` lit la même plage que Smart Life et que `tools/tuya-local-test.py` (2026-11-17 : 00:20–06:00, programmée le soir même par la page)
 - [x] `ecrire-debut HH:MM` sans `--confirmer` n'envoie rien (2026-11-17, simulation 00:25)
 - [x] Écriture réelle relue conforme, heure visible dans Smart Life, charge démarrée à l'heure (Mathieu) : **démarrage à 00:20 et batterie vers 80 % constatés par Mathieu le 2026-11-18** ; **écrite et relue conforme le 2026-11-17 à 23 h (00:25–06:00, aucun autre point modifié), puis 00:20 remise et relue conforme** ; restent l'affichage dans Smart Life et le démarrage à 00:20 (Mathieu)
