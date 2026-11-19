@@ -1,5 +1,5 @@
 // Garde-fous de .github/workflows/android.yml (lot C3) : pas de déclencheur pull_request, permissions minimales, actions
-// épinglées par empreinte de commit, aucun secret, aucune clé de signature. Lecture du fichier seulement.
+// épinglées par empreinte de commit, secrets et signature cantonnés au job « signer » (C3.5). Lecture du fichier seulement.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -32,10 +32,34 @@ test('actions épinglées par empreinte de commit de 40 caractères', () => {
   }
 });
 
-test('aucun secret, aucune clé de signature, aucune écriture hors artefacts', () => {
-  assert.ok(!/secrets\./i.test(sansCommentaires), 'aucune référence à secrets.*');
-  assert.ok(!/(keystore|apksigner|jarsigner|signingConfig|\.jks|storePassword)/i.test(sansCommentaires), 'pas de signature dans ce workflow (C3.5, job séparé)');
-  assert.ok(!/(git push|gh release|gh api|deploy-pages|environment:)/.test(sansCommentaires), 'ni publication ni déploiement');
+// Découpe du workflow par job (indentation de deux espaces sous « jobs: »).
+function jobs() {
+  const corps = sansCommentaires.slice(sansCommentaires.indexOf('\njobs:'));
+  const parts = corps.split(/\n  (?=[\w-]+:\s*\n)/).slice(1);
+  return Object.fromEntries(parts.map((p) => [p.slice(0, p.indexOf(':')), p]));
+}
+
+test('secrets et signature seulement dans le job « signer », sans code du dépôt', () => {
+  const j = jobs();
+  assert.ok(j.signer, 'job signer présent');
+  for (const [nom, corps] of Object.entries(j)) {
+    if (nom === 'signer') continue;
+    assert.ok(!/secrets\./i.test(corps), `${nom} : aucune référence à secrets.*`);
+    assert.ok(!/(keystore|apksigner|jarsigner|signingConfig|\.jks|\.p12|storePassword|environment:)/i.test(corps), `${nom} : pas de signature`);
+  }
+  const s = j.signer;
+  assert.match(s, /environment: android-signature/);
+  assert.match(s, /if: github\.ref == 'refs\/heads\/main'/);
+  assert.ok(!/actions\/checkout@|setup-gradle|setup-java|setup-node|gradle|node |bash android/.test(s), "signer n'exécute aucun code du dépôt");
+  const secrets = [...s.matchAll(/secrets\.(\w+)/g)].map((m) => m[1]).sort();
+  assert.deepEqual(secrets, ['APK_KEYSTORE_B64', 'APK_KEYSTORE_PASSWORD']);
+  assert.ok(!/secrets\./.test(s.split('run: |')[1] ?? ''), 'secrets passés par env, jamais dans run');
+  assert.ok(/rm -f "\$CLE"/.test(s), 'clé effacée après usage');
+  assert.match(s, /2b2a896b9edb49ed8f22ddd4f6dfdc825b47cf5f3931837bff9796b4a0512033/, 'empreinte du certificat vérifiée');
+});
+
+test('ni publication ni déploiement, aucun jeton persistant', () => {
+  assert.ok(!/(git push|gh release|gh api|deploy-pages)/.test(sansCommentaires), 'ni publication ni déploiement');
   assert.ok(!/persist-credentials: true/.test(sansCommentaires));
   const recuperations = (sansCommentaires.match(/actions\/checkout@/g) || []).length;
   const sansPersistance = (sansCommentaires.match(/persist-credentials: false/g) || []).length;

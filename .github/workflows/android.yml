@@ -172,3 +172,96 @@ jobs:
           path: android-ci-sortie/
           if-no-files-found: warn
           retention-days: 14
+
+  # Signature (lot C3.5, décision du 2026-11-19). Job à part : la clé n'est présente que dans ce job, qui n'exécute ni
+  # Gradle ni code du dépôt (pas de checkout) : seulement apksigner du SDK sur l'APK non signé produit par « construire ».
+  # Environnement « android-signature » limité à la branche main (réglage GitHub) ; aucun déclencheur pull_request.
+  signer:
+    name: Signer l'APK de publication
+    needs: [construire, emulateur]
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: android-signature
+    steps:
+      - name: Récupérer les APK
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: apk
+          path: apk
+
+      - name: Signer avec apksigner
+        env:
+          CLE_B64: ${{ secrets.APK_KEYSTORE_B64 }}
+          MDP: ${{ secrets.APK_KEYSTORE_PASSWORD }}
+        run: |
+          set -euo pipefail
+          BT="$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)"
+          NON_SIGNE="$(find apk -name '*release-unsigned.apk' | head -1)"
+          [ -n "$NON_SIGNE" ] || { echo "APK non signé introuvable"; exit 1; }
+          umask 077
+          CLE="$RUNNER_TEMP/cle.p12"
+          trap 'rm -f "$CLE"' EXIT
+          printf '%s' "$CLE_B64" | base64 -d > "$CLE"
+          mkdir -p signe
+          "$BT/zipalign" -c 4 "$NON_SIGNE"
+          "$BT/apksigner" sign --ks "$CLE" --ks-type PKCS12 --ks-key-alias coque --ks-pass env:MDP --key-pass env:MDP \
+            --out signe/recharge-ds3-coque.apk "$NON_SIGNE"
+          rm -f "$CLE"
+          "$BT/apksigner" verify --print-certs signe/recharge-ds3-coque.apk | grep "SHA-256" | tee signe/empreinte.txt
+          # Empreinte du certificat attendue (clé créée le 2026-11-19) : toute autre clé fait échouer le job.
+          grep -q "2b2a896b9edb49ed8f22ddd4f6dfdc825b47cf5f3931837bff9796b4a0512033" signe/empreinte.txt
+
+      - name: Déposer l'APK signé
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: apk-signe
+          path: signe/
+          if-no-files-found: error
+          retention-days: 30
+
+  # Essai rapide de l'APK signé : installation, lancement sans plantage, version non déboguable, réinstallation par-dessus.
+  essai-signe:
+    name: Essai de l'APK signé
+    needs: signer
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      SORTIE_CI: android-ci-sortie/signe
+    steps:
+      - name: Récupérer le code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Récupérer l'APK signé
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: apk-signe
+          path: signe
+
+      - name: Lancer l'émulateur
+        run: bash android/ci/emulateur.sh 36
+
+      - name: Installer, lancer, réinstaller
+        run: |
+          set -euo pipefail
+          export PATH="$ANDROID_HOME/platform-tools:$PATH"
+          AAPT2="$(ls -d "$ANDROID_HOME"/build-tools/*/aapt2 | sort -V | tail -1)"
+          if "$AAPT2" dump badging signe/recharge-ds3-coque.apk | grep -q "application-debuggable"; then echo "APK signé déboguable"; exit 1; fi
+          adb install signe/recharge-ds3-coque.apk
+          adb shell am start -W -n fr.rechargeds3.coque/.MainActivity
+          sleep 5
+          adb shell pidof fr.rechargeds3.coque || { echo "l'application ne tourne pas"; exit 1; }
+          adb exec-out screencap -p > "$SORTIE_CI-ouverture.png" || true
+          adb install -r signe/recharge-ds3-coque.apk
+          if adb logcat -d -b crash | grep -q "fr.rechargeds3.coque"; then echo "plantage"; exit 1; fi
+
+      - name: Déposer la capture
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: essai-signe
+          path: android-ci-sortie/
+          if-no-files-found: warn
+          retention-days: 14
