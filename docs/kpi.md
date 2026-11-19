@@ -1,6 +1,6 @@
 # Indicateurs du volet produit
 
-Définitions seulement. Aucune valeur n'est écrite ici : le dépôt est public. Les valeurs vont dans le tableau de bord privé de Mathieu. Les seuils sont des **propositions** (`business-dev`, 2026-11-18) tant que Mathieu ne les a pas consignés dans `docs/decisions-produit.md`.
+Définitions seulement. Aucune valeur n'est écrite ici : le dépôt est public. Les valeurs vont dans le tableau de bord privé de Mathieu. Données, indicateurs et seuils proposés par `business-dev` le 2026-11-18, **validés par Mathieu le 2026-11-19** (`docs/decisions-produit.md`). Le stockage et la position de la CNIL restent à vérifier (ci-dessous).
 
 ## Règle de mesure
 
@@ -21,7 +21,7 @@ Le site ne pose aucun cookie et ne reconnaît aucun visiteur. On ne garde que de
 
 Principaux : 1 et 2.
 
-| # | Option | Indicateur | Définition exacte | Source | Fréquence | Seuil (proposition) | Décision |
+| # | Option | Indicateur | Définition exacte | Source | Fréquence | Seuil | Décision |
 |---|---|---|---|---|---|---|---|
 | 1 | A, G | Calculs aboutis par semaine | Nombre de résultats affichant une heure de début (statuts `ok` ou `short`). Remplace « 300 utilisateurs réguliers », non mesurable sans identifiant : hypothèse de 3 à 5 soirs par semaine par habitué, soit 900 à 1 500 calculs pour 300 habitués. Biais : plusieurs appareils, curieux d'un soir, robots | Comptage du site | Hebdomadaire | Au-delà de 900 : déclenche G | Début janvier |
 | 2 | A | Inscrits à la liste d'attente | Adresses distinctes inscrites au formulaire, sur 30 jours après la mise en ligne indexable | Formulaire | Hebdomadaire | Objectif 100 ; arrêt sous 30 | Début janvier |
@@ -34,7 +34,7 @@ Principaux : 1 et 2.
 
 F (appli qui complète MyDS) n'a pas d'indicateur du site : sa décision dépend de la réponse de Stellantis et de l'essai de psa_car_controller.
 
-## Stockage proposé (à valider)
+## Stockage (principe validé, choix technique à vérifier)
 
 Un petit service de comptage à nous, sur le compte Cloudflare existant, à la même adresse que le site : aucun script tiers, la CSP actuelle suffit. Le stockage (Workers Analytics Engine ou D1 : conservation et gratuité non vérifiées) est à revoir par `tech-lead`. La dispense de consentement de la CNIL est à vérifier sur cnil.fr avant le lot S6 (page « solutions pour les outils de mesure d'audience », non lue en entier le 2026-11-18). Avant S6 : la FAQ de l'accueil (« Rien n'est envoyé ») et la page de confidentialité décrivent ces comptages.
 
