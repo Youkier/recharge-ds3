@@ -24,7 +24,7 @@ function fichiers(dossier) {
 
 const REGLES = [
   { nom: 'fichier de secrets', motif: /tools[\\/]+\.env|\.dev\.vars|['"`]\.env\b/, permis: [] },
-  { nom: 'connexion réseau', motif: /node:(net|dgram|http|https|http2|tls)\b|require\(\s*['"](net|dgram|http|https|http2|tls)['"]/, permis: ['local/transport-node.mjs'] },
+  { nom: 'connexion réseau', motif: /node:(net|dgram|http|https|http2|tls)\b|require\(\s*['"](net|dgram|http|https|http2|tls)['"]/, permis: ['local/transport-node.mjs', 'tests/faux-cable-tcp.test.mjs'] }, // 2e : sockets sur 127.0.0.1 vers le faux câble (lot C3.1)
   { nom: 'lancement de processus', motif: /child_process|node:worker_threads|subprocess|os\.system/, permis: ['tests/public-build.test.mjs'] },
 ];
 
