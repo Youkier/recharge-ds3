@@ -1,0 +1,173 @@
+# Coque Android : construction de l'APK et essais sur émulateurs (phase 3b, lot C3).
+#
+# Ce que fait ce workflow :
+#   1. job « construire » : tests Node, copie des fichiers embarqués par liste blanche (tools/assets-apk.mjs), tests
+#      JUnit, APK de mise au point et APK de publication NON SIGNÉ, vérification de la liste des fichiers embarqués
+#      et du manifeste ; les APK sont déposés en artefacts ;
+#   2. job « emulateur » (API 35 et 36, profil 1080 x 2424 = Pixel 9 et Pixel 10) : émulateur lancé par un script maison,
+#      faux câble TCP sur le runner (clé factice), scénarios pilotés par adb seul, captures en clair et en sombre.
+#
+# AUCUN secret : le vrai câble n'est jamais joint, aucune clé de signature n'existe ici. La signature (C3.5) sera un
+# job séparé, plus tard. Aucun déclencheur « pull_request » : seul un push sur main (ou le lancement à la main) construit.
+#
+# Les actions sont épinglées par empreinte de commit (version en commentaire, vérifiée le 2026-11-19 sur les dépôts
+# officiels, API des références git). Gradle n'a pas de wrapper dans le dépôt (pas de JAR binaire) : la version de Gradle
+# est fixée ici (gradle-version), installée par l'action officielle gradle/actions/setup-gradle.
+
+name: Coque Android
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "android/**"
+      - "site/**"
+      - "local/**"
+      - "tools/assets-apk.mjs"
+      - "tools/faux-cable-tcp.mjs"
+      - "tests/tuya-local-faux-cable.mjs"
+      - ".github/workflows/android.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  GRADLE_VERSION: "9.6.0" # minimum demandé par AGP 9.5 (developer.android.com/build/releases/gradle-plugin)
+
+jobs:
+  construire:
+    name: Construire l'APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Récupérer le code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Installer Node (LTS)
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+
+      - name: Tests Node
+        run: node --test "tests/**/*.test.mjs"
+
+      - name: Copier les fichiers embarqués (liste blanche)
+        run: node tools/assets-apk.mjs
+
+      - name: Installer Java 17
+        uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880 # v6.3.0
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Installer Gradle
+        uses: gradle/actions/setup-gradle@8da46b539cd8fe6ab27ca75128919a18d757604c # v6.4.1
+        with:
+          gradle-version: ${{ env.GRADLE_VERSION }}
+          cache-disabled: true
+          validate-wrappers: false # pas de wrapper dans le dépôt
+
+      - name: Accepter les licences du SDK Android
+        run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
+
+      - name: Tests JUnit (filtre du pont, registre, fichiers servis)
+        run: gradle --project-dir android --no-daemon --console=plain test
+
+      - name: APK de mise au point
+        run: gradle --project-dir android --no-daemon --console=plain assembleDebug
+
+      - name: APK de publication (non signé)
+        run: gradle --project-dir android --no-daemon --console=plain assembleRelease
+
+      - name: Vérifier les fichiers embarqués et le manifeste
+        run: |
+          set -euo pipefail
+          mkdir -p sortie-construction
+          node tools/assets-apk.mjs --liste | sort > sortie-construction/assets-attendus.txt
+          AAPT2="$(ls -d "$ANDROID_HOME"/build-tools/*/aapt2 | sort -V | tail -1)"
+          for APK in $(find android/build/outputs/apk -name '*.apk' | sort); do
+            NOM="$(basename "$APK" .apk)"
+            echo "=== $NOM"
+            # Contenu du dossier assets/ de l'APK. assets/dexopt/ (profils de démarrage ajoutés par AGP) est ignoré.
+            unzip -Z1 "$APK" | grep '^assets/' | grep -v '^assets/dexopt/' | sed 's#^assets/##' | sort > "sortie-construction/assets-$NOM.txt" || true
+            diff -u sortie-construction/assets-attendus.txt "sortie-construction/assets-$NOM.txt"
+            echo "assets/dexopt : $(unzip -Z1 "$APK" | grep -c '^assets/dexopt/' || true) fichier(s) ajouté(s) par AGP (ignorés)"
+            # Aucun fichier de secrets ni d'outil dans l'APK, où que ce soit.
+            if unzip -Z1 "$APK" | grep -E '(^|/)(\.env|\.dev\.vars|tools/|tests/|worker/|\.claude/)'; then echo "fichier interdit dans l'APK"; exit 1; fi
+            "$AAPT2" dump badging "$APK" > "sortie-construction/badging-$NOM.txt"
+            grep -q "targetSdkVersion:'36'" "sortie-construction/badging-$NOM.txt"
+            grep -q "sdkVersion:'35'" "sortie-construction/badging-$NOM.txt"
+            "$AAPT2" dump permissions "$APK" > "sortie-construction/permissions-$NOM.txt"
+            cat "sortie-construction/permissions-$NOM.txt"
+            if grep -q "ACCESS_LOCAL_NETWORK" "sortie-construction/permissions-$NOM.txt"; then echo "ACCESS_LOCAL_NETWORK interdite"; exit 1; fi
+            for P in INTERNET ACCESS_NETWORK_STATE; do grep -q "android.permission.$P" "sortie-construction/permissions-$NOM.txt"; done
+            # Aucune autre permission que ces deux-là. (Exception : la permission interne DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION,
+            # propre à l'application, que la bibliothèque androidx.core ajoute d'elle-même ; elle ne donne aucun accès.)
+            AUTRES="$(grep -o "uses-permission: name='[^']*'" "sortie-construction/permissions-$NOM.txt" | grep -v -e "android.permission.INTERNET" -e "android.permission.ACCESS_NETWORK_STATE" -e "fr.rechargeds3.coque.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION" || true)"
+            if [ -n "$AUTRES" ]; then echo "permission(s) inattendue(s) : $AUTRES"; exit 1; fi
+          done
+
+      - name: Déposer les APK
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: apk
+          path: |
+            android/build/outputs/apk/**/*.apk
+            sortie-construction/
+          if-no-files-found: error
+          retention-days: 14
+
+  emulateur:
+    name: Émulateur API ${{ matrix.api }}
+    needs: construire
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        api: [35, 36]
+    env:
+      SORTIE_CI: android-ci-sortie/api${{ matrix.api }}
+    steps:
+      - name: Récupérer le code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Installer Node (LTS)
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+
+      - name: Récupérer les APK
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: apk
+          path: apk
+
+      - name: Lancer l'émulateur
+        run: bash android/ci/emulateur.sh "${{ matrix.api }}"
+
+      - name: Scénarios sur le faux câble
+        run: |
+          set -euo pipefail
+          export PATH="$ANDROID_HOME/platform-tools:$PATH"
+          APK="$(find apk -name '*debug*.apk' | head -1)"
+          echo "APK essayé : $APK"
+          bash android/ci/scenarios.sh "$APK" "$SORTIE_CI"
+
+      - name: Déposer captures et journaux
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: essais-api${{ matrix.api }}
+          path: android-ci-sortie/
+          if-no-files-found: warn
+          retention-days: 14
