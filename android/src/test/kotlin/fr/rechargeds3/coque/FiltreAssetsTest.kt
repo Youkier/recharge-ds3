@@ -26,7 +26,7 @@ class FiltreAssetsTest {
     @Test fun refuseLesCheminsDangereux() {
         for (c in listOf(
             "../site/index.html", "site/../../etc/passwd", "site/./index.html", "/site/index.html", "site//index.html", "site/", "",
-            "site/.env", ".env", "site/.cache/x.js", "site\index.html", "site/index.html?x=1", "site/ index.html", "site/é.js",
+            "site/.env", ".env", "site/.cache/x.js", "site\\index.html", "site/index.html?x=1", "site/ index.html", "site/é.js",
             "site/index.html%2e%2e",
         )) {
             assertNull("«$c»", FiltreAssets.typeMime(c))

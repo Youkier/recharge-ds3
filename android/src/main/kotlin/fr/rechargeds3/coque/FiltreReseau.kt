@@ -14,7 +14,7 @@ object FiltreReseau {
     const val HOTE_ORIGINE = "appassets.androidplatform.net"
 
     // Quatre groupes de 1 à 3 chiffres ASCII ; [0-9] et non \d pour exclure tout autre chiffre Unicode.
-    private val FORME = Regex("^([0-9]{1,3})\.([0-9]{1,3})\.([0-9]{1,3})\.([0-9]{1,3})$")
+    private val FORME = Regex("^([0-9]{1,3})\\.([0-9]{1,3})\\.([0-9]{1,3})\\.([0-9]{1,3})$")
 
     /**
      * Octets de l'adresse si [ip] est une IPv4 privée (10/8, 172.16/12, 192.168/16) en écriture décimale stricte,

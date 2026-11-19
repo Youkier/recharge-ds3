@@ -65,7 +65,7 @@ class PontLocal(
         if (message.type != WebMessageCompat.TYPE_STRING) return
         val texte = message.data ?: return
         if (texte.length > TAILLE_MESSAGE_MAX) return
-        val q = try { JSONObject(texte) } catch (_: JSONException) { return }
+        val q = try { JSONObject(texte) } catch (e: JSONException) { return }
         val n = q.optInt("n", -1)
         if (n < 0) return
         val rep = { r: JSONObject -> repondre(replyProxy, n, r) }
@@ -83,9 +83,9 @@ class PontLocal(
                 "fermer" -> fermer(q, rep)
                 else -> rep(erreur("operation_inconnue"))
             }
-        } catch (_: RejectedExecutionException) {
+        } catch (e: RejectedExecutionException) {
             rep(erreur("occupe"))
-        } catch (_: Exception) {
+        } catch (e: Exception) {
             rep(erreur("requete_invalide"))
         }
     }
@@ -126,7 +126,7 @@ class PontLocal(
                 reseau.bindSocket(s)
                 s.connect(InetSocketAddress(InetAddress.getByAddress(octets), FiltreReseau.PORT), delai)
                 ouvert = true
-            } catch (_: IOException) {
+            } catch (e: IOException) {
                 ouvert = false
             } finally {
                 fermerSansErreur(s)
@@ -156,7 +156,7 @@ class PontLocal(
                     } else {
                         repondre(erreur("ferme")) // fermée pendant l'ouverture : installer() a déjà fermé le socket
                     }
-                } catch (_: IOException) {
+                } catch (e: IOException) {
                     fermerSansErreur(s)
                     registre.liberer(id)
                     repondre(erreur("injoignable"))
@@ -172,13 +172,13 @@ class PontLocal(
         val socket = registre.obtenir(q.optInt("cx", -1)) ?: return repondre(erreur("cx_inconnu"))
         val d = q.optString("d", null) ?: return repondre(erreur("requete_invalide"))
         if (d.length > BASE64_MAX) return repondre(erreur("refuse"))
-        val octets = try { Base64.decode(d, Base64.NO_WRAP) } catch (_: IllegalArgumentException) { return repondre(erreur("requete_invalide")) }
+        val octets = try { Base64.decode(d, Base64.NO_WRAP) } catch (e: IllegalArgumentException) { return repondre(erreur("requete_invalide")) }
         if (!FiltreReseau.tailleAutorisee(octets.size) || octets.isEmpty()) return repondre(erreur("refuse"))
         donnees.execute {
             try {
                 socket.getOutputStream().apply { write(octets); flush() }
                 repondre(ok())
-            } catch (_: IOException) {
+            } catch (e: IOException) {
                 repondre(erreur("ferme"))
             }
         }
@@ -194,9 +194,9 @@ class PontLocal(
                 val n = socket.getInputStream().read(tampon)
                 if (n < 0) repondre(erreur("ferme"))
                 else repondre(ok().put("d", Base64.encodeToString(tampon, 0, n, Base64.NO_WRAP)))
-            } catch (_: SocketTimeoutException) {
+            } catch (e: SocketTimeoutException) {
                 repondre(erreur("delai"))
-            } catch (_: IOException) {
+            } catch (e: IOException) {
                 repondre(erreur("ferme")) // aussi quand fermer() coupe la lecture en cours
             }
         }
@@ -248,11 +248,11 @@ class PontLocal(
         r.put("n", n)
         val texte = r.toString()
         principal.post {
-            try { proxy.postMessage(texte) } catch (_: Exception) { /* page rechargée ou détruite */ }
+            try { proxy.postMessage(texte) } catch (e: Exception) { /* page rechargée ou détruite */ }
         }
     }
 
-    private fun fermerSansErreur(s: Socket) { try { s.close() } catch (_: IOException) { /* déjà fermé */ } }
+    private fun fermerSansErreur(s: Socket) { try { s.close() } catch (e: IOException) { /* déjà fermé */ } }
 
     companion object {
         const val NOM_JS = "PontLocal"

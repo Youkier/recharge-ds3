@@ -62,5 +62,5 @@ class Registre<T : Closeable> {
     @Synchronized
     fun ouverte(): Boolean = occupe
 
-    private fun fermerSansErreur(r: Closeable) { try { r.close() } catch (_: Exception) { /* déjà fermée */ } }
+    private fun fermerSansErreur(r: Closeable) { try { r.close() } catch (e: Exception) { /* déjà fermée */ } }
 }

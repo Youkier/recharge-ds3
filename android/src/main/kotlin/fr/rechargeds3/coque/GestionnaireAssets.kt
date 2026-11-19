@@ -17,7 +17,7 @@ class GestionnaireAssets(private val assets: AssetManager) : WebViewAssetLoader.
 
     override fun handle(path: String): WebResourceResponse? {
         val mime = FiltreAssets.typeMime(path) ?: return introuvable()
-        val flux = try { assets.open(path, AssetManager.ACCESS_STREAMING) } catch (_: IOException) { return introuvable() }
+        val flux = try { assets.open(path, AssetManager.ACCESS_STREAMING) } catch (e: IOException) { return introuvable() }
         val entetes = HashMap<String, String>()
         entetes["Cache-Control"] = "no-store"
         entetes["X-Content-Type-Options"] = "nosniff"

@@ -35,7 +35,7 @@ class ReseauWifi(context: Context) {
 
     fun arreter() {
         if (!enregistre) return
-        try { cm.unregisterNetworkCallback(rappel) } catch (_: IllegalArgumentException) { /* déjà retiré */ }
+        try { cm.unregisterNetworkCallback(rappel) } catch (e: IllegalArgumentException) { /* déjà retiré */ }
         enregistre = false
         reseau = null
     }
