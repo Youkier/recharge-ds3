@@ -102,8 +102,9 @@ jobs:
             # Aucun fichier de secrets ni d'outil dans l'APK, où que ce soit.
             if unzip -Z1 "$APK" | grep -E '(^|/)(\.env|\.dev\.vars|tools/|tests/|worker/|\.claude/)'; then echo "fichier interdit dans l'APK"; exit 1; fi
             "$AAPT2" dump badging "$APK" > "sortie-construction/badging-$NOM.txt"
-            grep -q "targetSdkVersion:'36'" "sortie-construction/badging-$NOM.txt"
-            grep -q "sdkVersion:'35'" "sortie-construction/badging-$NOM.txt"
+            grep -E "^(package|(min)?[sS]dkVersion|targetSdkVersion)" "sortie-construction/badging-$NOM.txt" || true
+            grep -q "targetSdkVersion:'36'" "sortie-construction/badging-$NOM.txt" || { echo "targetSdk différent de 36"; exit 1; }
+            grep -qE "^(min)?[sS]dkVersion:'35'" "sortie-construction/badging-$NOM.txt" || { echo "minSdk différent de 35"; exit 1; }
             "$AAPT2" dump permissions "$APK" > "sortie-construction/permissions-$NOM.txt"
             cat "sortie-construction/permissions-$NOM.txt"
             if grep -q "ACCESS_LOCAL_NETWORK" "sortie-construction/permissions-$NOM.txt"; then echo "ACCESS_LOCAL_NETWORK interdite"; exit 1; fi
