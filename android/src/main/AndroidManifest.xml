@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- INTERNET : ouvrir des sockets TCP (le pont, vers le câble sur le Wi-Fi de la maison) ; aucune requête web n'est faite.
+         ACCESS_NETWORK_STATE : trouver le réseau Wi-Fi et son adresse (ConnectivityManager). Rien d'autre :
+         ni ACCESS_WIFI_STATE, ni ACCESS_LOCAL_NETWORK (targetSdk 36, décision du 2026-11-18), ni localisation. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
+    <application
+        android:label="@string/nom_appli"
+        android:allowBackup="false"
+        android:dataExtractionRules="@xml/regles_extraction"
+        android:usesCleartextTraffic="false"
+        android:supportsRtl="true"
+        android:theme="@android:style/Theme.DeviceDefault.DayNight">
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>

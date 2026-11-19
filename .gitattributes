@@ -1,2 +1,4 @@
 # Les scripts de contrôle git doivent garder des fins de ligne Unix pour s'exécuter.
 tools/hooks/* text eol=lf
+# Scripts de l'émulateur : exécutés sur Linux par GitHub Actions (android/ci/).
+android/ci/*.sh text eol=lf
