@@ -16,6 +16,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:text="@string/titre_cle"
+            android:textColor="?android:attr/textColorPrimary"
             android:textSize="22sp"
             android:textStyle="bold" />
 
@@ -24,6 +25,7 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="8dp"
             android:text="@string/explication_cle"
+            android:textColor="?android:attr/textColorPrimary"
             android:textSize="14sp" />
 
         <TextView
@@ -31,32 +33,38 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="16dp"
             android:labelFor="@+id/champ_id"
-            android:text="@string/libelle_id" />
+            android:text="@string/libelle_id"
+            android:textColor="?android:attr/textColorPrimary" />
 
         <EditText
             android:id="@+id/champ_id"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:background="@drawable/champ"
             android:importantForAutofill="no"
             android:inputType="textNoSuggestions|textVisiblePassword"
             android:maxLength="64"
-            android:minHeight="48dp" />
+            android:minHeight="48dp"
+            android:textColor="?android:attr/textColorPrimary" />
 
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="12dp"
             android:labelFor="@+id/champ_cle"
-            android:text="@string/libelle_cle" />
+            android:text="@string/libelle_cle"
+            android:textColor="?android:attr/textColorPrimary" />
 
         <EditText
             android:id="@+id/champ_cle"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:background="@drawable/champ"
             android:importantForAutofill="no"
-            android:inputType="textPassword"
+            android:inputType="textNoSuggestions|textVisiblePassword"
             android:maxLength="16"
-            android:minHeight="48dp" />
+            android:minHeight="48dp"
+            android:textColor="?android:attr/textColorPrimary" />
 
         <TextView
             android:id="@+id/texte_erreur"
@@ -64,15 +72,17 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="8dp"
             android:accessibilityLiveRegion="polite"
-            android:textColor="#B3261E" />
+            android:textColor="@color/erreur" />
 
         <Button
             android:id="@+id/bouton_enregistrer"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="16dp"
+            android:background="@drawable/bouton"
             android:minHeight="48dp"
-            android:text="@string/enregistrer" />
+            android:text="@string/enregistrer"
+            android:textColor="#ffffff" />
 
         <Button
             android:id="@+id/bouton_retour"

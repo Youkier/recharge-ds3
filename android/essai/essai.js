@@ -15,18 +15,18 @@ const $ = (id) => document.getElementById(id);
 const BOUTONS = ['lire', 'chercher', 'cle', 'programmer', 'filtre'];
 
 const MESSAGES = {
-  pas_de_cle: 'Identifiant et clé du câble non saisis : touchez « Saisir la clé du câble ».',
+  pas_de_cle: 'Commencez par saisir la clé du câble.',
   pas_wifi: 'Pas de Wi-Fi : connectez le téléphone au Wi-Fi de la maison, puis recommencez.',
   adresse_invalide: 'Adresse invalide : saisissez une adresse du réseau de la maison (par exemple 192.168.1.48), ou touchez « Chercher le câble ».',
   adresse_vide: 'Aucune adresse : saisissez celle du câble, ou touchez « Chercher le câble ».',
-  hors_ligne: 'Aucun câble ne répond à cette adresse. Vérifiez que le câble est alimenté et sur le même Wi-Fi.',
-  hors_ligne_recherche: 'Aucun câble trouvé sur le Wi-Fi (recherche faite sur tout le réseau). Vérifiez que le câble est alimenté et que Smart Life n\'est pas en train de le piloter.',
-  refuse: 'Adresse ou port refusés par l\'application : seule une adresse privée du réseau local, port 6668, est permise.',
+  hors_ligne: 'Aucun câble ne répond à cette adresse. Vérifiez que le câble est branché et sur le même Wi-Fi.',
+  hors_ligne_recherche: 'Aucun câble trouvé sur le Wi-Fi. Vérifiez que le câble est branché, puis fermez Smart Life s\'il est ouvert et recommencez.',
+  refuse: 'L\'application refuse cette adresse : seule une adresse du réseau de la maison est permise.',
   occupe: 'L\'application est déjà en train de parler au câble : attendez quelques secondes puis recommencez.',
-  cle: 'Clé refusée par le câble : ressaisissez la clé, ou le câble a été réappairé depuis.',
+  cle: 'La clé n\'est pas acceptée par le câble. Ressaisissez-la. Si le problème persiste, le câble a peut-être été reconfiguré dans Smart Life.',
   delai: 'Le câble n\'a pas répondu à temps.',
-  format: 'Réponse inattendue du câble : rien n\'a été écrit.',
-  relecture_differente: 'L\'écriture n\'est pas confirmée par la relecture : vérifiez la plage dans Smart Life.',
+  format: 'Le câble a donné une réponse inattendue : rien n\'a été modifié.',
+  relecture_differente: 'Le câble n\'a pas confirmé le réglage : vérifiez la plage de charge dans Smart Life.',
   requete_invalide: 'Demande invalide.',
   pont_muet: 'L\'application ne répond pas : fermez-la puis rouvrez-la.',
   pont_absent: 'Cette page doit être ouverte dans l\'application Recharge DS 3 (pas dans un navigateur).',
@@ -53,7 +53,9 @@ function journaliser(action, r, ip) {
   if (r.courte) ligne.courte = true;
   console.log('ESSAI ' + JSON.stringify(ligne));
 }
-const plageTexte = (r) => `${r.debut} → ${r.fin} (${r.plage_active ? 'activée' : 'désactivée'})`;
+const plageTexte = (r) => `de ${r.debut} à ${r.fin} (${r.plage_active ? 'activée' : 'désactivée'})`;
+function principal(id) { for (const b of ['lire', 'cle']) $(b).classList.toggle('principal', b === id); }
+function montrerResultat() { $('resultat').scrollIntoView({ block: 'nearest' }); }
 
 // --- Préparation commune : clé, Wi-Fi, adresse ---
 async function preparer({ adresse }) {
@@ -64,7 +66,7 @@ async function preparer({ adresse }) {
   if (!w.ok) return { erreur: w.erreur === 'pas_wifi' ? 'pas_wifi' : (w.erreur ?? 'pas_wifi') };
   let ip = null;
   if (adresse) {
-    ip = $('ip').value.trim();
+    ip = $('ip').value.trim().replace(',', '.');
     if (!ip) return { erreur: 'adresse_vide' };
     if (!adressePrivee(ip)) return { erreur: 'adresse_invalide', ip };
   }
@@ -89,7 +91,7 @@ async function actionLire() {
   etat('Lecture du câble…');
   client.dernierMotif = null;
   const r = await lireEtat({ ...p.cfg, ip: p.ip }, client.creerTransport());
-  if (r.ok) return { r, ip: p.ip, texte: `Câble joint : charge différée ${plageTexte(r)}.` };
+  if (r.ok) return { r, ip: p.ip, texte: `Câble connecté. Charge programmée ${plageTexte(r)}.` };
   const e = erreurFinale(r);
   return { r: { ...r, erreur: e }, ip: p.ip, texte: msg(e) };
 }
@@ -97,7 +99,7 @@ async function actionLire() {
 async function actionChercher() {
   const p = await preparer({ adresse: false });
   if (p.erreur) return { r: { ok: false, erreur: p.erreur }, texte: msg(p.erreur) };
-  const depart = $('ip').value.trim();
+  const depart = $('ip').value.trim().replace(',', '.');
   const departs = depart && adressePrivee(depart) ? [depart] : [];
   etat(departs.length ? 'Connexion au câble…' : 'Recherche du câble sur le Wi-Fi… (jusqu\'à 30 s)');
   client.dernierMotif = null;
@@ -111,8 +113,8 @@ async function actionChercher() {
   });
   if (res.ok) {
     $('ip').value = res.ip;
-    const nouveau = res.trouve ? ` (nouvelle adresse : ${res.ip}, à noter ; rien n'est enregistré)` : '';
-    return { r: { ...res.etat, ok: true }, ip: res.ip, texte: `Câble trouvé à ${res.ip}${nouveau}. Charge différée ${plageTexte(res.etat)}.` };
+    const nouveau = res.trouve ? ` (adresse à noter : rien n'est enregistré)` : '';
+    return { r: { ...res.etat, ok: true }, ip: res.ip, texte: `Câble trouvé à ${res.ip}${nouveau}. Charge programmée ${plageTexte(res.etat)}.` };
   }
   const e = erreurFinale(res, { recherche: res.recherche === true });
   return { r: { ok: false, erreur: e }, ip: departs[0], texte: msg(e) };
@@ -128,10 +130,10 @@ async function actionProgrammer(heure) {
   const r = await programmer({ ...p.cfg, ip: p.ip }, client.creerTransport(), { allumage: h });
   if (r.ok) {
     const note = r.immediat ? ' (l\'heure était déjà passée : démarrage immédiat)' : '';
-    return { r, ip: p.ip, texte: `Programmé et relu : charge différée ${plageTexte(r)}${note}.` };
+    return { r, ip: p.ip, texte: `Câble programmé et relu. Charge ${plageTexte(r)}${note}.` };
   }
   const e = erreurFinale(r);
-  const suite = e === 'delai' ? ' Résultat incertain : vérifiez la plage dans Smart Life.' : '';
+  const suite = e === 'delai' ? ' Résultat incertain : vérifiez la plage de charge dans Smart Life.' : '';
   return { r: { ...r, erreur: e }, ip: p.ip, texte: msg(e) + suite };
 }
 
@@ -169,13 +171,15 @@ async function lancer(action, params = {}) {
     else if (action === 'filtre' && variante === 'debug') res = await actionFiltre();
     else return;
     etat(res.texte, res.r.ok ? 'ok' : 'ko');
+    principal(res.r.erreur === 'cle' || res.r.erreur === 'pas_de_cle' ? 'cle' : 'lire');
     journaliser(action, res.r, res.ip);
   } catch (e) {
     const r = { ok: false, erreur: 'format' };
-    etat('Échec inattendu de la page d\'essai.', 'ko');
+    etat('Échec inattendu : fermez l\'application puis rouvrez-la.', 'ko');
     journaliser(action, r);
   } finally {
     occupe(false);
+    montrerResultat();
   }
 }
 
@@ -187,7 +191,7 @@ async function demarrer() {
   const d = await client.demarrage();
   if (!d.ok) { etat(msg('pont_muet'), 'ko'); occupe(true); return; }
   variante = d.variante === 'debug' ? 'debug' : 'release';
-  $('variante').textContent = variante === 'debug' ? 'Version de mise au point' : 'Version de lecture seule';
+  if (variante === 'debug') { $('variante').textContent = 'Version de mise au point'; $('variante').hidden = false; }
   $('miseaupoint').hidden = variante !== 'debug';
 
   $('lire').addEventListener('click', () => lancer('lire'));
@@ -196,10 +200,14 @@ async function demarrer() {
   $('programmer').addEventListener('click', () => lancer('programmer'));
   $('filtre').addEventListener('click', () => lancer('filtre'));
 
+  // Clé pas encore saisie : on l'indique d'emblée et le bouton de saisie devient principal.
+  const c = await client.cable();
+  if (c.ok && !c.configure) { etat(msg('pas_de_cle')); principal('cle'); }
+
   // Action lancée par adb dans la version de mise au point seulement (le pont ne la transmet jamais en lecture seule).
   const auto = variante === 'debug' ? d.auto : null;
   if (auto && typeof auto.action === 'string') {
-    if (typeof auto.ip === 'string') $('ip').value = auto.ip;
+    if (typeof auto.ip === 'string') { $('ip').value = auto.ip; $('ip').closest('details').open = true; }
     if (typeof auto.heure === 'string') $('heure').value = auto.heure;
     await lancer(auto.action, { heure: auto.heure });
   }

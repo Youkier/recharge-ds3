@@ -5,20 +5,24 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'">
 <meta name="color-scheme" content="light dark">
-<title>Essai de la coque</title>
+<title>Câble de recharge</title>
 <link rel="stylesheet" href="essai.css">
 </head>
 <body>
 <main>
   <header class="top">
-    <h1 id="titre">Essai de la coque</h1>
-    <p class="variante" id="variante">Version…</p>
+    <h1 id="titre">Câble de recharge</h1>
+    <p class="variante" id="variante" hidden></p>
   </header>
 
   <section class="card" aria-label="Câble">
-    <label class="card-title" for="ip">Adresse du câble</label>
-    <input type="text" id="ip" inputmode="decimal" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="par exemple 192.168.1.48">
-    <p class="aide">Laissez vide pour que l'application retrouve le câble sur le Wi-Fi.</p>
+    <p class="card-title">Câble</p>
+    <details>
+      <summary>Saisir l'adresse à la main</summary>
+      <label class="champ" for="ip">Adresse du câble</label>
+      <input type="text" id="ip" inputmode="decimal" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="par exemple 192.168.1.48">
+      <p class="aide">Laissez vide pour que l'application retrouve le câble sur le Wi-Fi.</p>
+    </details>
     <div class="actions">
       <button type="button" id="lire" class="principal">Lire l'état</button>
       <button type="button" id="chercher">Chercher le câble</button>

@@ -2,9 +2,9 @@
 <resources>
     <string name="nom_appli">Recharge DS 3</string>
     <string name="titre_cle">Câble de recharge</string>
-    <string name="explication_cle">Saisissez l\'identifiant de l\'appareil et la clé locale du câble. Ils restent dans la mémoire de l\'application, ne sont jamais écrits sur le téléphone et sont perdus à la fermeture de l\'application.</string>
-    <string name="libelle_id">Identifiant de l\'appareil</string>
-    <string name="libelle_cle">Clé locale (16 caractères)</string>
+    <string name="explication_cle">Ce sont les deux valeurs notées lors de la mise en place du pilotage local. Elles ne sont pas enregistrées : il faudra les ressaisir à chaque ouverture de l\'application.</string>
+    <string name="libelle_id">Identifiant du câble</string>
+    <string name="libelle_cle">Clé du câble (16 caractères)</string>
     <string name="enregistrer">Enregistrer</string>
     <string name="retour">Retour</string>
     <string name="erreur_identifiant">Identifiant invalide : lettres, chiffres, tiret et tiret bas seulement (64 caractères au plus).</string>

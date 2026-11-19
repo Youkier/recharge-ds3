@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Thème sombre : icônes des barres système claires. -->
+<resources>
+    <style name="Theme.Coque" parent="@android:style/Theme.DeviceDefault.DayNight">
+        <item name="android:windowBackground">#0f1420</item>
+        <item name="android:colorBackground">#0f1420</item>
+        <item name="android:colorPrimary">#0f1420</item>
+        <item name="android:statusBarColor">#0f1420</item>
+        <item name="android:navigationBarColor">#0f1420</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowLightNavigationBar">false</item>
+        <item name="android:textColorPrimary">#e8ecf4</item>
+        <item name="android:textColorSecondary">#a6b0c2</item>
+    </style>
+</resources>

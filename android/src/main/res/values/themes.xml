@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Thème clair : barres système sombres sur fond clair (icônes lisibles), mêmes teintes que --bg de essai.css. -->
+<resources>
+    <style name="Theme.Coque" parent="@android:style/Theme.DeviceDefault.DayNight">
+        <item name="android:windowBackground">#f2f4f8</item>
+        <item name="android:colorBackground">#f2f4f8</item>
+        <item name="android:colorPrimary">#f2f4f8</item>
+        <item name="android:statusBarColor">#f2f4f8</item>
+        <item name="android:navigationBarColor">#f2f4f8</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:windowLightNavigationBar">true</item>
+        <item name="android:textColorPrimary">#131a2b</item>
+        <item name="android:textColorSecondary">#4b5568</item>
+    </style>
+</resources>

@@ -13,7 +13,7 @@
         android:dataExtractionRules="@xml/regles_extraction"
         android:usesCleartextTraffic="false"
         android:supportsRtl="true"
-        android:theme="@android:style/Theme.DeviceDefault.DayNight">
+        android:theme="@style/Theme.Coque">
 
         <activity
             android:name=".MainActivity"
