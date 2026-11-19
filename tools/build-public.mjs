@@ -46,7 +46,8 @@ const PAGES = [
     titre: "Page introuvable",
     description: "Cette adresse n'existe pas ou a changé. Revenez au calcul de la charge en heures creuses." },
 ];
-const MARQUEURS = /\[À (?:SOURCER|COMPLÉTER)[^\]]*\]?/g;
+// Insensible à la casse et aux accents : « [à compléter », « [A SOURCER » bloquent aussi.
+const MARQUEURS = /\[\s*[AÀaà]\s+(?:SOURCER|COMPL[EÉeé]TER)[^\]]*\]?/gi;
 
 function esc(s) { return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;"); }
 
@@ -176,7 +177,12 @@ function preparerSortie(sortie) {
 
 // ---------------------------------------------------------------- Pages par modèle (lot S4)
 const CHARGE_DIFFEREE = ["debut_seul", "debut_et_fin", "aucune", "inconnu"];
-const DATE = /^\d{4}-\d{2}-\d{2}$/;
+// Date de lecture d'une source : vraie date du calendrier, pas dans le futur.
+const DATE = { test(t) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(t)) return false;
+  const d = new Date(t + "T00:00:00Z");
+  return !isNaN(d) && d.toISOString().slice(0, 10) === t && d.getTime() <= Date.now();
+} };
 const normaliser = (t, e) => {
   let x = String(t).toLowerCase();
   for (const nom of [e.marque, e.modele].sort((a, b) => b.length - a.length)) x = x.split(String(nom).toLowerCase()).join("§");
@@ -292,7 +298,7 @@ export function construire({ sortie = SORTIE_PAR_DEFAUT, env = process.env, sour
   const attenteConfidentialite = offres.liste_attente.url === "" ? ""
     : "<h2>Liste d'attente</h2>\n<p class=\"a-sourcer\">[À COMPLÉTER : prestataire du formulaire (hébergé dans l'Union européenne), usage de l'adresse e-mail, durée de conservation et façon de se désinscrire.]</p>";
 
-  const titres = new Set(), descriptions = new Set(), marqueurs = [];
+  const titres = new Set(), descriptions = new Set(), marqueurs = [], aEcrire = [];
   for (const p of toutes) {
     const m = p.modele ? htmlModele(p.modele, p.base) : null;
     const titre = m ? m.titre : p.titre, description = m ? m.description : p.description;
@@ -325,11 +331,15 @@ export function construire({ sortie = SORTIE_PAR_DEFAUT, env = process.env, sour
     }, "base");
     if ((html.match(/<h1[\s>]/g) || []).length !== 1) throw new Error(`${p.fichier} : un seul h1 attendu`);
     for (const x of html.match(MARQUEURS) || []) marqueurs.push({ chemin: p.chemin, marqueur: x });
-    mkdirSync(dirname(join(s, p.fichier)), { recursive: true });
-    writeFileSync(join(s, p.fichier), html);
+    aEcrire.push([p.fichier, html]);
   }
+  // Contrôle avant toute écriture des pages : un refus ne laisse jamais de pages indexables sans robots.txt.
   if (indexable && marqueurs.length) {
     throw new Error(`PUBLIC_INDEXABLE=1 refusé : ${marqueurs.length} marqueur(s) « [À SOURCER » ou « [À COMPLÉTER » restent (${[...new Set(marqueurs.map((x) => x.chemin))].join(", ")})`);
+  }
+  for (const [fichier, html] of aEcrire) {
+    mkdirSync(dirname(join(s, fichier)), { recursive: true });
+    writeFileSync(join(s, fichier), html);
   }
 
   writeFileSync(join(s, "robots.txt"), indexable

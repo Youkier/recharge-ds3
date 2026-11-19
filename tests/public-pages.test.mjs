@@ -94,6 +94,21 @@ test("S3 : la construction refuse PUBLIC_INDEXABLE=1 tant qu'un marqueur reste, 
   assert.ok(resultatA.marqueurs.length >= 5);
   assert.throws(() => construire({ sortie: tmp(), env: { PUBLIC_INDEXABLE: "1" } }), /PUBLIC_INDEXABLE=1 refusé.*À SOURCER/);
   assert.throws(() => construire({ sortie: tmp(), env: { PUBLIC_INDEXABLE: "1" } }), /mentions-legales/);
+  // Un refus n'écrit aucune page (rien d'indexable ne reste dans la sortie).
+  const sortie = tmp();
+  assert.throws(() => construire({ sortie, env: { PUBLIC_INDEXABLE: "1" } }));
+  const restes = existsSync(sortie) ? readdirSync(sortie, { recursive: true }).filter((f) => String(f).endsWith(".html")) : [];
+  assert.deepEqual(restes, []);
+});
+
+test("S3 : les marqueurs sont reconnus quelle que soit la casse ou l'accent", () => {
+  for (const variante of ["[a sourcer : x]", "[A SOURCER : x]", "[à compléter]", "[À COMPLETER PAR MATHIEU : x]"]) {
+    const src = tmp(); cpSync(join(RACINE, "public"), src, { recursive: true });
+    const f = join(src, "contenu", "financement.html");
+    writeFileSync(f, readFileSync(f, "utf8") + `\n<p>${variante}</p>\n`);
+    const r = construire({ sortie: tmp(), env: envNeutre, source: src });
+    assert.ok(r.marqueurs.filter((m) => m.chemin === "/financement/").some((m) => m.marqueur.toLowerCase().startsWith(variante.slice(0, 4).toLowerCase())), variante);
+  }
 });
 
 test("S3 : financement : aucun lien rémunéré ni don aujourd'hui ; liste et bouton apparaissent avec des adresses", () => {
@@ -190,7 +205,7 @@ test("S4 : la page de modèle garde les libellés neutres de l'accueil (pas de m
 test("S4 : refus d'une entrée sans source lue", () => {
   assert.throws(() => avecModeles({ ...ENTREE_OK, sources: [] }).construire(), /aucune source lue/);
   assert.throws(() => avecModeles({ ...ENTREE_OK, sources: undefined }).construire(), /aucune source lue/);
-  for (const mauvaise of [{ ...SOURCE_OK, url: "" }, { ...SOURCE_OK, url: "http://pas-https.example" }, { ...SOURCE_OK, lu_le: "hier" }, { ...SOURCE_OK, ce_que_dit_la_source: "" }]) {
+  for (const mauvaise of [{ ...SOURCE_OK, url: "" }, { ...SOURCE_OK, url: "http://pas-https.example" }, { ...SOURCE_OK, lu_le: "hier" }, { ...SOURCE_OK, lu_le: "2026-13-45" }, { ...SOURCE_OK, lu_le: "2026-02-30" }, { ...SOURCE_OK, lu_le: "2999-01-01" }, { ...SOURCE_OK, ce_que_dit_la_source: "" }]) {
     assert.throws(() => avecModeles({ ...ENTREE_OK, sources: [mauvaise] }).construire(), /chaque source exige/);
   }
 });
