@@ -317,13 +317,13 @@ Détail : `docs/cahier-des-charges-coque-android.md`. Le protocole local Tuya 3.
 |---|---|---|---|
 | C1 | Module `local/tuya-local.js`, transport Node, vecteurs de test produits avec tinytuya et une clé factice, faux câble simulé | `tuya-integrateur`, seul | Primitive absente de Web Crypto : arrêt, on en parle |
 | C2 | Essai réel depuis le PC : lecture, écriture simulée, puis écriture réelle à +5 min, voiture branchée | Session principale, commandes validées une par une | Lecture ou écriture refusée : arrêt |
-| C3 | Coque minimale et page d'essai « Lire l'état » sur le Pixel | Session principale ; Mathieu : outils Android, débogage USB, saisie de la clé | **Essai décisif.** Échec : arrêt, on en parle |
+| C3 | Coque minimale et page d'essai « Lire l'état », construite et essayée sur émulateurs par GitHub Actions | Session principale ; Mathieu : installation depuis un lien, saisie de la clé, essai final sur Pixel 9 et Pixel 10 | **Essai décisif.** Échec : arrêt, on en parle |
 | C4 | Mode « Local » dans la page, clé chiffrée sur le téléphone, alertes, signature stable de l'APK | Session principale ; après la semaine d'usage réel de la phase 2c, ou accord de Mathieu | |
 | C5 | Deux semaines d'usage réel en mode Local ; L4 et T4 refaits depuis le téléphone, internet coupé | Mathieu | Décision : le Worker reste-t-il en secours ? |
 
 ### Ce qu'on attend de Mathieu
 
-Avant C2 : clé locale à l'abri, câble joignable depuis le PC. Avant C3 : Android Studio sur le PC, débogage USB sur le Pixel, clé de signature créée hors du dépôt. Pendant C2, C3 et C5 : validation des commandes, saisie de la clé sur le téléphone, constats sur la voiture.
+Avant C2 : clé locale à l'abri, câble joignable depuis le PC. Avant C3 : rien (construction et premiers essais sur GitHub Actions, décision du 2026-11-19) ; à la fin de C3 : ranger la copie de secours de la clé de signature, installer depuis le lien sur le Pixel 9 et le Pixel 10, essai final. Pendant C2, C3 et C5 : validation des commandes, saisie de la clé sur le téléphone, constats sur la voiture.
 
 ### Critères d'acceptation
 
@@ -350,10 +350,15 @@ Lot C2 (sur le câble) :
 
 Lot C3 (sur le Pixel) :
 
-- [ ] APK construit sur le PC de Mathieu à partir du dépôt, installé par USB
-- [ ] La page d'essai lit l'état du câble depuis le Wi-Fi de la maison
-- [ ] Le pont refuse tout autre port que 6668 et toute adresse non privée (tests)
-- [ ] La permission d'accès au réseau local est traitée : son refus donne un message distinct de « câble injoignable »
+Construit et essayé sur GitHub Actions (décision du 2026-11-19) ; sous-étapes C3.1 (PC : liste blanche, faux câble TCP, page d'essai) → C3.2 (Gradle, construction) → C3.3 (émulateur, captures, ergonome) → C3.4 (pont et scénarios, relecture) → C3.5 (signature, préversion) → C3.6 (Mathieu).
+
+- [ ] APK construit par GitHub Actions à partir d'un commit de `main`, signé par la clé stable ; empreinte du certificat publiée avec le lien
+- [ ] Liste des fichiers embarqués égale à la liste blanche (test Node sur le PC, et `unzip` en CI)
+- [ ] Sur émulateurs API 35 et 36, en clair et en sombre : la page d'essai lit le faux câble, le retrouve sans adresse et après une adresse muette, affiche `cle` avec une clé fausse ; captures relues par l'ergonome
+- [ ] Le pont refuse tout port autre que 6668 et toute adresse non privée (JUnit, et scénario sur l'émulateur)
+- [ ] La version n+1 s'installe par-dessus la version n sans désinstaller
+- [ ] `targetSdk` vaut 36, sans `ACCESS_LOCAL_NETWORK` (remplace le critère « permission », décision du 2026-11-18)
+- [ ] Sur le Pixel 9 et le Pixel 10, installé depuis le lien : la page d'essai lit l'état du vrai câble depuis le Wi-Fi de la maison, adresse retrouvée sans saisie (Mathieu)
 
 Lot C4 :
 
