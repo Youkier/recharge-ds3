@@ -350,14 +350,16 @@ Lot C2 (sur le câble) :
 
 Lot C3 (sur le Pixel) :
 
+**État au 2026-11-19 au soir** : C3.1 à C3.5 faits (construction, émulateurs verts, corrections de l'ergonome, signature, préversion publiée) ; copie de secours de la clé de signature rangée par Mathieu, dossier local supprimé. **Reste C3.6** : installation depuis le lien et essai sur le vrai câble, Pixel 9 et Pixel 10 (Mathieu).
+
 Construit et essayé sur GitHub Actions (décision du 2026-11-19) ; sous-étapes C3.1 (PC : liste blanche, faux câble TCP, page d'essai) → C3.2 (Gradle, construction) → C3.3 (émulateur, captures, ergonome) → C3.4 (pont et scénarios, relecture) → C3.5 (signature, préversion) → C3.6 (Mathieu).
 
-- [ ] APK construit par GitHub Actions à partir d'un commit de `main`, signé par la clé stable ; empreinte du certificat publiée avec le lien
-- [ ] Liste des fichiers embarqués égale à la liste blanche (test Node sur le PC, et `unzip` en CI)
-- [ ] Sur émulateurs API 35 et 36, en clair et en sombre : la page d'essai lit le faux câble, le retrouve sans adresse et après une adresse muette, affiche `cle` avec une clé fausse ; captures relues par l'ergonome
-- [ ] Le pont refuse tout port autre que 6668 et toute adresse non privée (JUnit, et scénario sur l'émulateur)
-- [ ] La version n+1 s'installe par-dessus la version n sans désinstaller
-- [ ] `targetSdk` vaut 36, sans `ACCESS_LOCAL_NETWORK` (remplace le critère « permission », décision du 2026-11-18)
+- [x] APK construit par GitHub Actions à partir d'un commit de `main`, signé par la clé stable ; empreinte du certificat publiée avec le lien (2026-11-19, préversion `coque-v0.1`, commit cd74f88, empreinte 2b2a896b…0512033)
+- [x] Liste des fichiers embarqués égale à la liste blanche (test Node sur le PC, et `unzip` en CI)
+- [x] Sur émulateurs API 35 et 36, en clair et en sombre : la page d'essai lit le faux câble, le retrouve sans adresse et après une adresse muette, affiche `cle` avec une clé fausse ; captures relues par l'ergonome
+- [x] Le pont refuse tout port autre que 6668 et toute adresse non privée (JUnit, et scénario sur l'émulateur)
+- [ ] La version n+1 s'installe par-dessus la version n sans désinstaller (réinstallation de la même version vérifiée sur émulateur ; vraie mise à jour à la prochaine version, versionCode à faire varier)
+- [x] `targetSdk` vaut 36, sans `ACCESS_LOCAL_NETWORK` (remplace le critère « permission », décision du 2026-11-18)
 - [ ] Sur le Pixel 9 et le Pixel 10, installé depuis le lien : la page d'essai lit l'état du vrai câble depuis le Wi-Fi de la maison, adresse retrouvée sans saisie (Mathieu)
 
 Lot C4 :
