@@ -26,6 +26,9 @@ SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
 [ -n "$SDK" ] || { echo "emulateur.sh : ANDROID_HOME absent" >&2; exit 1; }
 export PATH="$SDK/cmdline-tools/latest/bin:$SDK/platform-tools:$SDK/emulator:$PATH"
 IMAGE="system-images;android-${API};google_apis;x86_64"
+# Dossier des AVD fixé : avdmanager et emulator le lisent tous deux (sinon avdmanager peut écrire ailleurs, ex. ~/.config/.android).
+export ANDROID_AVD_HOME="$HOME/.android/avd"
+mkdir -p "$ANDROID_AVD_HOME"
 
 # 1. KVM (règle udev du changelog GitHub), sinon l'émulateur est inutilisable.
 if [ ! -e /dev/kvm ]; then echo "emulateur.sh : /dev/kvm absent : ce runner ne permet pas l'accélération matérielle" >&2; exit 1; fi
@@ -49,7 +52,7 @@ echo no | avdmanager create avd --force -n "$NOM" -k "$IMAGE" "${PROFIL[@]}"
 
 # 4. config.ini : dimensions du Pixel 9 / Pixel 10 (1080 x 2424, densité 420), clavier matériel (pas de clavier à l'écran
 #    qui masquerait les champs lors des essais), un peu plus de mémoire.
-CONFIG="$HOME/.android/avd/${NOM}.avd/config.ini"
+CONFIG="$ANDROID_AVD_HOME/${NOM}.avd/config.ini"
 [ -f "$CONFIG" ] || { echo "emulateur.sh : $CONFIG introuvable" >&2; exit 1; }
 fixer() { if grep -q "^$1=" "$CONFIG"; then sed -i "s|^$1=.*|$1=$2|" "$CONFIG"; else echo "$1=$2" >> "$CONFIG"; fi; }
 fixer hw.lcd.width 1080
