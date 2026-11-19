@@ -36,3 +36,29 @@ test("lignes mal formées écartées, choix inconnu ou vide sans erreur", () => 
   assert.equal(trouver(L, null), null);
   assert.equal(trouver(L, { marque: "DS", modele: "inconnu", version: "x" }), null);
 });
+
+test("aucune valeur aberrante : capacités plausibles, libellés non vides, un libellé = une capacité", () => {
+  // Exceptions connues d'Open EV Data hors 15–150 kWh : petites batteries anciennes et Roadster.
+  const HORS_PLAGE = new Set(["Artega|Karo", "Citroën|C-Zero", "Mitsubishi|i-MiEV", "Peugeot|iOn", "Tesla|Roadster"]);
+  const caps = new Map();
+  for (const [m, mo, l, c] of doc.v) {
+    assert.ok(m.trim() && mo.trim() && l.trim(), `libellé vide : ${m}|${mo}|${l}`);
+    assert.ok(Number.isFinite(c), `capacité non numérique : ${m}|${mo}|${l}`);
+    if (c < 15 || c > 150) assert.ok(HORS_PLAGE.has(m + "|" + mo), `capacité aberrante : ${m} ${mo} ${c}`);
+    const k = [m, mo, l].join("|");
+    assert.ok(!caps.has(k) || caps.get(k) === c, `même libellé, deux capacités : ${k}`);
+    caps.set(k, c);
+  }
+});
+
+test("les ajouts manuels sont valides, sourcés et présents dans le fichier publié", () => {
+  const aj = JSON.parse(readFileSync(new URL("../tools/vehicules-ajouts.json", import.meta.url), "utf8"));
+  assert.ok(aj.source && aj.ajouter.length > 0);
+  assert.ok(doc._source.includes(aj.source));
+  for (const a of aj.ajouter) {
+    assert.ok(a.marque && a.modele && typeof a.version === "string" && a.cap >= 15 && a.cap <= 150, JSON.stringify(a));
+  }
+  // Chaque ajout (ou une version équivalente absorbée) laisse au moins le modèle dans la liste.
+  const modelesPublies = new Set(doc.v.map((r) => r[0] + "|" + r[1].toLowerCase()));
+  for (const a of aj.ajouter) assert.ok(modelesPublies.has(a.marque + "|" + a.modele.toLowerCase()), `modèle absent : ${a.marque} ${a.modele}`);
+});
