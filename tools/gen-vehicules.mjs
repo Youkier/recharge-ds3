@@ -1,14 +1,14 @@
 // Génère site/vehicules.json (marque → modèle → version → capacité utile) à partir
 // d'Open EV Data (https://github.com/KilowattApp/open-ev-data, licence MIT, citation obligatoire).
 //
-// Usage : node tools/gen-vehicules.mjs <ev-data.json téléchargé> [tools/vehicules-corrections.json]
+// Usage : node tools/gen-vehicules.mjs <ev-data.json téléchargé> [tools/vehicules-corrections.json] [tools/vehicules-ajouts.json]
 //
 // Le fichier source est une donnée externe : on n'en garde que des chaînes courtes et
 // des nombres plausibles, tout le reste est ignoré. Aucune exécution de son contenu.
 
 import { readFileSync, writeFileSync } from "node:fs";
 
-const [src, corrFile = "tools/vehicules-corrections.json"] = process.argv.slice(2);
+const [src, corrFile = "tools/vehicules-corrections.json", ajoutsFile = "tools/vehicules-ajouts.json"] = process.argv.slice(2);
 if (!src) { console.error("Usage : node tools/gen-vehicules.mjs <ev-data.json> [corrections.json]"); process.exit(1); }
 
 const brut = JSON.parse(readFileSync(src, "utf8"));
@@ -48,6 +48,16 @@ for (const a of corr.ajouter) {
   lignes.push({ marque: a.marque, modele: a.modele, version: a.version, an: a.an, cap: a.cap });
 }
 
+// Ajouts de la liste fournie par Mathieu (sans année, source non officielle déclarée dans le fichier).
+const ajouts = JSON.parse(readFileSync(ajoutsFile, "utf8"));
+if (typeof ajouts.source !== "string" || !ajouts.source) throw new Error("tools/vehicules-ajouts.json : « source » obligatoire");
+for (const a of ajouts.ajouter) {
+  if (!texte(a.marque) || !texte(a.modele) || typeof a.version !== "string" || a.version.length > 60 || !capOk(a.cap)) {
+    throw new Error("Ajout invalide : " + JSON.stringify(a));
+  }
+  lignes.push({ marque: a.marque, modele: a.modele, version: a.version, an: null, cap: a.cap });
+}
+
 // Doublons de nom : « Zoe R110 » devient « Zoe » + version « R110 » quand « Zoe » existe
 // pour la même marque (préfixe le plus court) ; « E-Traveller » et « e-Traveller » fusionnent
 // sous l'orthographe la plus fréquente.
@@ -79,7 +89,7 @@ const groupes = new Map();
 for (const l of lignes) {
   const k = [l.marque, l.modele.toLowerCase(), cleVersion(l.version), l.cap].join("|");
   const g = groupes.get(k);
-  if (g) { g.de = Math.min(g.de, l.an); g.a = Math.max(g.a, l.an); }
+  if (g) { if (l.an !== null) { g.de = g.de === null ? l.an : Math.min(g.de, l.an); g.a = g.a === null ? l.an : Math.max(g.a, l.an); } }
   else groupes.set(k, { marque: l.marque, modele: l.modele, version: l.version, cap: l.cap, de: l.an, a: l.an });
 }
 // Même modèle, même année, même capacité : « EV40 » absorbé par « EV40 130hp » (nom le plus précis gardé).
@@ -93,12 +103,12 @@ for (const g of liste) {
 }
 const fr = (x) => String(x).replace(".", ",");
 const sortie = liste.filter((g) => !g.absorbe)
-  .map((g) => [g.marque, g.modele, [g.version, g.de === g.a ? String(g.de) : g.de + "–" + g.a].filter(Boolean).join(" · ") + " · " + fr(g.cap) + " kWh utiles", g.cap, g.de])
+  .map((g) => [g.marque, g.modele, [g.version, g.de === null ? "" : g.de === g.a ? String(g.de) : g.de + "–" + g.a, fr(g.cap) + " kWh utiles"].filter(Boolean).join(" · "), g.cap, g.de ?? 0])
   .sort((x, y) => x[0].localeCompare(y[0], "fr") || x[1].localeCompare(y[1], "fr", { numeric: true }) || y[4] - x[4] || x[2].localeCompare(y[2], "fr"))
   .map((r) => r.slice(0, 4));
 
 const doc = {
-  _source: "Open EV Data (https://github.com/KilowattApp/open-ev-data), licence MIT, données du " + String(brut.meta?.updated_at || "").slice(0, 10) + ", nettoyées par tools/gen-vehicules.mjs et corrigées par tools/vehicules-corrections.json.",
+  _source: "Open EV Data (https://github.com/KilowattApp/open-ev-data), licence MIT, données du " + String(brut.meta?.updated_at || "").slice(0, 10) + ", nettoyées par tools/gen-vehicules.mjs et corrigées par tools/vehicules-corrections.json. Versions ajoutées d'après une liste fournie par Mathieu (tools/vehicules-ajouts.json) : " + ajouts.source,
   _licence: "Données Open EV Data (https://github.com/KilowattApp/open-ev-data). Copyright (c) 2024 Tijs Teulings. MIT License with Attribution Requirement : texte complet dans site/LICENCE-open-ev-data.txt.",
   v: sortie,
 };
