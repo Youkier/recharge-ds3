@@ -5,7 +5,7 @@
 | Élément | Où il vit | Ce qu'il permet |
 |---|---|---|
 | Clés du projet Tuya (Access ID, Access Secret) | Secrets Cloudflare, `tools/.env` et `worker/.dev.vars` sur l'ordinateur | Piloter les appareils du compte Smart Life lié au projet (le compte dédié, qui ne possède que le câble) |
-| Clé locale du câble (`TUYA_LOCAL_KEY`, piste du pilotage local) | `tools/.env` sur l'ordinateur seulement | Piloter le câble depuis le Wi-Fi de la maison, sans passer par Tuya. Elle change à chaque appairage (à confirmer) |
+| Clé locale du câble (`TUYA_LOCAL_KEY`, piste du pilotage local) | `tools/.env` sur l'ordinateur ; copie dans le gestionnaire de mots de passe de Mathieu ; à partir de la v0.3 de la coque, sur le Pixel 9 et le Pixel 10, chiffrée (voir « Coque Android ») | Piloter le câble depuis le Wi-Fi de la maison, sans passer par Tuya. Elle change à chaque appairage (à confirmer) |
 | Jeton d'accès au service (`JETON_ACCES`) | Secret Cloudflare, paramètres de la page sur le Pixel | Régler ou désactiver la plage de charge du câble |
 | Comptes GitHub, Cloudflare, Tuya | Chez chaque fournisseur | Modifier la page, le service ou le projet |
 
@@ -34,10 +34,18 @@ Un tiers allume ou éteint la recharge à un moment non voulu : voiture pas char
 | Téléphone perdu ou jeton exposé | Générer un nouveau jeton, `npx wrangler secret put JETON_ACCES`, le ressaisir dans la page sur le nouveau téléphone. | 5 min |
 | Clés Tuya exposées | Console Tuya → projet → régénérer l'Access Secret, puis `npx wrangler secret put TUYA_ACCESS_SECRET` et mise à jour de `tools/.env`. | 10 min |
 | Clé locale du câble exposée | Seul levier : **réappairer le câble** dans Smart Life (compte dédié), ce qui génère une nouvelle clé locale (à confirmer). Puis `node tools/tuya-probe.mjs cle-locale` si la piste locale est encore utilisée. Un tiers doit être sur le Wi-Fi de la maison pour s'en servir. | 15 min |
+| Pixel perdu ou volé (coque v0.3 et suivantes) | La clé locale y est chiffrée par une clé non exportable du téléphone, utilisable seulement téléphone déverrouillé ; elle ne sert que sur le Wi-Fi de la maison. Par prudence : **réappairer le câble** (nouvelle clé locale, ligne ci-dessus), puis la ressaisir sur l'autre Pixel. Après la fin de l'essai IoT Core (2026-12-11), récupérer la nouvelle clé n'a pas de voie connue : à vérifier avant de réappairer. | 15 min |
 | Compte GitHub compromis | Changer le mot de passe, vérifier la double authentification, relire les derniers commits de `site/` (une page modifiée pourrait capturer le jeton), puis changer le jeton. | 15 min |
 | Compte Cloudflare compromis | Changer le mot de passe, révoquer les sessions, changer **tous** les secrets du Worker (jeton et clés Tuya). | 15 min |
 
 Après toute révocation : vérifier dans Smart Life que la plage de charge du câble est correcte (début, fin 06:00, activée) et qu'aucune programmation inconnue n'a été ajoutée.
+
+## Coque Android (phase 3b, à partir de la v0.3, décisions du 2026-11-20)
+
+- **Stockage** : identifiant et clé locale du câble chiffrés ensemble (AES-GCM) par une clé du magasin de clés d'Android, non exportable, créée avec `setUnlockedDeviceRequired(true)`, sans biométrie ; fichier privé de l'application, exclu de la sauvegarde et du transfert d'appareil (`allowBackup="false"`, règles d'extraction). L'adresse IP du câble est rangée en clair à côté : elle n'est pas secrète. Effacés par « Oublier le câble » (écran natif, avec confirmation), à la désinstallation ou par « Effacer les données ».
+- **Usage** : déchiffrés hors du fil principal, seulement quand la page embarquée demande la clé pour une action ; la clé est en clair dans la WebView le temps de l'action, jamais affichée, journalisée ni enregistrée par la page. Toute page servie sous l'origine interne de l'APK peut la demander : d'où la liste blanche des fichiers embarqués (`tools/assets-apk.mjs`), testée.
+- **Pont** : une connexion TCP à la fois, port 6668, adresses IPv4 privées seulement (exception à la règle 9 du 2026-11-15). Aucune opération d'effacement ni d'écriture de la clé n'est ouverte à la page ; l'adresse retenue n'est mise à jour qu'après une lecture réussie avec la bonne clé. Lecture directe seulement si le Wi-Fi du téléphone est sur le réseau de l'adresse retenue ; aucune recherche sans bouton.
+- **Installation** : uniquement des APK construits par GitHub Actions depuis `main` et signés par la clé stable ; empreinte du certificat publiée avec chaque préversion et vérifiée. Les versions publiées restent en lecture seule jusqu'au lot C4 (« Programmer » avec le mode Local de la page).
 
 ## Vérification périodique (tous les 3 mois, 10 min)
 
