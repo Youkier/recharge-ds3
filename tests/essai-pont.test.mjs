@@ -41,6 +41,12 @@ function faussePont({ cables, cle = CLE, retard = 0, autres = {} }) {
         if (pont.courant || pont.reserve) { pont.occupes++; return repondre(n, { ok: false, erreur: 'occupe' }); }
         if (!(q.ip in cables) && !(q.ip in autres)) return repondre(n, { ok: false, erreur: 'injoignable' });
         pont.reserve = true;
+        if (autres[q.ip] === 'MUET') { // port ouvert, n'envoie jamais rien
+          pont.reserve = false;
+          pont.courant = { id: ++compteur, ip: q.ip, muet: true };
+          pont.ouvertes++;
+          return repondre(n, { ok: true, cx: pont.courant.id });
+        }
         const f = q.ip in cables ? fauxCable({ cle: CLE, dps: cables[q.ip] }) : fauxCable({ cle: autres[q.ip], dps: dpsBase() });
         await f.transport.ouvrir(q.ip, q.port);
         pont.reserve = false;
@@ -49,8 +55,12 @@ function faussePont({ cables, cle = CLE, retard = 0, autres = {} }) {
         return repondre(n, { ok: true, cx: pont.courant.id });
       }
       const c = pont.courant;
-      if (op === 'fermer') { if (c && c.id === q.cx) { c.f.transport.fermer(); if (c.ip in cables) cables[c.ip] = c.f.dps; pont.courant = null; pont.fermees++; } return repondre(n, { ok: true }); }
+      if (op === 'fermer') { if (c && c.id === q.cx) { if (c.f) c.f.transport.fermer(); if (c.ip in cables) cables[c.ip] = c.f.dps; pont.courant = null; pont.fermees++; } return repondre(n, { ok: true }); }
       if (!c || c.id !== q.cx) return repondre(n, { ok: false, erreur: 'cx_inconnu' });
+      if (c.muet) {
+        if (op === 'envoyer') return repondre(n, { ok: true });
+        if (op === 'recevoir') return setTimeout(() => repondre(n, { ok: false, erreur: 'delai' }), q.delai);
+      }
       if (op === 'envoyer') {
         const o = deBase64(q.d);
         if (o.length > 2048) return repondre(n, { ok: false, erreur: 'refuse' });
@@ -152,6 +162,18 @@ test('recherche chez un particulier : d\'autres appareils Tuya ouvrent le port, 
   assert.equal(r.ok, true, JSON.stringify(r));
   assert.equal(r.ip, '10.0.2.5');
   assert.equal(pont.occupes, 0, 'aucune lecture refusée pour « occupe »');
+  assert.equal(pont.courant, null);
+});
+
+test('recherche : deux appareils muets avant le câble ne consomment pas le délai de lecture du câble', async () => {
+  const pont = faussePont({ cables: { '10.0.2.5': dpsBase() }, autres: { '10.0.2.2': 'MUET', '10.0.2.3': 'MUET' } });
+  const client = creerClientPont(pont);
+  // Délai de lecture réduit à 300 ms : deux muets en file (2 × 300 ms) dépasseraient le délai du câble s'il courait
+  // pendant l'attente.
+  const r = await localiserCable({ cfg: cfg(), departs: [], interfaces: ['10.0.2.1'], creerTransport: client.creerTransport, sonder: client.sonder, delaiLectureMs: 300 });
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.equal(r.ip, '10.0.2.5');
+  assert.equal(pont.occupes, 0);
   assert.equal(pont.courant, null);
 });
 

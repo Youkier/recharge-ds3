@@ -56,8 +56,17 @@ export async function localiserCable(opts) {
   let annule = false;
   let recherche = false;
 
-  const lire = async (ip) => {
-    try { return await lireEtat({ ...cfg, ip, delaiGlobalMs: delaiLectureMs }, creerTransport()); } catch { return { ok: false, erreur: 'hors_ligne' }; }
+  // Lectures une par une : un transport (le pont de la coque Android) peut n'accepter qu'une connexion à la fois, et
+  // chez un particulier d'autres appareils Tuya ouvrent aussi le port 6668. Le délai de lecture ne court qu'une fois
+  // le tour venu ; l'échéance totale (delaiTotalMs) borne l'ensemble. Les sondes restent en parallèle.
+  let fileLectures = Promise.resolve();
+  const lire = (ip) => {
+    const tour = fileLectures.then(async () => {
+      if (annule) return { ok: false, erreur: 'hors_ligne' };
+      try { return await lireEtat({ ...cfg, ip, delaiGlobalMs: delaiLectureMs }, creerTransport()); } catch { return { ok: false, erreur: 'hors_ligne' }; }
+    });
+    fileLectures = tour.then(() => {}, () => {});
+    return tour;
   };
 
   const travail = (async () => {
