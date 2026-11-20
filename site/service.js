@@ -81,6 +81,13 @@ const CAUSES = {
   delai_page: { message: 'Pas de réponse du service après 25 secondes.', incertain: true },
   illisible: { message: 'Réponse illisible du service.', incertain: true },
   inattendue: { message: 'Réponse inattendue du service : le réglage n\'est pas confirmé.', incertain: true },
+  // Mode « Local » de l'appli Android (site/local.js) : le câble est joint directement sur le Wi-Fi de la maison.
+  local_muet: { message: 'Le câble ne répond pas. Est-il branché à la prise murale ? Rien n\'a été modifié.', incertain: false },
+  local_delai: { message: 'Le câble n\'a pas répondu à temps.', incertain: true },
+  local_cle: { message: 'Le câble refuse la clé : elle a peut-être changé dans Smart Life. Rien n\'a été modifié.', incertain: false },
+  local_hors_wifi: { message: 'Le téléphone n\'est pas sur le Wi-Fi de la maison : rien n\'a été envoyé.', incertain: false },
+  local_pas_de_cle: { message: 'Le câble n\'est pas encore relié à l\'application.', incertain: false },
+  local_format: { message: 'Le câble a donné une réponse inattendue : le réglage n\'est pas confirmé.', incertain: true },
 };
 
 export function resultatKo(demande, code, finHC) {
