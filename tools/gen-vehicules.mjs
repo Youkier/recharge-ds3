@@ -9,7 +9,7 @@
 import { readFileSync, writeFileSync } from "node:fs";
 
 const [src, corrFile = "tools/vehicules-corrections.json", ajoutsFile = "tools/vehicules-ajouts.json"] = process.argv.slice(2);
-if (!src) { console.error("Usage : node tools/gen-vehicules.mjs <ev-data.json> [corrections.json]"); process.exit(1); }
+if (!src) { console.error("Usage : node tools/gen-vehicules.mjs <ev-data.json> [corrections.json] [ajouts.json]"); process.exit(1); }
 
 const brut = JSON.parse(readFileSync(src, "utf8"));
 const corr = JSON.parse(readFileSync(corrFile, "utf8"));

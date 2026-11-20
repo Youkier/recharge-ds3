@@ -16,7 +16,9 @@ android {
         applicationId = "fr.rechargeds3.coque"
         minSdk = 35
         targetSdk = 36 // < 37 : l'accès au réseau local reste accordé avec INTERNET, pas d'ACCESS_LOCAL_NETWORK (décision du 2026-11-18)
-        versionCode = 1
+        // Numéro de la construction GitHub Actions : chaque APK publié dépasse le précédent, ce qui permet
+        // de vérifier l'installation par-dessus (mise à jour n+1). En local, 1.
+        versionCode = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 1
         versionName = "0.3.0-c3"
     }
 
