@@ -16,9 +16,10 @@ const plage = (m, ss, se) => JSON.stringify({ m, dt: 0, ss, se });
 const dpsBase = () => ({ 101: 202, 109: 'WAIT', 150: 16, 151: plage(2, '03:30', '06:00'), 152: 16 });
 const lire = (rel) => readFileSync(fileURLToPath(new URL(rel, import.meta.url)), 'utf8');
 
-// Pont simulé. cables : { ip: dps partagés } ; seules ces adresses « répondent ».
-function faussePont({ cables, cle = CLE, retard = 0 }) {
-  const pont = { onmessage: null, journal: [], ouvertes: 0, fermees: 0, courant: null };
+// Pont simulé. cables : { ip: dps partagés } ; seules ces adresses « répondent ». autres : { ip: clé } d'appareils Tuya
+// qui ouvrent le port 6668 mais avec une autre clé (prises, ampoules… d'un particulier).
+function faussePont({ cables, cle = CLE, retard = 0, autres = {} }) {
+  const pont = { onmessage: null, journal: [], ouvertes: 0, fermees: 0, courant: null, reserve: false, occupes: 0 };
   const filtre = (ip, port) => port === 6668 && /^(10|192\.168|172\.(1[6-9]|2\d|3[01]))\./.test(ip) && !/(^|\.)0\d/.test(ip);
   let compteur = 0;
   const repondre = (n, r) => setTimeout(() => pont.onmessage({ data: JSON.stringify({ n, ...r }) }), retard);
@@ -32,20 +33,23 @@ function faussePont({ cables, cle = CLE, retard = 0 }) {
       if (op === 'cable') return repondre(n, { ok: true, configure: true, deviceId: 'ID-FACTICE', cle });
       if (op === 'sonder') {
         if (!filtre(q.ip, 6668)) return repondre(n, { ok: false, erreur: 'refuse' });
-        return repondre(n, { ok: true, ouvert: q.ip in cables });
+        return repondre(n, { ok: true, ouvert: q.ip in cables || q.ip in autres });
       }
       if (op === 'ouvrir') {
         if (!filtre(q.ip, q.port)) return repondre(n, { ok: false, erreur: 'refuse' });
-        if (pont.courant) return repondre(n, { ok: false, erreur: 'occupe' });
-        if (!(q.ip in cables)) return repondre(n, { ok: false, erreur: 'injoignable' });
-        const f = fauxCable({ cle: CLE, dps: cables[q.ip] });
+        // Comme Registre.reserver() : la place est prise dès la demande, avant que la connexion aboutisse.
+        if (pont.courant || pont.reserve) { pont.occupes++; return repondre(n, { ok: false, erreur: 'occupe' }); }
+        if (!(q.ip in cables) && !(q.ip in autres)) return repondre(n, { ok: false, erreur: 'injoignable' });
+        pont.reserve = true;
+        const f = q.ip in cables ? fauxCable({ cle: CLE, dps: cables[q.ip] }) : fauxCable({ cle: autres[q.ip], dps: dpsBase() });
         await f.transport.ouvrir(q.ip, q.port);
+        pont.reserve = false;
         pont.courant = { id: ++compteur, f, ip: q.ip };
         pont.ouvertes++;
         return repondre(n, { ok: true, cx: pont.courant.id });
       }
       const c = pont.courant;
-      if (op === 'fermer') { if (c && c.id === q.cx) { c.f.transport.fermer(); cables[c.ip] = c.f.dps; pont.courant = null; pont.fermees++; } return repondre(n, { ok: true }); }
+      if (op === 'fermer') { if (c && c.id === q.cx) { c.f.transport.fermer(); if (c.ip in cables) cables[c.ip] = c.f.dps; pont.courant = null; pont.fermees++; } return repondre(n, { ok: true }); }
       if (!c || c.id !== q.cx) return repondre(n, { ok: false, erreur: 'cx_inconnu' });
       if (op === 'envoyer') {
         const o = deBase64(q.d);
@@ -106,13 +110,49 @@ test('adresse refusée par le pont : hors_ligne pour le module, motif conservé 
   assert.equal(pont.ouvertes, 0);
 });
 
-test('une seule connexion de données à la fois : la seconde reçoit occupe', async () => {
-  const client = creerClientPont(faussePont({ cables: { '10.0.2.2': dpsBase() } }));
+test('une seule connexion de données à la fois : la seconde attend la fermeture de la première, sans occupe', async () => {
+  const pont = faussePont({ cables: { '10.0.2.2': dpsBase() } });
+  const client = creerClientPont(pont);
   const a = client.creerTransport(); const b = client.creerTransport();
   await a.ouvrir('10.0.2.2', 6668, 1000);
-  await assert.rejects(b.ouvrir('10.0.2.2', 6668, 1000), (e) => e.code === 'hors_ligne');
-  assert.equal(client.dernierMotif, 'occupe');
+  let bOuvert = false;
+  const ob = b.ouvrir('10.0.2.2', 6668, 1000).then(() => { bOuvert = true; });
+  await new Promise((r) => setTimeout(r, 20));
+  assert.equal(bOuvert, false, 'b attend son tour');
   await a.fermer(); await a.fermer(); // idempotent
+  await ob;
+  assert.equal(bOuvert, true);
+  assert.equal(pont.occupes, 0);
+  await b.fermer();
+  assert.equal(pont.courant, null);
+});
+
+test('le tour est rendu après un échec d\'ouverture et après un abandon pendant l\'attente', async () => {
+  const pont = faussePont({ cables: { '10.0.2.2': dpsBase() } });
+  const client = creerClientPont(pont);
+  const muet = client.creerTransport();
+  await assert.rejects(muet.ouvrir('10.0.2.99', 6668, 200), (e) => e.code === 'hors_ligne'); // injoignable
+  await muet.fermer();
+  const a = client.creerTransport(); const abandonne = client.creerTransport(); const c = client.creerTransport();
+  await a.ouvrir('10.0.2.2', 6668, 1000);
+  const oAb = abandonne.ouvrir('10.0.2.2', 6668, 1000).catch((e) => e.code);
+  await abandonne.fermer(); // échéance du module pendant l'attente du tour
+  await a.fermer();
+  assert.equal(await oAb, 'ferme');
+  await c.ouvrir('10.0.2.2', 6668, 1000); // le tour n'est pas resté pris
+  await c.fermer();
+  assert.equal(pont.courant, null);
+});
+
+test('recherche chez un particulier : d\'autres appareils Tuya ouvrent le port, le câble est quand même trouvé', async () => {
+  const autres = { '10.0.2.2': 'AUTRE-CLE-000001', '10.0.2.3': 'AUTRE-CLE-000002', '10.0.2.4': 'AUTRE-CLE-000003' };
+  const pont = faussePont({ cables: { '10.0.2.5': dpsBase() }, autres });
+  const client = creerClientPont(pont);
+  const r = await localiserCable({ cfg: cfg(), departs: [], interfaces: ['10.0.2.1'], creerTransport: client.creerTransport, sonder: client.sonder });
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.equal(r.ip, '10.0.2.5');
+  assert.equal(pont.occupes, 0, 'aucune lecture refusée pour « occupe »');
+  assert.equal(pont.courant, null);
 });
 
 test('fermer() pendant l\'ouverture (échéance globale) : la connexion arrivée trop tard est refermée', async () => {

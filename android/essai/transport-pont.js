@@ -77,20 +77,44 @@ export function creerClientPont(pont, { margeMs = MARGE_REPONSE_MS } = {}) {
     return r.ouvert === true;
   };
 
+  // Le pont n'accepte qu'une connexion de données à la fois. La recherche sur le Wi-Fi lit en parallèle chaque adresse
+  // dont le port 6668 répond : chez un particulier, d'autres appareils Tuya répondent aussi, et une lecture perdante
+  // recevait « occupe » (le câble pouvait ainsi être manqué). Les transports attendent donc leur tour, de l'ouverture à
+  // la fermeture ; le verrou est rendu dans tous les cas (échec d'ouverture, fermer(), échéance globale du module).
+  let file = Promise.resolve();
+  const prendreTour = () => {
+    let rendre;
+    const tour = new Promise((r) => { rendre = r; });
+    const avant = file;
+    file = avant.then(() => tour);
+    return avant.then(() => rendre);
+  };
+
   // Transport pour lireEtat / programmer / localiserCable({ creerTransport }). Une instance = une connexion.
   client.creerTransport = () => {
     let cx = null;
     let ferme = false;
+    let enOuverture = false;
+    let rendre = null;
+    const relacher = () => { if (rendre) { rendre(); rendre = null; } };
     return {
       async ouvrir(ip, port, delaiMs) {
-        if (cx !== null || ferme) throw erreurTransport('hors_ligne'); // une seule connexion par transport
-        const r = await client.appeler('ouvrir', { ip, port, delai: delaiMs }, delaiMs);
-        if (!r.ok || !Number.isInteger(r.cx)) { client.dernierMotif = r.erreur ?? 'inconnu'; throw erreurTransport('hors_ligne'); }
-        if (ferme) { // fermer() est passé pendant l'ouverture (échéance globale) : on referme aussitôt la connexion arrivée trop tard
-          await client.appeler('fermer', { cx: r.cx }, 2000);
-          throw erreurTransport('ferme');
+        if (cx !== null || ferme || enOuverture) throw erreurTransport('hors_ligne'); // une seule connexion par transport
+        enOuverture = true;
+        try {
+          rendre = await prendreTour();
+          if (ferme) { relacher(); throw erreurTransport('ferme'); } // abandonné pendant l'attente du tour
+          const r = await client.appeler('ouvrir', { ip, port, delai: delaiMs }, delaiMs);
+          if (!r.ok || !Number.isInteger(r.cx)) { client.dernierMotif = r.erreur ?? 'inconnu'; relacher(); throw erreurTransport('hors_ligne'); }
+          if (ferme) { // fermer() est passé pendant l'ouverture (échéance globale) : on referme aussitôt la connexion arrivée trop tard
+            await client.appeler('fermer', { cx: r.cx }, 2000);
+            relacher();
+            throw erreurTransport('ferme');
+          }
+          cx = r.cx;
+        } finally {
+          enOuverture = false;
         }
-        cx = r.cx;
       },
       async envoyer(octets) {
         if (cx === null) throw erreurTransport('ferme');
@@ -111,10 +135,13 @@ export function creerClientPont(pont, { margeMs = MARGE_REPONSE_MS } = {}) {
       },
       async fermer() {
         ferme = true;
-        if (cx === null) return;
-        const id = cx;
-        cx = null;
-        await client.appeler('fermer', { cx: id }, 2000);
+        if (enOuverture) return; // ouvrir() referme la connexion arrivée trop tard et rend le tour lui-même
+        if (cx !== null) {
+          const id = cx;
+          cx = null;
+          await client.appeler('fermer', { cx: id }, 2000);
+        }
+        relacher();
       },
     };
   };
