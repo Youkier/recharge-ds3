@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Écran natif de saisie : vues de la plateforme seulement (pas d'AppCompat ni de Material). -->
+<!-- Écran natif « Relier l'application au câble » : vues de la plateforme seulement (pas d'AppCompat ni de Material). -->
 <ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
@@ -15,9 +15,10 @@
             android:id="@+id/titre_cle"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:accessibilityHeading="true"
             android:text="@string/titre_cle"
             android:textColor="?android:attr/textColorPrimary"
-            android:textSize="22sp"
+            android:textSize="24sp"
             android:textStyle="bold" />
 
         <TextView
@@ -26,45 +27,116 @@
             android:layout_marginTop="8dp"
             android:text="@string/explication_cle"
             android:textColor="?android:attr/textColorPrimary"
-            android:textSize="14sp" />
-
-        <TextView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="16dp"
-            android:labelFor="@+id/champ_id"
-            android:text="@string/libelle_id"
-            android:textColor="?android:attr/textColorPrimary" />
-
-        <EditText
-            android:id="@+id/champ_id"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:background="@drawable/champ"
-            android:importantForAutofill="no"
-            android:inputType="textNoSuggestions|textVisiblePassword"
-            android:maxLength="64"
-            android:minHeight="48dp"
-            android:textColor="?android:attr/textColorPrimary" />
+            android:textSize="16sp" />
 
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="12dp"
-            android:labelFor="@+id/champ_cle"
-            android:text="@string/libelle_cle"
-            android:textColor="?android:attr/textColorPrimary" />
+            android:lineSpacingExtra="4dp"
+            android:text="@string/etapes_cle"
+            android:textColor="?android:attr/textColorSecondary"
+            android:textSize="16sp" />
 
-        <EditText
-            android:id="@+id/champ_cle"
+        <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:background="@drawable/champ"
-            android:importantForAutofill="no"
-            android:inputType="textNoSuggestions|textVisiblePassword"
-            android:maxLength="16"
-            android:minHeight="48dp"
-            android:textColor="?android:attr/textColorPrimary" />
+            android:layout_marginTop="20dp"
+            android:labelFor="@+id/champ_id"
+            android:text="@string/libelle_id"
+            android:textColor="?android:attr/textColorPrimary"
+            android:textSize="16sp" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:orientation="horizontal">
+
+            <EditText
+                android:id="@+id/champ_id"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:background="@drawable/champ"
+                android:importantForAutofill="no"
+                android:inputType="textNoSuggestions|textVisiblePassword"
+                android:maxLength="64"
+                android:minHeight="48dp"
+                android:textColor="?android:attr/textColorPrimary"
+                android:textSize="16sp" />
+
+            <Button
+                android:id="@+id/coller_id"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="8dp"
+                android:contentDescription="@string/coller_id_desc"
+                android:minHeight="48dp"
+                android:text="@string/coller" />
+        </LinearLayout>
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:labelFor="@+id/champ_cle"
+            android:text="@string/libelle_cle"
+            android:textColor="?android:attr/textColorPrimary"
+            android:textSize="16sp" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:orientation="horizontal">
+
+            <EditText
+                android:id="@+id/champ_cle"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:background="@drawable/champ"
+                android:importantForAutofill="no"
+                android:inputType="textNoSuggestions|textPassword"
+                android:maxLength="16"
+                android:minHeight="48dp"
+                android:textColor="?android:attr/textColorPrimary"
+                android:textSize="16sp" />
+
+            <Button
+                android:id="@+id/coller_cle"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="8dp"
+                android:contentDescription="@string/coller_cle_desc"
+                android:minHeight="48dp"
+                android:text="@string/coller" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <TextView
+                android:id="@+id/compteur_cle"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:accessibilityLiveRegion="polite"
+                android:textColor="?android:attr/textColorSecondary"
+                android:textSize="14sp" />
+
+            <Button
+                android:id="@+id/afficher_cle"
+                style="?android:attr/borderlessButtonStyle"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:minHeight="48dp"
+                android:text="@string/afficher" />
+        </LinearLayout>
 
         <TextView
             android:id="@+id/texte_erreur"
@@ -72,7 +144,8 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="8dp"
             android:accessibilityLiveRegion="polite"
-            android:textColor="@color/erreur" />
+            android:textColor="@color/erreur"
+            android:textSize="16sp" />
 
         <Button
             android:id="@+id/bouton_enregistrer"
@@ -80,9 +153,11 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="16dp"
             android:background="@drawable/bouton"
-            android:minHeight="48dp"
+            android:enabled="false"
+            android:minHeight="56dp"
             android:text="@string/enregistrer"
-            android:textColor="#ffffff" />
+            android:textColor="#ffffff"
+            android:textSize="17sp" />
 
         <Button
             android:id="@+id/bouton_retour"
@@ -91,6 +166,17 @@
             android:layout_marginTop="8dp"
             android:minHeight="48dp"
             android:text="@string/retour"
+            android:visibility="gone" />
+
+        <Button
+            android:id="@+id/bouton_oublier"
+            style="?android:attr/borderlessButtonStyle"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="24dp"
+            android:minHeight="48dp"
+            android:text="@string/oublier"
+            android:textColor="@color/erreur"
             android:visibility="gone" />
     </LinearLayout>
 </ScrollView>

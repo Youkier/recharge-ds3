@@ -1,8 +1,13 @@
 package fr.rechargeds3.coque
 
 import android.app.Activity
+import android.app.AlertDialog
+import android.content.ClipboardManager
 import android.content.pm.ApplicationInfo
 import android.os.Bundle
+import android.text.Editable
+import android.text.InputType
+import android.text.TextWatcher
 import android.util.Log
 import android.view.LayoutInflater
 import android.view.View
@@ -38,6 +43,7 @@ class MainActivity : Activity() {
 
     private lateinit var racine: FrameLayout
     private lateinit var wifi: ReseauWifi
+    private lateinit var coffre: CoffreCable
     private lateinit var pont: PontLocal
     private var formulaire: View? = null
     private var webView: WebView? = null
@@ -46,7 +52,8 @@ class MainActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         wifi = ReseauWifi(this)
-        pont = PontLocal(wifi, estDebug, surSaisirCle = { afficherFormulaire() }, prendreActionAuto = { actionAuto() })
+        coffre = CoffreCable(this)
+        pont = PontLocal(wifi, coffre, estDebug, surSaisirCle = { afficherFormulaire() }, prendreActionAuto = { actionAuto() })
 
         racine = FrameLayout(this)
         // Ciblage SDK 36 : l'affichage va sous les barres système ; on réserve leur place (et celle du clavier).
@@ -57,7 +64,8 @@ class MainActivity : Activity() {
         }
         setContentView(racine)
 
-        if (CableConfig.configure()) afficherPage() else afficherFormulaire()
+        // configure() lit seulement le fichier privé (aucun appel au magasin de clés sur le fil principal).
+        if (coffre.configure()) afficherPage() else afficherFormulaire()
     }
 
     override fun onStart() {
@@ -90,35 +98,100 @@ class MainActivity : Activity() {
         racine.addView(vue)
         // Écran de la clé : exclu des captures et de la recopie d'écran en version publiée ; retiré en mise au point pour les captures.
         if (!estDebug) window.setFlags(WindowManager.LayoutParams.FLAG_SECURE, WindowManager.LayoutParams.FLAG_SECURE)
-        vue.findViewById<Button>(R.id.bouton_retour).visibility = if (CableConfig.configure()) View.VISIBLE else View.GONE
+        val configure = coffre.configure()
+        vue.findViewById<Button>(R.id.bouton_retour).visibility = if (configure) View.VISIBLE else View.GONE
+        vue.findViewById<Button>(R.id.bouton_oublier).visibility = if (configure) View.VISIBLE else View.GONE
     }
 
     private fun brancherFormulaire(vue: View) {
         val champId = vue.findViewById<EditText>(R.id.champ_id)
         val champCle = vue.findViewById<EditText>(R.id.champ_cle)
+        val compteur = vue.findViewById<TextView>(R.id.compteur_cle)
+        val afficher = vue.findViewById<Button>(R.id.afficher_cle)
         val erreur = vue.findViewById<TextView>(R.id.texte_erreur)
-        vue.findViewById<Button>(R.id.bouton_enregistrer).setOnClickListener {
+        val enregistrer = vue.findViewById<Button>(R.id.bouton_enregistrer)
+
+        fun majEtat() {
+            val n = champCle.text.length
+            compteur.text = if (n == 16) getString(R.string.compteur_cle_ok) else getString(R.string.compteur_cle, n)
+            val pret = champId.text.isNotBlank() && n == 16
+            enregistrer.isEnabled = pret
+            enregistrer.alpha = if (pret) 1f else 0.5f
+        }
+        val surveillant = object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+            override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+            override fun afterTextChanged(s: Editable?) { erreur.text = ""; majEtat() }
+        }
+        champId.addTextChangedListener(surveillant)
+        champCle.addTextChangedListener(surveillant)
+        majEtat()
+
+        // « Coller » : texte du presse-papiers débarrassé des espaces et sauts de ligne (erreur classique du copier-coller).
+        fun coller(champ: EditText, max: Int) {
+            val texte = getSystemService(ClipboardManager::class.java).primaryClip
+                ?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.coerceToText(this)?.toString()
+                ?.filterNot { it.isWhitespace() }?.take(max)
+            if (texte.isNullOrEmpty()) erreur.setText(R.string.presse_papiers_vide)
+            else { champ.setText(texte); champ.setSelection(texte.length) }
+        }
+        vue.findViewById<Button>(R.id.coller_id).setOnClickListener { coller(champId, 64) }
+        vue.findViewById<Button>(R.id.coller_cle).setOnClickListener { coller(champCle, 16) }
+
+        var cleVisible = false
+        afficher.setOnClickListener {
+            cleVisible = !cleVisible
+            champCle.inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS or
+                (if (cleVisible) InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD else InputType.TYPE_TEXT_VARIATION_PASSWORD)
+            champCle.setSelection(champCle.text.length)
+            afficher.setText(if (cleVisible) R.string.masquer else R.string.afficher)
+        }
+
+        fun viderChamps() {
+            champId.setText("")
+            champCle.setText("") // la clé ne reste pas dans les champs de l'écran
+            erreur.text = ""
+        }
+
+        enregistrer.setOnClickListener {
             val id = champId.text.toString().trim()
             val cle = champCle.text.toString()
             when {
                 !Saisie.identifiantValide(id) -> erreur.setText(R.string.erreur_identifiant)
                 !Saisie.cleValide(cle) -> erreur.setText(R.string.erreur_cle)
                 else -> {
-                    CableConfig.definir(id, cle)
-                    champId.setText("")
-                    champCle.setText("") // la clé ne reste pas dans les champs de l'écran
-                    erreur.text = ""
+                    enregistrer.isEnabled = false
+                    enregistrer.setText(R.string.enregistrement)
                     masquerClavier(vue)
-                    afficherPage()
+                    // Magasin de clés hors du fil principal.
+                    Thread {
+                        val reussi = try { coffre.enregistrer(id, cle); true } catch (e: Exception) { false }
+                        runOnUiThread {
+                            enregistrer.setText(R.string.enregistrer)
+                            if (reussi) { viderChamps(); majEtat(); afficherPage(nouvelleConfiguration = true) }
+                            else { erreur.setText(R.string.erreur_enregistrement); majEtat() }
+                        }
+                    }.start()
                 }
             }
         }
         vue.findViewById<Button>(R.id.bouton_retour).setOnClickListener {
-            champId.setText("")
-            champCle.setText("")
-            erreur.text = ""
+            viderChamps()
             masquerClavier(vue)
-            if (CableConfig.configure()) afficherPage()
+            if (coffre.configure()) afficherPage()
+        }
+        vue.findViewById<Button>(R.id.bouton_oublier).setOnClickListener {
+            AlertDialog.Builder(this)
+                .setTitle(R.string.oublier_titre)
+                .setMessage(R.string.oublier_texte)
+                .setNegativeButton(R.string.annuler, null)
+                .setPositiveButton(R.string.oublier_confirmer) { _, _ ->
+                    Thread {
+                        coffre.oublier()
+                        runOnUiThread { viderChamps(); afficherFormulaire() }
+                    }.start()
+                }
+                .show()
         }
     }
 
@@ -128,7 +201,8 @@ class MainActivity : Activity() {
 
     // --- Page d'essai ---
 
-    private fun afficherPage() {
+    // nouvelleConfiguration : la page est rechargée pour relire le câble avec les codes qu'on vient d'enregistrer.
+    private fun afficherPage(nouvelleConfiguration: Boolean = false) {
         window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
         val w = webView ?: creerWebView().also { webView = it }
         racine.removeAllViews()
@@ -136,6 +210,8 @@ class MainActivity : Activity() {
         if (!pageChargee) {
             pageChargee = true
             w.loadUrl(URL_ESSAI)
+        } else if (nouvelleConfiguration) {
+            w.reload()
         }
     }
 
@@ -192,7 +268,7 @@ class MainActivity : Activity() {
     }
 
     // Action demandée par adb (version de mise au point seulement), rendue une seule fois à la page :
-    //   am start -n ... --es action lire|chercher|programmer|filtre [--es ip 10.0.2.2] [--es heure 05:00]
+    //   am start -n ... --es action lire|chercher|programmer|filtre|cle [--es ip 10.0.2.2] [--es heure 05:00]
     private fun actionAuto(): JSONObject? {
         if (!estDebug || actionAutoPrise) return null
         val action = intent?.getStringExtra("action") ?: return null
@@ -207,7 +283,7 @@ class MainActivity : Activity() {
     companion object {
         const val TAG_LOG = "RechargeEssai"
         const val URL_ESSAI = "${FiltreReseau.ORIGINE}/assets/android/essai/index.html"
-        private val ACTIONS_AUTO = setOf("lire", "chercher", "programmer", "filtre")
+        private val ACTIONS_AUTO = setOf("lire", "chercher", "programmer", "filtre", "cle")
 
         @Volatile
         private var actionAutoPrise = false

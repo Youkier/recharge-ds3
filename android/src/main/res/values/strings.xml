@@ -1,12 +1,28 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="nom_appli">Recharge DS 3</string>
-    <string name="titre_cle">Câble de recharge</string>
-    <string name="explication_cle">Ce sont les deux valeurs notées lors de la mise en place du pilotage local. Elles ne sont pas enregistrées : il faudra les ressaisir à chaque ouverture de l\'application.</string>
+    <string name="titre_cle">Relier l\'application au câble</string>
+    <string name="explication_cle">À faire une seule fois. L\'application a besoin de deux codes pour parler au câble. Ils restent sur ce téléphone, chiffrés.</string>
+    <string name="etapes_cle">1. Copiez chaque code (message reçu ou gestionnaire de mots de passe).\n2. Touchez « Coller » à côté de la case.\n3. Touchez « Enregistrer ».</string>
     <string name="libelle_id">Identifiant du câble</string>
     <string name="libelle_cle">Clé du câble (16 caractères)</string>
+    <string name="coller">Coller</string>
+    <string name="coller_id_desc">Coller l\'identifiant</string>
+    <string name="coller_cle_desc">Coller la clé</string>
+    <string name="afficher">Afficher</string>
+    <string name="masquer">Masquer</string>
+    <string name="compteur_cle">%1$d / 16 caractères</string>
+    <string name="compteur_cle_ok">16 / 16 caractères ✓</string>
+    <string name="presse_papiers_vide">Rien à coller : copiez d\'abord le code.</string>
     <string name="enregistrer">Enregistrer</string>
+    <string name="enregistrement">Enregistrement…</string>
     <string name="retour">Retour</string>
-    <string name="erreur_identifiant">Identifiant invalide : lettres, chiffres, tiret et tiret bas seulement (64 caractères au plus).</string>
-    <string name="erreur_cle">Clé invalide : elle doit compter exactement 16 caractères, sans espace.</string>
+    <string name="oublier">Oublier le câble</string>
+    <string name="oublier_titre">Oublier le câble ?</string>
+    <string name="oublier_texte">Il faudra ressaisir les deux codes pour l\'utiliser à nouveau.</string>
+    <string name="oublier_confirmer">Oublier</string>
+    <string name="annuler">Annuler</string>
+    <string name="erreur_identifiant">Identifiant invalide : lettres, chiffres, tiret et tiret bas seulement.</string>
+    <string name="erreur_cle">Il manque des caractères : la clé en compte 16.</string>
+    <string name="erreur_enregistrement">L\'enregistrement a échoué. Réessayez ; si cela persiste, redémarrez le téléphone.</string>
 </resources>

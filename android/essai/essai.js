@@ -172,6 +172,10 @@ async function lancer(action, params = {}) {
     else return;
     etat(res.texte, res.r.ok ? 'ok' : 'ko');
     principal(res.r.erreur === 'cle' || res.r.erreur === 'pas_de_cle' ? 'cle' : 'lire');
+    // Adresse retenue par le téléphone seulement après une lecture ou une écriture réussie avec la bonne clé.
+    if (res.r.ok && res.ip && (action === 'lire' || action === 'chercher' || action === 'programmer')) {
+      await client.appeler('retenirAdresse', { ip: res.ip });
+    }
     journaliser(action, res.r, res.ip);
   } catch (e) {
     const r = { ok: false, erreur: 'format' };
@@ -200,12 +204,14 @@ async function demarrer() {
   $('programmer').addEventListener('click', () => lancer('programmer'));
   $('filtre').addEventListener('click', () => lancer('filtre'));
 
-  // Clé pas encore saisie : on l'indique d'emblée et le bouton de saisie devient principal.
+  // Clé pas encore saisie : on l'indique d'emblée et le bouton de saisie devient principal. Adresse retenue : proposée.
   const c = await client.cable();
   if (c.ok && !c.configure) { etat(msg('pas_de_cle')); principal('cle'); }
+  if (c.ok && typeof c.adresse === 'string' && adressePrivee(c.adresse)) $('ip').value = c.adresse;
 
   // Action lancée par adb dans la version de mise au point seulement (le pont ne la transmet jamais en lecture seule).
   const auto = variante === 'debug' ? d.auto : null;
+  if (auto && auto.action === 'cle') { client.saisirCle(); return; }
   if (auto && typeof auto.action === 'string') {
     if (typeof auto.ip === 'string') { $('ip').value = auto.ip; $('ip').closest('details').open = true; }
     if (typeof auto.heure === 'string') $('heure').value = auto.heure;

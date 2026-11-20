@@ -39,6 +39,7 @@ import java.util.concurrent.TimeUnit
  */
 class PontLocal(
     private val wifi: ReseauWifi,
+    private val coffre: CoffreCable,
     private val estDebug: Boolean,
     private val surSaisirCle: () -> Unit,
     private val prendreActionAuto: () -> JSONObject?,
@@ -75,6 +76,7 @@ class PontLocal(
                 "variante" -> rep(JSONObject().put("ok", true).put("variante", variante()))
                 "prefixeWifi" -> prefixeWifi(rep)
                 "cable" -> cable(rep)
+                "retenirAdresse" -> retenirAdresse(q, rep)
                 "saisirCle" -> { surSaisirCle(); rep(ok()) }
                 "sonder" -> sonder(q, rep)
                 "ouvrir" -> ouvrir(q, rep)
@@ -106,11 +108,27 @@ class PontLocal(
         repondre(if (p == null) erreur("pas_wifi") else ok().put("prefixe", p))
     }
 
-    // La clé n'est rendue qu'à la page d'essai, au moment d'une action ; elle n'est ni journalisée ni conservée ici.
+    // La clé n'est rendue qu'à la page, au moment d'une action ; elle n'est ni journalisée ni conservée ici. Déchiffrement
+    // hors du fil principal (magasin de clés). « illisible » : un bloc existe mais ne se déchiffre pas (rien n'est effacé).
     private fun cable(repondre: (JSONObject) -> Unit) {
-        val id = CableConfig.identifiant()
-        val cle = CableConfig.cle()
-        repondre(if (id == null || cle == null) ok().put("configure", false) else ok().put("configure", true).put("deviceId", id).put("cle", cle))
+        controle.execute {
+            val v = coffre.lire()
+            val r = if (v == null) ok().put("configure", false).put("illisible", coffre.configure())
+            else ok().put("configure", true).put("deviceId", v.first).put("cle", v.second)
+            coffre.adresse()?.let { r.put("adresse", it) }
+            repondre(r)
+        }
+    }
+
+    // Adresse du câble retenue, seulement une IPv4 privée et seulement si un câble est enregistré. La page n'appelle cette
+    // opération qu'après une lecture réussie avec la bonne clé. Aucune opération d'effacement n'est ouverte à la page.
+    private fun retenirAdresse(q: JSONObject, repondre: (JSONObject) -> Unit) {
+        val ip = q.optString("ip", "")
+        if (FiltreReseau.adressePrivee(ip) == null) return repondre(erreur("refuse"))
+        controle.execute {
+            if (!coffre.configure()) repondre(erreur("pas_de_cle"))
+            else { coffre.retenirAdresse(ip); repondre(ok()) }
+        }
     }
 
     // --- Sonde : connexion puis fermeture, sans envoyer d'octet ---

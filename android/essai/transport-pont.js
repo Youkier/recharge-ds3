@@ -9,7 +9,9 @@
 //   demarrage                       -> { variante, auto }   ferme toute connexion restée ouverte (nouvelle page)
 //   variante                        -> { variante: "debug" | "release" }
 //   prefixeWifi                     -> { prefixe: "10.0.2" } | erreur pas_wifi
-//   cable                           -> { configure, deviceId?, cle? }   lu au moment de l'appel, jamais gardé ici
+//   cable                           -> { configure, deviceId?, cle?, adresse?, illisible? }   déchiffré au moment de
+//                                      l'appel (magasin de clés, hors du fil principal), jamais gardé ici
+//   retenirAdresse { ip }           -> {}   | erreur refuse, pas_de_cle ; seulement après une lecture réussie
 //   saisirCle                       -> {}   ouvre l'écran natif de saisie
 //   sonder { ip, delai }            -> { ouvert }   connexion puis fermeture, sans données
 //   ouvrir { ip, port, delai }      -> { cx }       une seule connexion de données à la fois

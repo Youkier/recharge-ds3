@@ -8,8 +8,8 @@
 # par 10.0.2.2:6668. Rien ne touche le vrai câble. Échec du script si une ligne ESSAI ne correspond pas à l'attendu.
 #
 # Versions debug seulement : l'action est demandée par `am start --es action ...` (le pont ne la transmet jamais en release).
-# La clé factice et l'identifiant factice sont saisis dans l'écran natif par uiautomator + input, à chaque démarrage
-# (la clé n'est gardée qu'en mémoire).
+# La clé factice et l'identifiant factice sont saisis dans l'écran natif par uiautomator + input. Depuis la v0.3 ils sont
+# mémorisés chiffrés : on ne les ressaisit que pour changer de clé (données de l'appli effacées d'abord, pm clear).
 set -euo pipefail
 
 APK="${1:?usage : scenarios.sh APK SORTIE}"
@@ -102,17 +102,26 @@ mode_theme() { # clair | sombre
   echo "thème : $(adb shell cmd uimode night | tr -d '\r')"
 }
 
-# Démarre l'application à neuf : demarrer <action|-> [ip] [heure] [clé]
+# Clé actuellement enregistrée dans l'appli (vide : rien d'enregistré).
+CLE_ENREGISTREE=""
+oublier_donnees() { adb shell pm clear "$PKG" > /dev/null; CLE_ENREGISTREE=""; }
+
+# Démarre l'application à neuf : demarrer <action|-> [ip] [heure] [clé]. La clé n'est saisie que si elle change.
 demarrer() {
   local action="$1" ip="${2:-}" heure="${3:-}" cle="${4:-$CLE_OK}" extras=()
   adb logcat -c
   adb shell am force-stop "$PKG"
+  [ "$cle" != "$CLE_ENREGISTREE" ] && oublier_donnees
   [ "$action" != "-" ] && extras+=(--es action "$action")
   [ -n "$ip" ] && extras+=(--es ip "$ip")
   [ -n "$heure" ] && extras+=(--es heure "$heure")
   adb shell am start -W -n "$ACT" "${extras[@]}" > /dev/null
-  saisir_cle "$cle"
+  if [ -z "$CLE_ENREGISTREE" ]; then saisir_cle "$cle"; CLE_ENREGISTREE="$cle"; fi
 }
+
+# Vrai si l'écran natif de saisie est affiché (sans attendre).
+formulaire_affiche() { ui_dump | grep -q ":id/champ_cle\""; }
+fichier_cable() { adb shell run-as "$PKG" cat shared_prefs/cable.xml 2> /dev/null | tr -d '\r' || true; }
 
 # Attend la ligne ESSAI de l'action (jusqu'à $2 secondes) et l'affiche (JSON seul).
 attendre_essai() {
@@ -186,16 +195,53 @@ demarrer lire 10.0.2.2
 L="$(attendre_essai lire 60)"
 verifier "S6 relecture" "$L" "l.ok === true && l.debut === \"${DEBUT_PROGRAMME}\" && l.fin === \"06:00\""
 
+# --- Mémorisation chiffrée (v0.3) ---
+etape "S10a Relance : ni clé à ressaisir, ni adresse (adresse retenue après S6)"
+demarrer lire
+sleep 2
+formulaire_affiche && echec "S10a : l'écran de saisie revient après une simple relance"
+L="$(attendre_essai lire 60)"
+verifier "S10a lecture à l'adresse retenue" "$L" 'l.ok === true && l.ip === "10.0.2.2"'
+
+etape "S10b Fichier privé : bloc chiffré, ni clé ni identifiant en clair"
+F="$(fichier_cable)"
+printf '%s' "$F" | grep -q 'name="bloc">v1:' || echec "S10b : bloc chiffré absent du fichier privé"
+printf '%s' "$F" | grep -q 'name="adresse">10.0.2.2<' || echec "S10b : adresse retenue absente"
+if printf '%s' "$F" | grep -F -e "$CLE_OK" -e "$IDENTIFIANT" > /dev/null; then echec "S10b : clé ou identifiant en clair dans le fichier privé"; fi
+echo "OK  S10b fichier privé chiffré"
+
+etape "S10c Réinstallation par-dessus (install -r) : configuration conservée"
+adb install -r "$APK" > /dev/null
+demarrer lire
+sleep 2
+formulaire_affiche && echec "S10c : l'écran de saisie revient après une mise à jour"
+L="$(attendre_essai lire 60)"
+verifier "S10c lecture après mise à jour" "$L" 'l.ok === true && l.ip === "10.0.2.2"'
+
+etape "S10d Oublier le câble : confirmation, puis écran de saisie et fichier vidé"
+adb logcat -c
+adb shell am force-stop "$PKG"
+adb shell am start -W -n "$ACT" --es action cle > /dev/null
+toucher bouton_oublier
+toucher button1
+sleep 2
+formulaire_affiche || echec "S10d : l'écran de saisie n'est pas affiché après « Oublier »"
+printf '%s' "$(fichier_cable)" | grep -q 'name="bloc"' && echec "S10d : le bloc est encore présent après « Oublier »"
+CLE_ENREGISTREE=""
+echo "OK  S10d oublier"
+
 # --- Captures, en clair puis en sombre : écran natif, accueil de la page, résultat ---
 for THEME in clair sombre; do
   etape "S7 Captures en thème $THEME"
   mode_theme "$THEME"
   adb logcat -c
   adb shell am force-stop "$PKG"
+  oublier_donnees
   adb shell am start -W -n "$ACT" > /dev/null
   centre champ_cle > /dev/null
   capturer "${THEME}-1-ecran-natif"
   saisir_cle "$CLE_OK"
+  CLE_ENREGISTREE="$CLE_OK"
   sleep 3
   capturer "${THEME}-2-accueil"
   demarrer lire 10.0.2.2
