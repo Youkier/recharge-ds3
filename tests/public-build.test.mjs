@@ -157,8 +157,11 @@ test("aucune ressource externe, ni workers.dev, ni jeton, ni MyDS, ni matériel 
   const fichiers = [...pagesHtml(), "app/app-public.js", "app/style.css", "robots.txt", "sitemap.xml"];
   for (const f of pagesHtml()) {
     const h = lire(dirA, f);
-    for (const m of h.matchAll(/(?:src|href)="(https?:[^"]+)"/g)) {
-      assert.ok(m[1].startsWith("https://exemple.invalid/") && /rel="canonical"/.test(h.slice(m.index - 30, m.index)), `${f} : ressource externe ${m[1]}`);
+    // Seuls les liens qu'on suit (<a href="https://…" rel="… noopener">, vers une source lue ou un partenaire déclaré)
+    // sortent du site ; aucune ressource chargée (script, style, image, lien de tête) ne vient d'ailleurs.
+    const sansLiensSortants = h.replace(/<a(?: class="[^"]*")? href="https:\/\/[^"\s<>]+" rel="(?:sponsored nofollow )?noopener">/g, "<a>");
+    for (const m of sansLiensSortants.matchAll(/(?:src|href)="(https?:[^"]+)"/g)) {
+      assert.ok(m[1].startsWith("https://exemple.invalid/") && /rel="canonical"/.test(sansLiensSortants.slice(m.index - 30, m.index)), `${f} : ressource externe ${m[1]}`);
     }
     assert.ok(!/<style|\sstyle=|<script(?![^>]*\ssrc=)|\son\w+=/i.test(h), `${f} : style ou script en ligne`);
     assert.ok(!/@import|url\(\s*["']?https?:/.test(lire(dirA, "app/style.css")));

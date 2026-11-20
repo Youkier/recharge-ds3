@@ -75,7 +75,8 @@ test("S3 : le guide « 80 % » n'écrit aucun chiffre de dégradation ni de pour
   const h = lire(dirA, "guides/pourquoi-80-pour-cent/index.html");
   const texte = h.replace(/<[^>]+>/g, " ");
   assert.ok(!/\b(?!80\b|100\b)\d+(?:[,.]\d+)?\s?%/.test(texte), "pourcentage inattendu");
-  assert.match(texte, /\[À SOURCER/);
+  // Chaque affirmation sur les recommandations de charge renvoie à une notice lue, datée.
+  assert.match(h, /<h2>Sources<\/h2>\s*<ul>\s*<li><a href="https:\/\/ownersmanual\.kia\.com\/[^"]+" rel="noopener">[^<]+<\/a> \(lue le \d{4}-\d{2}-\d{2}\)/);
 });
 
 test("S3 : mentions légales et confidentialité : éditeur, hébergeur et mesure d'audience restent à compléter", () => {
