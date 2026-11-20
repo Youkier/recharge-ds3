@@ -193,6 +193,18 @@ test("sans PUBLIC_INDEXABLE : noindex partout et robots.txt interdit tout ; avec
   assert.match(lire(d, "index.html"), /href="https:\/\/exemple\.org\/"/);
   assert.match(lire(d, "robots.txt"), /Sitemap: https:\/\/exemple\.org\/sitemap\.xml/);
   assert.throws(() => construire({ sortie: tmp(), env: { PUBLIC_ORIGINE: "ftp://x/y" } }), /PUBLIC_ORIGINE/);
+  assert.ok(!/X-Robots-Tag/.test(lire(d, "_headers")), "site indexable : pas de X-Robots-Tag");
+});
+
+test("_headers (Cloudflare Pages) : même CSP que la balise, plus frame-ancestors ; noindex hors mise en ligne indexable", () => {
+  const h = lire(dirA, "_headers");
+  const csp = /Content-Security-Policy" content="([^"]+)"/.exec(lire(dirA, "index.html"))[1];
+  const lignes = h.split("\n");
+  assert.equal(lignes[0], "/*");
+  assert.ok(lignes.slice(1).filter(Boolean).every((l) => /^  [A-Za-z-]+: \S/.test(l) && l.length <= 2000), "syntaxe : en-têtes indentés, 2 000 caractères au plus");
+  assert.ok(lignes.includes(`  Content-Security-Policy: ${csp}; frame-ancestors 'none'`));
+  assert.ok(lignes.includes("  X-Content-Type-Options: nosniff"));
+  assert.ok(lignes.includes("  X-Robots-Tag: noindex"));
 });
 
 test("prix par défaut : ceux de tarifs.json, avec leur source officielle, rappel de la facture présent", () => {

@@ -270,6 +270,23 @@ function htmlDon(o) {
     : "<p>Le site n'a pas de page de don pour l'instant.</p>";
 }
 
+// En-têtes HTTP de Cloudflare Pages (fichier _headers à la racine de la sortie, syntaxe lue le 2026-11-20 sur
+// developers.cloudflare.com/pages/configuration/headers/). La CSP reprend celle de la balise du gabarit, plus
+// frame-ancestors, que seul l'en-tête permet. Hors mise en ligne indexable, X-Robots-Tag double la balise noindex.
+function enTetes(gabaritBase, indexable) {
+  const m = /<meta http-equiv="Content-Security-Policy" content="([^"]+)">/.exec(gabaritBase);
+  if (!m) throw new Error("gabarit base : balise Content-Security-Policy introuvable");
+  return [
+    "/*",
+    `  Content-Security-Policy: ${m[1]}; frame-ancestors 'none'`,
+    "  X-Content-Type-Options: nosniff",
+    "  Referrer-Policy: strict-origin-when-cross-origin",
+    "  Permissions-Policy: camera=(), microphone=(), geolocation=()",
+    ...(indexable ? [] : ["  X-Robots-Tag: noindex"]),
+    "",
+  ].join("\n");
+}
+
 // source : dossier à la forme de public/ (les tests y mettent les données de leur choix).
 export function construire({ sortie = SORTIE_PAR_DEFAUT, env = process.env, source = join(RACINE, "public") } = {}) {
   const pub = source;
@@ -345,6 +362,7 @@ export function construire({ sortie = SORTIE_PAR_DEFAUT, env = process.env, sour
   writeFileSync(join(s, "robots.txt"), indexable
     ? `User-agent: *\nAllow: /\n\nSitemap: ${origine}/sitemap.xml\n`
     : "User-agent: *\nDisallow: /\n");
+  writeFileSync(join(s, "_headers"), enTetes(base, indexable));
   const urls = toutes.filter((p) => p.indexable).map((p) => `  <url><loc>${esc(origine + p.chemin)}</loc></url>\n`).join("");
   writeFileSync(join(s, "sitemap.xml"), `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls}</urlset>\n`);
   return { sortie: s, fichiers: listerFichiers(s), pages: toutes.map((p) => ({ chemin: p.chemin, fichier: p.fichier })), marqueurs, modelesIgnores: modeles.ignores };
