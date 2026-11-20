@@ -360,7 +360,7 @@ Construit et essayé sur GitHub Actions (décision du 2026-11-19) ; sous-étapes
 - [x] Le pont refuse tout port autre que 6668 et toute adresse non privée (JUnit, et scénario sur l'émulateur)
 - [ ] La version n+1 s'installe par-dessus la version n sans désinstaller (réinstallation de la même version vérifiée sur émulateur ; vraie mise à jour à la prochaine version, versionCode à faire varier)
 - [x] `targetSdk` vaut 36, sans `ACCESS_LOCAL_NETWORK` (remplace le critère « permission », décision du 2026-11-18)
-- [ ] Sur le Pixel 9 et le Pixel 10, installé depuis le lien : la page d'essai lit l'état du vrai câble depuis le Wi-Fi de la maison, adresse retrouvée sans saisie (Mathieu)
+- [ ] Sur le Pixel 9 et le Pixel 10, installé depuis le lien : la page d'essai lit l'état du vrai câble depuis le Wi-Fi de la maison, adresse retrouvée sans saisie (Mathieu). **Pixel 9 : réussi le 2026-11-20 avec la v0.2** (la v0.1 échouait en « occupe » : lectures parallèles face aux autres appareils Tuya, corrigé par cef0d6b et abd05ce). Reste le Pixel 10
 
 Lot C4 :
 
