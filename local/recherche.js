@@ -9,6 +9,10 @@
 //   localiserCable({ cfg, departs, interfaces, creerTransport, sonder, ... })
 //     -> { ok:true, ip, trouve, etat } | { ok:false, erreur:'hors_ligne', recherche }
 //   cfg : { deviceId, cleLocale, version?, ... } sans ip. Seuls des codes d'erreur sont rendus : la clé n'apparaît nulle part.
+//   surProgres (facultatif) : appelé pendant la fouille du réseau avec { etape: 'sondes' | 'lectures', appareils,
+//     lectures, echeance } ; appareils = ports 6668 ouverts trouvés, lectures = lectures commencées (<= appareils),
+//     echeance = instant (ms) de fin de la recherche, fixé au départ. Jamais d'adresse ni de nombre d'adresses ; plus
+//     aucun appel une fois la réponse rendue ; une exception du rappel est ignorée.
 
 import { lireEtat } from './tuya-local.js';
 
@@ -51,18 +55,25 @@ export async function localiserCable(opts) {
     cfg, departs = [], interfaces = [], creerTransport, sonder,
     parallelisme = PARALLELISME, delaiSondeMs = DELAI_SONDE_MS,
     delaiTotalMs = DELAI_TOTAL_MS, delaiLectureMs = DELAI_LECTURE_MS,
-    surRecherche = null,
+    surRecherche = null, surProgres = null,
   } = opts;
   let annule = false;
   let recherche = false;
+  const echeanceTotale = Date.now() + delaiTotalMs;
+  const progres = { etape: 'sondes', appareils: 0, lectures: 0 };
+  const signaler = () => {
+    if (annule || !surProgres) return;
+    try { surProgres({ ...progres, echeance: echeanceTotale }); } catch { /* sans effet */ }
+  };
 
   // Lectures une par une : un transport (le pont de la coque Android) peut n'accepter qu'une connexion à la fois, et
   // chez un particulier d'autres appareils Tuya ouvrent aussi le port 6668. Le délai de lecture ne court qu'une fois
   // le tour venu ; l'échéance totale (delaiTotalMs) borne l'ensemble. Les sondes restent en parallèle.
   let fileLectures = Promise.resolve();
-  const lire = (ip) => {
+  const lire = (ip, auDebut = null) => {
     const tour = fileLectures.then(async () => {
       if (annule) return { ok: false, erreur: 'hors_ligne' };
+      if (auDebut) auDebut();
       try { return await lireEtat({ ...cfg, ip, delaiGlobalMs: delaiLectureMs }, creerTransport()); } catch { return { ok: false, erreur: 'hors_ligne' }; }
     });
     fileLectures = tour.then(() => {}, () => {});
@@ -89,6 +100,7 @@ export async function localiserCable(opts) {
     for (const r of reseaux) for (const c of candidatsDuReseau(r)) if (!essayees.includes(c) && !candidats.includes(c)) candidats.push(c);
     recherche = true;
     if (surRecherche) { try { surRecherche(); } catch { /* sans effet */ } }
+    signaler();
 
     // 4 : port ouvert, puis négociation de la clé sur ces seules adresses.
     const trouves = [];
@@ -96,7 +108,9 @@ export async function localiserCable(opts) {
       let ouvert = false;
       try { ouvert = (await sonder(ip, delaiSondeMs)) === true; } catch { ouvert = false; }
       if (!ouvert || annule) return;
-      const r = await lire(ip);
+      progres.appareils++;
+      signaler();
+      const r = await lire(ip, () => { progres.etape = 'lectures'; progres.lectures++; signaler(); });
       if (r.ok) trouves.push({ ip, etat: r });
     }, () => annule || trouves.length > 1);
 

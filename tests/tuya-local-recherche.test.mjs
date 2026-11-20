@@ -237,3 +237,52 @@ describe('Adresse enregistrée et interfaces (tools/tuya-local.mjs)', () => {
     for (const ip of ['8.8.8.8', '127.0.0.1', 'cable.local', '']) assert.equal(await sonderPort(ip, 50), false, ip);
   });
 });
+
+describe('Progression de la recherche (surProgres, coque v0.3)', () => {
+  test('compteurs monotones, lectures <= appareils, échéance fixe, aucune adresse ni nombre d\'adresses', async () => {
+    // Deux appareils dont le port répond sans parler Tuya, puis le câble.
+    const r = fauxReseau({ appareils: { '192.168.1.77': {} }, portsSeuls: ['192.168.1.20', '192.168.1.30'] });
+    const vus = [];
+    const t0 = Date.now();
+    const res = await chercher(r, { interfaces: ['192.168.1.10'], surProgres: (p) => vus.push(p) });
+    assert.equal(res.ok, true);
+    assert.ok(vus.length >= 2);
+    assert.deepEqual(Object.keys(vus[0]).sort(), ['appareils', 'echeance', 'etape', 'lectures']);
+    assert.deepEqual([vus[0].etape, vus[0].appareils, vus[0].lectures], ['sondes', 0, 0]);
+    for (let i = 1; i < vus.length; i++) {
+      assert.ok(vus[i].appareils >= vus[i - 1].appareils && vus[i].lectures >= vus[i - 1].lectures, 'monotones');
+      assert.equal(vus[i].echeance, vus[0].echeance, 'échéance fixée au départ');
+    }
+    for (const p of vus) assert.ok(p.lectures <= p.appareils);
+    assert.ok(vus[0].echeance >= t0 + 29_000 && vus[0].echeance <= Date.now() + 30_000);
+    const fin = vus.at(-1);
+    assert.equal(fin.appareils, 3);
+    assert.ok(fin.lectures >= 1 && fin.etape === 'lectures');
+    assert.ok(!/192\.168|\d+\.\d+\.\d+\.\d+/.test(JSON.stringify(vus)), 'aucune adresse');
+    sansCle(vus);
+  });
+
+  test('un rappel qui lève une exception ne casse pas la recherche', async () => {
+    const r = fauxReseau({ appareils: { '192.168.1.77': {} } });
+    const res = await chercher(r, { interfaces: ['192.168.1.10'], surProgres: () => { throw new Error('affichage'); } });
+    assert.deepEqual([res.ok, res.ip], [true, '192.168.1.77']);
+  });
+
+  test('plus aucun appel une fois la réponse rendue (échéance atteinte)', async () => {
+    const r = fauxReseau({ portsSeuls: ['192.168.1.20'], sondeLente: 30 });
+    let apres = 0, rendu = false;
+    const res = await chercher(r, { interfaces: ['192.168.1.10'], delaiTotalMs: 100, surProgres: () => { if (rendu) apres++; } });
+    rendu = true;
+    assert.equal(res.ok, false);
+    await new Promise((x) => setTimeout(x, 400)); // les sondes encore en vol se terminent
+    assert.equal(apres, 0);
+  });
+
+  test('adresse connue qui répond : aucun appel (pas de fouille du réseau)', async () => {
+    const r = fauxReseau({ appareils: { '192.168.1.48': {} } });
+    let n = 0;
+    const res = await chercher(r, { departs: ['192.168.1.48'], surProgres: () => n++ });
+    assert.equal(res.ok, true);
+    assert.equal(n, 0);
+  });
+});
