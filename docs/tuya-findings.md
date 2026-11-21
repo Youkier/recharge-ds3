@@ -191,7 +191,7 @@ Source : trace réelle `node tools/tuya-local.mjs ecrire-debut 23:45 --confirmer
 - Formes confirmées : accusé d'écriture = cmd 0x0d, **corps vide, retcode 0** ; annonces d'état = cmd 0x08 `{"protocol":4,"t":…,"data":{"dps":{…}}}` (ex. `{"109":"IDLE"}`, mesures du dp 102) ; réponse de lecture = `{"dps":{…}}` sans en-tête. dp lus en local : 101, 102, 106, 107, 109, 150, 151, 152, 155, 156, 157, 188, 189.
 - **dp 109 (`x_work_st_debug`) = `SLEEP`** avant l'écriture : la lecture (0x10) ne le réveille pas. L'écriture est **accusée (retcode 0) mais pas appliquée** ; le câble annonce aussitôt `109 = IDLE` (probablement le « clac » de relais entendu par Mathieu). Trois relectures sur 4,6 s : plage inchangée.
 - Une minute plus tard, câble en `IDLE` : même module, même enchaînement (lecture puis écriture dans la même connexion), écriture **appliquée et relue conforme en 0,5 s**. La structure de session n'est donc pas en cause.
-- Conséquence dans `local/tuya-local.js` : si 109 valait `SLEEP` et que la première relecture montre la plage d'avant, **un second envoi de la même valeur** (une seule fois), puis relecture. Délai avant le retour en veille : à mesurer.
+- Conséquence dans `local/tuya-local.js` : si 109 valait `SLEEP` et que la première relecture montre la plage d'avant, **un second envoi de la même valeur** (une seule fois), puis relecture. Retour en veille mesuré : écriture à 15:29, `IDLE` lu à 15:33, `SLEEP` à 15:34 (environ 5 min). Correctif vérifié à 15:36 : en veille, premier envoi jeté, second envoi, 23:55 relu conforme.
 
 ## Recherche automatique du câble (lot C2, partie code, 2026-11-17)
 

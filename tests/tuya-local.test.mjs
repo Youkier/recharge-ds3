@@ -28,6 +28,7 @@ describe('Exports (aucune fonction d\'envoi générique)', () => {
     assert.equal((src.match(/CMD_ECRITURE\b/g) || []).length, 3); // définition, envoi, filtre de l'accusé
     // définition, validation avant tout envoi, construction dans l'unique fonction d'envoi (envoyerEcriture)
     assert.equal((src.match(/corpsEcriture\(/g) || []).length, 3);
+    assert.equal((src.match(/envoyerEcriture\(/g) || []).length, 3); // définition, premier envoi, second envoi (veille)
   });
 });
 
