@@ -353,6 +353,26 @@ ligne_vue page-programmer && echec "S16 : envoi parti après « Annuler »"
 capturer "clair-10-attente-annulee"
 echo "OK  S16 annulation"
 
+etape "S17 Câble éteint au moment de « Programmer » (débranché la journée) : attente du câble, envoi dès qu'il répond"
+kill "$FAUX_PID" 2> /dev/null || true
+wait "$FAUX_PID" 2> /dev/null || true
+sleep 1
+demarrer_page
+L="$(attendre_essai page-etat 60)"
+verifier "S17 câble éteint à l'ouverture" "$L" 'l.etat === "muet"'
+adb logcat -c
+toucher_web "Ajouter 1 %"
+toucher_web "Programmer la charge"
+L="$(attendre_essai page-attente-wifi 40)"
+verifier "S17 attente du câble" "$L" 'l.etat === "debut" || l.etat === "cable" || l.etat === "lecture"'
+sleep 12
+ligne_vue page-programmer && echec "S17 : envoi parti alors que le câble est éteint"
+capturer "clair-11-attente-cable"
+node "$RACINE/tools/faux-cable-tcp.mjs" >> "$SORTIE/faux-cable.log" 2>&1 &
+FAUX_PID=$!
+L="$(attendre_essai page-programmer 90)"
+verifier "S17 envoi dès que le câble répond" "$L" 'l.ok === true && l.fin === "06:00"'
+
 etape "S13 Vraie page, nouvelle clé (données effacées, adresse inconnue) : « Câble à localiser », « Programmer » n'envoie rien"
 demarrer_page "$CLE_KO"
 L="$(attendre_essai page-etat 60)"

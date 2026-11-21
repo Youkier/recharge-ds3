@@ -1,7 +1,7 @@
 import { plan, hm, fmt, fdur, fr, eur } from "./calc.js";
 import { lignesValides, marques, modeles, versions, trouver } from "./vehicules.js";
 import { validerAdresse, validerJeton, choisirDemande, libelleBouton, envoyer, resultatKo } from "./service.js";
-import { confirmationValable, blocageCable, plageRelue, sousLigneBouton, socValide, moyenEnvoi, boutonActif, programmerSelonMoyen, pastille, secondesRestantes, rechercheAutomatique, decisionEnvoi, attenteExpiree, suiviWifiActif, LIBELLES_ATTENTE, ATTENTE_SONDE_MS, SUIVI_PASTILLE_MS } from "./accueil.js";
+import { confirmationValable, blocageCable, plageRelue, sousLigneBouton, socValide, moyenEnvoi, boutonActif, programmerSelonMoyen, pastille, secondesRestantes, rechercheAutomatique, decisionEnvoi, attenteExpiree, suiviWifiActif, etapeAttente, lectureDue, suiteLecture, codeEcheance, LIBELLES_ATTENTE, ATTENTE_SONDE_MS, SUIVI_PASTILLE_MS } from "./accueil.js";
 
 (function () {
   var DEFAULTS = { cap: 46, soh: 95, target: 80, dep: "07:30", hcStart: "22:00", hcEnd: "06:00", amp: 16, volt: 230, eff: 90, pHC: 0.146688, pHP: 0.196476, mode: "end", soc: 38 };
@@ -567,7 +567,7 @@ import { confirmationValable, blocageCable, plageRelue, sousLigneBouton, socVali
     $("sendMain").textContent = att ? LIBELLES_ATTENTE.principal : occ ? "Envoi en cours…" : (lab ? lab.principal : "Programmer la charge");
     var cle = demande ? JSON.stringify(demande) : null;
     $("sendSub").textContent = sousLigneBouton({
-      attente: !!att, occupe: occ, delaiS: moyen === "local" ? 30 : 25, demande: demande, confirme: confirme,
+      attente: att ? att.etape : null, occupe: occ, delaiS: moyen === "local" ? 30 : 25, demande: demande, confirme: confirme,
       reussi: reussi && reussi.cle === cle ? "programmé à " + reussi.heure + " · relu sur le câble" : null,
       blocage: moyen === "local" ? blocageCable(etatCable) : null,
       secondaire: lab ? lab.secondaire : "",
@@ -623,7 +623,7 @@ import { confirmationValable, blocageCable, plageRelue, sousLigneBouton, socVali
       if (busy || localEnVol || att || !demande || !confirme) return; // l'état a changé pendant le contrôle (une seule lecture, quasi instantanée)
       // Page passée en arrière-plan pendant ce contrôle : rien ne part, ni attente ni envoi (règle 1) ; on le dit (règle 2).
       if (document.hidden) { koAttente({ d: demande, finHC: fmt(hm(cur.hcEnd)) }, "local_attente_quittee", "Programmation non envoyée"); return; }
-      if (decisionEnvoi({ etat: etatCable, surReseau: sr }) === "attendre") demarrerAttente(); else lancerEnvoi();
+      if (decisionEnvoi({ etat: etatCable, surReseau: sr }) === "attendre") demarrerAttente(sr); else lancerEnvoi();
     });
   });
 
@@ -644,14 +644,17 @@ import { confirmationValable, blocageCable, plageRelue, sousLigneBouton, socVali
     r.titre = titre;
     try { showAlert(r, a.d); } catch (e) { /* l'état du bouton est déjà rendu */ }
   }
-  function demarrerAttente() {
-    var d = demande;
-    att = { d: d, cle: JSON.stringify(d), debut: Date.now(), finHC: fmt(hm(cur.hcEnd)), verif: false, timer: null };
+  function demarrerAttente(sr) {
+    var d = demande, now = Date.now(), surReseau = sr === "oui";
+    att = { d: d, cle: JSON.stringify(d), debut: now, finHC: fmt(hm(cur.hcEnd)), verif: false, timer: null,
+      etape: surReseau ? "cable" : "wifi", cableDepuis: surReseau ? now : null, derniere: null, rechercheFaite: false };
     hideAlert();
     att.timer = setInterval(tickAttente, ATTENTE_SONDE_MS);
     $("attenteLive").textContent = LIBELLES_ATTENTE.annonce;
     journal({ action: "page-attente-wifi", etat: "debut" });
+    if (surReseau) journal({ action: "page-attente-wifi", etat: "cable" });
     updateSend();
+    tickAttente();
   }
   function quitterAttente() {
     var a = sortirAttente();
@@ -659,29 +662,72 @@ import { confirmationValable, blocageCable, plageRelue, sousLigneBouton, socVali
     journal({ action: "page-attente-wifi", etat: "quittee" });
     koAttente(a, "local_attente_quittee", "Programmation non envoyée");
   }
+  // Envoi après attente : la confirmation du % est revérifiée à cet instant (6 h, même jour).
+  function envoiApresAttente(a) {
+    sortirAttente(); journal({ action: "page-attente-wifi", etat: "envoi" });
+    if (!confirme || !confirmationValable(confirmeLe, Date.now())) {
+      hideAlert(); setConfirme(false);
+      koAttente(a, "local_attente_confirmation", "Programmation non envoyée");
+      return;
+    }
+    lancerEnvoi();
+  }
+  function changerEtape(a, etape) {
+    if (a.etape === etape) return;
+    a.etape = etape;
+    if (etape === "cable") journal({ action: "page-attente-wifi", etat: "cable" });
+    updateSend();
+  }
+  // Une seule opération à la fois (a.verif) : contrôle du Wi-Fi, lecture du câble ou recherche.
   function tickAttente() {
     var a = att;
     if (!a || a.verif) return;
     if (document.hidden) { quitterAttente(); return; } // l'événement de visibilité a pu manquer
     if (attenteExpiree(a.debut, Date.now())) {
       sortirAttente(); journal({ action: "page-attente-wifi", etat: "expiree" });
-      koAttente(a, "local_attente_expiree", "Programmation non envoyée");
+      koAttente(a, codeEcheance(a.cableDepuis), "Programmation non envoyée");
       return;
     }
     a.verif = true;
     reseauMaison().then(function (sr) {
+      if (att !== a) return null;
+      var now = Date.now();
+      if (sr !== "oui") { a.cableDepuis = null; a.verif = false; changerEtape(a, "wifi"); return null; }
+      if (!Number.isFinite(a.cableDepuis)) a.cableDepuis = now;
+      var etape = etapeAttente({ surReseau: sr, cableDepuis: a.cableDepuis, maintenant: now, rechercheFaite: a.rechercheFaite });
+      changerEtape(a, etape);
+      if (etape === "recherche") return chercherPendantAttente(a);
+      if (!lectureDue(a.derniere, now)) { a.verif = false; return null; }
+      return lireCablePendantAttente(a);
+    }).catch(function () { if (att === a) a.verif = false; });
+  }
+  function lireCablePendantAttente(a) {
+    return localPret().then(function (l) { return l.etatCable(l.deps); }).then(function (r) {
       if (att !== a) return;
-      a.verif = false;
-      if (sr !== "oui") return;
-      sortirAttente(); journal({ action: "page-attente-wifi", etat: "envoi" });
-      // La confirmation du % est revérifiée au moment de l'envoi (6 h, même jour).
-      if (!confirme || !confirmationValable(confirmeLe, Date.now())) {
-        hideAlert(); setConfirme(false);
-        koAttente(a, "local_attente_confirmation", "Programmation non envoyée");
-        return;
-      }
-      lancerEnvoi();
-    });
+      a.derniere = Date.now(); a.verif = false;
+      var suite = suiteLecture(r && r.etat);
+      journal({ action: "page-attente-wifi", etat: "lecture", cable: r && r.etat });
+      if (suite === "envoyer") { pastilleMontre("pret"); envoiApresAttente(a); }
+      else if (suite === "relier") finirParCle(a, r.etat);
+    }, function () { if (att === a) { a.derniere = Date.now(); a.verif = false; } });
+  }
+  function chercherPendantAttente(a) {
+    a.rechercheFaite = true;
+    journal({ action: "page-attente-wifi", etat: "recherche" });
+    return localPret().then(function (l) { return l.chercherCable(l.deps); }).then(function (r) {
+      if (att !== a) return;
+      a.derniere = null; a.verif = false;
+      if (r && r.ok) { pastilleMontre("pret"); envoiApresAttente(a); }
+      else if (r && r.etat === "a_relier") finirParCle(a, "a_relier");
+      else changerEtape(a, "cable"); // on continue de lire l'adresse (peut-être nouvelle) jusqu'à l'échéance
+    }, function () { if (att === a) { a.derniere = null; a.verif = false; changerEtape(a, "cable"); } });
+  }
+  // Clé refusée ou câble non relié pendant l'attente : fin d'attente, carte KO et panneau du câble ouvert.
+  function finirParCle(a, etat) {
+    sortirAttente(); journal({ action: "page-attente-wifi", etat: "cle" });
+    pastilleMontre(etat);
+    koAttente(a, "local_attente_cle", "Programmation non envoyée");
+    ouvrirPanneau(true);
   }
   $("attenteAnnuler").addEventListener("click", function () {
     var a = sortirAttente();
@@ -812,6 +858,7 @@ import { confirmationValable, blocageCable, plageRelue, sousLigneBouton, socVali
   });
   $("cableAction").addEventListener("click", function () {
     var a = this.getAttribute("data-action");
+    if (att) return; // une seule lecture ou recherche à la fois : l'attente en a la main
     if (a === "chercher") lancerRecherche(); // seulement sur ce geste
     else if (a === "relier") localPret().then(function (l) { return l.client.saisirCle(); }).catch(function () { $("cableMsg").textContent = "L'application ne répond pas : fermez-la puis rouvrez-la."; });
     else if (a === "reessayer") majEtatCable();

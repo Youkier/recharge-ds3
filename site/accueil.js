@@ -85,7 +85,7 @@ export function plageRelue(res) {
 
 // Sous-ligne du bouton Programmer, par ordre de priorité.
 export function sousLigneBouton({ occupe, delaiS, demande, confirme, reussi, blocage, secondaire, attente }) {
-  if (attente) return LIBELLES_ATTENTE.sousLigne;
+  if (attente) return sousLigneAttente(attente);
   if (occupe) return "patientez, jusqu'à " + delaiS + " secondes";
   if (!demande) return 'saisie à corriger';
   if (!confirme) return "confirmez la batterie ci-dessus";
@@ -100,32 +100,73 @@ export function secondesRestantes(echeance, maintenant) {
   return Math.max(0, Math.ceil((echeance - maintenant) / 1000));
 }
 
-// ---------- Attente du Wi-Fi de la maison (appli seulement) ----------
-// « Programmer » touché alors que le téléphone n'a pas encore rejoint le Wi-Fi de la maison : la demande est figée,
-// puis envoyée dès que le réseau est bon, pendant 5 minutes au plus, page au premier plan seulement.
-export const ATTENTE_MAX_MS = 5 * 60 * 1000;
+// ---------- Attente du Wi-Fi de la maison puis du câble (appli seulement) ----------
+// « Programmer » touché alors que le téléphone n'est pas encore sur le Wi-Fi de la maison, ou que le câble ne répond pas
+// encore : la demande est figée, puis envoyée dès que le téléphone est sur le bon réseau ET que le câble répond,
+// pendant 10 minutes au plus, page au premier plan seulement.
+export const ATTENTE_MAX_MS = 10 * 60 * 1000;
 export const ATTENTE_SONDE_MS = 2000; // contrôle du Wi-Fi pendant l'attente
+export const ATTENTE_LECTURE_MS = 5000; // lecture du câble pendant l'attente (une à la fois)
+export const ATTENTE_SILENCE_MS = 60 * 1000; // câble muet à son adresse depuis ce délai : une recherche
 export const SUIVI_PASTILLE_MS = 5000; // contrôle du Wi-Fi quand la pastille dit « Hors Wi-Fi maison »
 
 export const LIBELLES_ATTENTE = {
-  principal: 'En attente du Wi-Fi de la maison…',
-  sousLigne: 'envoi automatique dès la connexion · au plus 5 min',
+  principal: 'En attente du Wi-Fi et du câble…',
+  sousLignes: {
+    wifi: 'téléphone pas encore sur le Wi-Fi · au plus 10 min',
+    cable: 'câble pas encore joignable · au plus 10 min',
+    recherche: 'recherche du câble…',
+  },
   annuler: 'Annuler',
-  annonce: 'En attente du Wi-Fi de la maison. Envoi automatique dès la connexion, au plus 5 minutes.',
+  annonce: 'En attente du Wi-Fi et du câble. Envoi automatique dès que le câble répond, au plus 10 minutes.',
 };
+
+// Sous-ligne selon l'étape ('wifi' | 'cable' | 'recherche'). Toute autre valeur vraie : étape du Wi-Fi.
+export function sousLigneAttente(etape) {
+  return LIBELLES_ATTENTE.sousLignes[etape] || LIBELLES_ATTENTE.sousLignes.wifi;
+}
 
 export function attenteExpiree(debut, maintenant) {
   if (!Number.isFinite(debut) || !Number.isFinite(maintenant)) return true; // doute : on n'attend pas indéfiniment
   return maintenant - debut >= ATTENTE_MAX_MS || maintenant < debut;
 }
 
+// Étape de l'attente. surReseau : 'oui' | 'non' | 'pas_wifi' | 'inconnu' ; cableDepuis : instant où le téléphone est
+// arrivé sur le réseau (null s'il n'y est pas encore) ; rechercheFaite : la recherche unique a déjà eu lieu.
+//   'wifi' : le téléphone n'est pas sur le réseau de la maison ; 'cable' : on lit le câble à son adresse ;
+//   'recherche' : câble muet depuis 60 s, une seule recherche.
+export function etapeAttente({ surReseau, cableDepuis, maintenant, rechercheFaite }) {
+  if (surReseau !== 'oui') return 'wifi';
+  if (!rechercheFaite && Number.isFinite(cableDepuis) && maintenant - cableDepuis >= ATTENTE_SILENCE_MS) return 'recherche';
+  return 'cable';
+}
+
+// Lecture due : jamais plus d'une toutes les 5 s (derniere : instant de la fin de la dernière lecture, ou null).
+export function lectureDue(derniere, maintenant) {
+  return !Number.isFinite(derniere) || maintenant - derniere >= ATTENTE_LECTURE_MS || maintenant < derniere;
+}
+
+// Suite donnée à une lecture du câble pendant l'attente : 'envoyer' (prêt), 'relier' (clé ou liaison : fin d'attente,
+// panneau du câble ouvert) ou 'continuer' (muet, hors Wi-Fi, erreur : on relit).
+export function suiteLecture(etat) {
+  if (etat === 'pret') return 'envoyer';
+  if (etat === 'a_relier' || etat === 'cle') return 'relier';
+  return 'continuer';
+}
+
+// Code de la carte KO à l'échéance : le téléphone était-il sur le Wi-Fi (cableDepuis connu) ?
+export function codeEcheance(cableDepuis) {
+  return Number.isFinite(cableDepuis) ? 'local_attente_cable' : 'local_attente_expiree';
+}
+
 // Que fait le bouton « Programmer » dans l'appli ? etat : état de la pastille ; surReseau : 'oui' | 'non' | 'pas_wifi' | 'inconnu'.
 //   'panneau'  : câble à relier ou à localiser (pas d'adresse retenue : aucun réseau de référence), le bouton ouvre le panneau ;
-//   'attendre' : le téléphone n'est pas sur le réseau de l'adresse retenue ;
+//   'attendre' : le téléphone n'est pas sur le réseau de l'adresse retenue, ou il y est mais le câble connu ne répond pas (muet) ;
 //   'envoyer'  : envoi normal (ses échecs restent affichés avec l'heure manuelle).
 export function decisionEnvoi({ etat, surReseau }) {
   if (blocageCable(etat)) return 'panneau';
   if (surReseau === 'non' || surReseau === 'pas_wifi') return 'attendre';
+  if (surReseau === 'oui' && etat === 'muet') return 'attendre';
   return 'envoyer';
 }
 

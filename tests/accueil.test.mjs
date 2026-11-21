@@ -7,6 +7,7 @@ import {
   programmerSelonMoyen, pastille, secondesRestantes,
   confirmationValable, blocageCable, plageRelue, sousLigneBouton, rechercheAutomatique,
   decisionEnvoi, attenteExpiree, suiviWifiActif, LIBELLES_ATTENTE, ATTENTE_MAX_MS,
+  etapeAttente, lectureDue, suiteLecture, codeEcheance, sousLigneAttente,
 } from '../site/accueil.js';
 import { resultatKo } from '../site/service.js';
 
@@ -176,14 +177,14 @@ describe('Attente du Wi-Fi de la maison', () => {
     for (const etat of ['pret', 'hors_wifi', 'muet', 'erreur']) {
       assert.equal(decisionEnvoi({ etat, surReseau: 'non' }), 'attendre', etat);
       assert.equal(decisionEnvoi({ etat, surReseau: 'pas_wifi' }), 'attendre', etat);
-      assert.equal(decisionEnvoi({ etat, surReseau: 'oui' }), 'envoyer', etat);
+      assert.equal(decisionEnvoi({ etat, surReseau: 'oui' }), etat === 'muet' ? 'attendre' : 'envoyer', etat); // muet sur le Wi-Fi : on attend le câble
       assert.equal(decisionEnvoi({ etat, surReseau: 'inconnu' }), 'envoyer', etat); // l'échec propre reste affiché, avec l'heure manuelle
     }
   });
-  test('attente expirée à 5 min pile ; horloge incohérente : pas d attente', () => {
-    assert.equal(ATTENTE_MAX_MS, 300000);
-    assert.equal(attenteExpiree(1000, 1000 + 299999), false);
-    assert.equal(attenteExpiree(1000, 1000 + 300000), true);
+  test('attente expirée à 10 min pile ; horloge incohérente : pas d attente', () => {
+    assert.equal(ATTENTE_MAX_MS, 600000);
+    assert.equal(attenteExpiree(1000, 1000 + 599999), false);
+    assert.equal(attenteExpiree(1000, 1000 + 600000), true);
     assert.equal(attenteExpiree(1000, 500), true);
     assert.equal(attenteExpiree(NaN, 1000), true);
   });
@@ -194,11 +195,42 @@ describe('Attente du Wi-Fi de la maison', () => {
     assert.equal(suiviWifiActif({ etat: 'pret', visible: true, occupe: false }), false);
   });
   test('libellés et sous-ligne du bouton pendant attente', () => {
-    assert.equal(LIBELLES_ATTENTE.principal, 'En attente du Wi-Fi de la maison…');
-    assert.equal(sousLigneBouton({ attente: true, occupe: true, delaiS: 30, demande: { allumage: '23:00' }, confirme: true }), 'envoi automatique dès la connexion · au plus 5 min');
+    assert.equal(LIBELLES_ATTENTE.principal, 'En attente du Wi-Fi et du câble…');
+    const sl = (attente) => sousLigneBouton({ attente, occupe: true, delaiS: 30, demande: { allumage: '23:00' }, confirme: true });
+    assert.equal(sl('wifi'), 'téléphone pas encore sur le Wi-Fi · au plus 10 min');
+    assert.equal(sl('cable'), 'câble pas encore joignable · au plus 10 min');
+    assert.equal(sl('recherche'), 'recherche du câble…');
+    assert.equal(sl(true), 'téléphone pas encore sur le Wi-Fi · au plus 10 min');
+    assert.equal(sousLigneAttente('cable'), 'câble pas encore joignable · au plus 10 min');
+  });
+  test('étape de l attente : Wi-Fi, câble, une seule recherche après 60 s de silence', () => {
+    const e = (surReseau, cableDepuis, maintenant, rechercheFaite = false) => etapeAttente({ surReseau, cableDepuis, maintenant, rechercheFaite });
+    for (const sr of ['non', 'pas_wifi', 'inconnu']) assert.equal(e(sr, null, 5000), 'wifi', sr);
+    assert.equal(e('non', 0, 999999), 'wifi'); // Wi-Fi perdu : retour à l'étape du Wi-Fi
+    assert.equal(e('oui', 1000, 1000), 'cable');
+    assert.equal(e('oui', 1000, 1000 + 59999), 'cable');
+    assert.equal(e('oui', 1000, 1000 + 60000), 'recherche');
+    assert.equal(e('oui', 1000, 1000 + 120000, true), 'cable'); // déjà faite : on relit l'adresse
+    assert.equal(e('oui', null, 1000), 'cable');
+  });
+  test('lecture du câble : toutes les 5 s, une suite par état', () => {
+    assert.equal(lectureDue(null, 1000), true);
+    assert.equal(lectureDue(1000, 1000 + 4999), false);
+    assert.equal(lectureDue(1000, 1000 + 5000), true);
+    assert.equal(lectureDue(5000, 1000), true);
+    assert.equal(suiteLecture('pret'), 'envoyer');
+    for (const x of ['cle', 'a_relier']) assert.equal(suiteLecture(x), 'relier', x);
+    for (const x of ['muet', 'hors_wifi', 'erreur', 'sans_adresse', undefined]) assert.equal(suiteLecture(x), 'continuer', String(x));
+  });
+  test('carte KO d échéance : câble muet sur le Wi-Fi, ou téléphone jamais arrivé', () => {
+    assert.equal(codeEcheance(1000), 'local_attente_cable');
+    assert.equal(codeEcheance(null), 'local_attente_expiree');
+    const r = resultatKo({ allumage: '23:15' }, 'local_attente_cable', '06:00');
+    assert.equal(r.message, "Le câble n'a pas répondu sur le Wi-Fi de la maison : rien n'a été envoyé.");
+    assert.match(r.manuel, /23:15/);
   });
   test('fins d attente sans envoi : carte KO avec heure manuelle', () => {
-    for (const code of ['local_attente_expiree', 'local_attente_annulee', 'local_attente_quittee', 'local_attente_confirmation']) {
+    for (const code of ['local_attente_expiree', 'local_attente_cable', 'local_attente_cle', 'local_attente_annulee', 'local_attente_quittee', 'local_attente_confirmation']) {
       const r = resultatKo({ allumage: '23:15' }, code, '06:00');
       assert.equal(r.code, code);
       assert.match(r.message, /rien n.a été envoyé/);

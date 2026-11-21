@@ -88,6 +88,8 @@ const CAUSES = {
   local_hors_wifi: { message: 'Le téléphone n\'est pas sur le Wi-Fi de la maison : rien n\'a été envoyé.', incertain: false },
   // Attente du Wi-Fi (site/app.js) : rien n'a été envoyé.
   local_attente_expiree: { message: "Le téléphone n'a pas rejoint le Wi-Fi de la maison : rien n'a été envoyé.", incertain: false },
+  local_attente_cable: { message: "Le câble n'a pas répondu sur le Wi-Fi de la maison : rien n'a été envoyé.", incertain: false },
+  local_attente_cle: { message: "Le câble n'est pas relié à l'application ou refuse la clé : rien n'a été envoyé.", incertain: false },
   local_attente_modifiee: { message: "La saisie a changé pendant l'attente du Wi-Fi : rien n'a été envoyé. Touchez de nouveau « Programmer la charge ».", incertain: false },
   local_attente_annulee: { message: "Vous avez annulé l'attente : rien n'a été envoyé.", incertain: false },
   local_attente_quittee: { message: "L'application a été quittée pendant l'attente du Wi-Fi : rien n'a été envoyé.", incertain: false },
