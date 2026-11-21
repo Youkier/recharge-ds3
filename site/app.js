@@ -1,7 +1,7 @@
 import { plan, hm, fmt, fdur, fr, eur } from "./calc.js";
 import { lignesValides, marques, modeles, versions, trouver } from "./vehicules.js";
 import { validerAdresse, validerJeton, choisirDemande, libelleBouton, envoyer, resultatKo } from "./service.js";
-import { confirmationValable, blocageCable, plageRelue, sousLigneBouton, socValide, lireHistorique, ajouterHistorique, raccourcis, moyenEnvoi, boutonActif, programmerSelonMoyen, pastille, secondesRestantes, rechercheAutomatique } from "./accueil.js";
+import { confirmationValable, blocageCable, plageRelue, sousLigneBouton, socValide, moyenEnvoi, boutonActif, programmerSelonMoyen, pastille, secondesRestantes, rechercheAutomatique } from "./accueil.js";
 
 (function () {
   var DEFAULTS = { cap: 46, soh: 95, target: 80, dep: "07:30", hcStart: "22:00", hcEnd: "06:00", amp: 16, volt: 230, eff: 90, pHC: 0.146688, pHP: 0.196476, mode: "end", soc: 38 };
@@ -304,38 +304,17 @@ import { confirmationValable, blocageCable, plageRelue, sousLigneBouton, socVali
   }
 
   // ---------- Saisie de la batterie ----------
-  // La valeur affichée au départ est celle d'hier : tant qu'aucun geste ne l'a confirmée (saisie, − / +, raccourci,
+  // La valeur affichée au départ est celle d'hier : tant qu'aucun geste ne l'a confirmée (saisie, − / +, curseur,
   // « Garder »), le bouton « Programmer » reste inactif. Impossible de programmer sur le % d'hier sans s'en rendre compte.
-  var KEY_HIST = "recharge-ds3-soc-recents";
-  var hist = [];
+  // (Les propositions des dernières valeurs ont été retirées le 2026-11-21, à la demande de Mathieu : inutiles.)
   var confirme = false, confirmeLe = null;
-  function histLoad() { try { hist = lireHistorique(localStorage.getItem(KEY_HIST)); } catch (e) { hist = []; } }
-  function histNote(v) {
-    hist = ajouterHistorique(hist, v);
-    try { localStorage.setItem(KEY_HIST, JSON.stringify(hist)); } catch (e) {}
-    drawChips();
-  }
+  try { localStorage.removeItem("recharge-ds3-soc-recents"); } catch (e) {} // ancienne liste, plus utilisée
   function setConfirme(oui) {
     confirme = oui;
     confirmeLe = oui ? Date.now() : null;
     $("socCard").className = "card soc-card" + (oui ? "" : " unconfirmed");
     $("socHint").hidden = oui;
     updateSend();
-  }
-  function drawChips() {
-    var box = $("chips"), r = raccourcis(hist);
-    box.textContent = "";
-    box.hidden = r.length < 2;
-    // Avec les puces, la dernière valeur est une puce : « Garder » ne sert qu'en leur absence.
-    $("keepBtn").hidden = r.length >= 2;
-    $("socHintText").textContent = r.length >= 2 ? "Saisissez la valeur de MyDS, ou touchez la dernière :" : "Dernière valeur, à confirmer";
-    var now = socValide($("soc").value);
-    r.forEach(function (v) {
-      var b = el("button", "chipbtn", v + " %"); b.type = "button";
-      b.setAttribute("data-v", String(v));
-      b.setAttribute("aria-pressed", confirme && now === v ? "true" : "false");
-      box.appendChild(b);
-    });
   }
   function syncStepper() {
     var v = Number($("soc").value), empty = String($("soc").value).trim() === "";
@@ -350,26 +329,18 @@ import { confirmationValable, blocageCable, plageRelue, sousLigneBouton, socVali
     if (raw === "" || !isFinite(v)) v = cur.soc;
     v = Math.min(100, Math.max(0, Math.round(v) + d));
     $("soc").value = v;
-    setConfirme(true); render(); drawChips();
+    setConfirme(true); render();
   }
   $("socMinus").addEventListener("click", function () { bump(-1); });
   $("socPlus").addEventListener("click", function () { bump(1); });
   $("socRange").addEventListener("input", function () {
     $("soc").value = this.value;
-    setConfirme(true); render(); drawChips();
+    setConfirme(true); render();
   });
-  $("socRange").addEventListener("change", function () { histNote(this.value); });
-  $("soc").addEventListener("input", function () { setConfirme(String($("soc").value).trim() !== ""); render(); drawChips(); });
-  $("soc").addEventListener("change", function () { histNote($("soc").value); });
+  $("soc").addEventListener("input", function () { setConfirme(String($("soc").value).trim() !== ""); render(); });
   $("soc").addEventListener("keydown", function (e) { if (e.key === "Enter") this.blur(); });
   $("soc").addEventListener("focus", function () { if (!confirme) this.select(); }); // une frappe remplace la valeur d'hier
-  $("keepBtn").addEventListener("click", function () { var v = socValide($("soc").value); setConfirme(true); if (v !== null) histNote(v); drawChips(); });
-  $("chips").addEventListener("click", function (e) {
-    var b = e.target.closest ? e.target.closest("button[data-v]") : null;
-    if (!b) return;
-    $("soc").value = b.getAttribute("data-v");
-    setConfirme(true); render(); histNote(b.getAttribute("data-v"));
-  });
+  $("keepBtn").addEventListener("click", function () { setConfirme(true); });
 
   // Changer le courant ou la tension recalcule le rendement ; une saisie manuelle reste jusqu'au prochain changement.
   ["amp", "volt"].forEach(function (k) {
@@ -635,7 +606,6 @@ import { confirmationValable, blocageCable, plageRelue, sousLigneBouton, socVali
     if (!confirmationValable(confirmeLe, Date.now())) { verifierConfirmation(); return; }
     if (moyen === "local" && blocageCable(etatCable)) { ouvrirPanneau(true); return; } // câble pas prêt à recevoir : on l'explique, rien n'est envoyé
     var d = demande, m = moyen, finHC = fmt(hm(cur.hcEnd));
-    var v = socValide($("soc").value); if (v !== null) histNote(v);
     busy = true;
     try { hideAlert(); updateSend(); } catch (e) { /* l'envoi et son alerte restent garantis ci-dessous */ }
     var envoi = {
@@ -769,7 +739,7 @@ import { confirmationValable, blocageCable, plageRelue, sousLigneBouton, socVali
   // Confirmation du % périmée (nouveau jour, ou plus de 6 h) : on redemande, et les anciens résultats disparaissent.
   function verifierConfirmation() {
     if (busy || !confirme || confirmationValable(confirmeLe, Date.now())) return;
-    hideAlert(); setConfirme(false); drawChips();
+    hideAlert(); setConfirme(false);
   }
 
   // Stockage persistant : sans lui, Chrome peut vider les réglages et le jeton si le téléphone
@@ -785,7 +755,7 @@ import { confirmationValable, blocageCable, plageRelue, sousLigneBouton, socVali
     }).catch(function () { /* stockage ordinaire, la page fonctionne pareil */ });
   }
 
-  hideAlert(); load(); histLoad(); loadService(); chargerVehicules(); render(); drawChips(); setConfirme(false); route(false);
+  hideAlert(); load(); loadService(); chargerVehicules(); render(); setConfirme(false); route(false);
   if (pontOk) { $("svcBox").hidden = true; majEtatCable(); } // dans l'appli, le service n'est pas joignable : pas de carte service
   protegerStockage();
 })();

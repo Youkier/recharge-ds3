@@ -3,7 +3,7 @@ import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import {
-  socValide, lireHistorique, ajouterHistorique, raccourcis, moyenEnvoi, boutonActif,
+  socValide, moyenEnvoi, boutonActif,
   programmerSelonMoyen, pastille, secondesRestantes,
   confirmationValable, blocageCable, plageRelue, sousLigneBouton, rechercheAutomatique,
 } from '../site/accueil.js';
@@ -24,26 +24,6 @@ describe('Valeur d\'hier à confirmer', () => {
     assert.equal(socValide('38'), 38);
     assert.equal(socValide(' 0 '), 0);
     for (const x of ['', null, undefined, 'abc', -1, 101]) assert.equal(socValide(x), null);
-  });
-});
-
-describe('Raccourcis', () => {
-  test('les 3 dernières valeurs distinctes, la plus récente d\'abord', () => {
-    let h = [];
-    for (const v of [30, 45, 30, 52, 38, 45]) h = ajouterHistorique(h, v);
-    assert.deepEqual(h, [45, 38, 52, 30]);
-    assert.deepEqual(raccourcis(h), [45, 38, 52]);
-  });
-  test('valeur invalide ignorée, historique illisible ou corrompu = vide', () => {
-    assert.deepEqual(ajouterHistorique([40], 'x'), [40]);
-    assert.deepEqual(lireHistorique('pas du json'), []);
-    assert.deepEqual(lireHistorique('{"a":1}'), []);
-    assert.deepEqual(lireHistorique('[40, 40, "x", 200, 12]'), [40, 12]);
-    assert.deepEqual(lireHistorique(null), []);
-  });
-  test('moins de 3 valeurs : on rend ce qui existe', () => {
-    assert.deepEqual(raccourcis([40]), [40]);
-    assert.deepEqual(raccourcis([]), []);
   });
 });
 

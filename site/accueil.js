@@ -2,38 +2,11 @@
 // Module ES, aucune dépendance. Règles : jamais de programmation sur le % d'hier sans geste de l'utilisateur ;
 // jamais de bascule silencieuse d'un moyen d'envoi vers l'autre (règle n°2 : un échec reste un échec, avec l'heure manuelle).
 
-export const NB_RACCOURCIS = 3;
-const MAX_HISTORIQUE = 10;
-
 // Entier 0..100 ou null.
 export function socValide(x) {
   if (x === null || x === undefined || String(x).trim() === '') return null;
   const n = Number(x);
   return Number.isFinite(n) && n >= 0 && n <= 100 ? Math.round(n) : null;
-}
-
-// Historique lu dans le stockage (texte JSON) : tableau d'entiers valides distincts, le plus récent d'abord.
-export function lireHistorique(brut) {
-  let a;
-  try { a = JSON.parse(brut || '[]'); } catch (e) { a = []; }
-  if (!Array.isArray(a)) return [];
-  const vu = [];
-  for (const x of a) { const v = socValide(x); if (v !== null && !vu.includes(v)) vu.push(v); }
-  return vu.slice(0, MAX_HISTORIQUE);
-}
-
-// Nouvel historique avec la valeur en tête (doublon retiré). Valeur invalide : historique inchangé.
-export function ajouterHistorique(historique, valeur) {
-  const v = socValide(valeur);
-  if (v === null) return historique.slice();
-  return [v].concat(historique.filter((x) => x !== v)).slice(0, MAX_HISTORIQUE);
-}
-
-// Les n dernières valeurs distinctes, la plus récente d'abord.
-export function raccourcis(historique, n = NB_RACCOURCIS) {
-  const sortie = [];
-  for (const x of historique) { const v = socValide(x); if (v !== null && !sortie.includes(v)) sortie.push(v); }
-  return sortie.slice(0, n);
 }
 
 // Moyen d'envoi : le pont natif (appli Android) prime ; sinon le service s'il est configuré ; sinon aucun
