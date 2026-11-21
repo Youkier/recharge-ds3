@@ -85,6 +85,38 @@ centre() {
 }
 toucher() { local c; c="$(centre "$1")"; adb shell input tap $c; }
 
+# Même chose pour un élément de la page (WebView) : uiautomator expose l'attribut id HTML comme resource-id="<id>".
+centre_web() {
+  local nom="$1" xml noeud nombres
+  for _ in $(seq 1 20); do
+    xml="$(ui_dump || true)"
+    noeud="$(printf '%s' "$xml" | grep -o "<node [^>]*resource-id=\"${nom}\"[^>]*>" | head -1 || true)"
+    if [ -n "$noeud" ]; then
+      nombres="$(printf '%s' "$noeud" | grep -o 'bounds="[^"]*"' | grep -o '[0-9]\+' | tr '\n' ' ')"
+      # shellcheck disable=SC2086
+      set -- $nombres
+      echo "$(( ($1 + $3) / 2 )) $(( ($2 + $4) / 2 ))"
+      return 0
+    fi
+    sleep 1
+  done
+  echec "élément « $nom » de la page introuvable à l'écran"
+}
+toucher_web() { local c; c="$(centre_web "$1")"; adb shell input tap $c; }
+
+# Vrai si une ligne ESSAI de l'action est déjà dans logcat (sans attendre).
+ligne_vue() { adb logcat -d -v raw -s "$TAG:I" | tr -d '\015' | grep '^ESSAI ' | grep -q "\"action\":\"$1\""; }
+
+# Ouvre l'appli sur la vraie page (site/), sans action adb. La clé n'est saisie que si elle change.
+demarrer_page() {
+  local cle="${1:-$CLE_OK}"
+  adb logcat -c
+  adb shell am force-stop "$PKG"
+  [ "$cle" != "$CLE_ENREGISTREE" ] && oublier_donnees
+  adb shell am start -W -n "$ACT" > /dev/null
+  if [ -z "$CLE_ENREGISTREE" ]; then saisir_cle "$cle"; CLE_ENREGISTREE="$cle"; fi
+}
+
 # Saisie de l'identifiant et de la clé dans l'écran natif, puis « Enregistrer ».
 saisir_cle() {
   local cle="$1"
@@ -217,6 +249,44 @@ sleep 2
 formulaire_affiche && echec "S10c : l'écran de saisie revient après une mise à jour"
 L="$(attendre_essai lire 60)"
 verifier "S10c lecture après mise à jour" "$L" 'l.ok === true && l.ip === "10.0.2.2"'
+
+# --- Vraie page (site/, lot C4) : pastille, gestes du soir, programmation relue ---
+etape "S11 Vraie page : pastille « Câble prêt » à l'adresse retenue, sans recherche"
+demarrer_page
+L="$(attendre_essai page-etat 60)"
+verifier "S11 état à l'ouverture" "$L" 'l.etat === "pret"'
+ligne_vue page-chercher && echec "S11 : une recherche a été lancée sans geste"
+capturer "clair-5-page-accueil"
+
+etape "S12 Vraie page : bouton inactif avant le geste, puis « Programmer » relu conforme"
+adb logcat -c
+toucher_web sendBtn
+sleep 3
+ligne_vue page-programmer && echec "S12 : envoi parti sans confirmation de la batterie"
+toucher_web socPlus
+toucher_web sendBtn
+L="$(attendre_essai page-programmer 60)"
+verifier "S12 programmer depuis la page" "$L" 'l.ok === true && /^[0-2][0-9]:[0-5][0-9]$/.test(l.debut) && l.fin === "06:00"'
+DEBUT_PAGE="$(LIGNE="$L" node -e 'console.log(JSON.parse(process.env.LIGNE).debut)')"
+sleep 1
+capturer "clair-6-page-programme"
+demarrer lire 10.0.2.2
+L="$(attendre_essai lire 60)"
+verifier "S12 relecture" "$L" "l.ok === true && l.debut === \"${DEBUT_PAGE}\" && l.fin === \"06:00\""
+
+etape "S13 Vraie page, clé refusée : pastille « clé », « Programmer » n'envoie rien"
+demarrer_page "$CLE_KO"
+L="$(attendre_essai page-etat 60)"
+verifier "S13 état clé refusée" "$L" 'l.etat === "cle"'
+adb logcat -c
+toucher_web socPlus
+toucher_web sendBtn
+sleep 3
+ligne_vue page-programmer && echec "S13 : envoi lancé alors que la clé est refusée"
+capturer "clair-7-page-cle-refusee"
+demarrer_page "$CLE_OK"
+L="$(attendre_essai page-etat 60)"
+echo "état après ressaisie de la bonne clé : $L"
 
 etape "S10d Oublier le câble : confirmation, puis écran de saisie et fichier vidé"
 adb logcat -c
