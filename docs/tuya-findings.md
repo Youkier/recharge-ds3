@@ -229,3 +229,30 @@ Source de chaque ligne : pages de developer.android.com lues le 2026-11-19, sauf
 **Écarts à signaler** : (1) la clé du câble est lue par la page au moment de chaque action (opération `cable`) parce que le protocole écrit en JavaScript en a besoin ; elle n'est jamais stockée, affichée ni journalisée par la page (test), mais « jamais gardée par la page » de la décision du 2026-11-18 n'est tenu qu'au sens « jamais conservée entre deux actions » ; (2) `ouvrir` et `sonder` acceptent un port ou une adresse quelconque et les refusent (`refuse`) : c'est ce qui permet de prouver le refus sur émulateur ; (3) les actions de mise au point (`am start --es action …`) n'existent que dans la version de mise au point.
 
 **À lever au premier passage de GitHub Actions** : résolution des dépendances et acceptation de la nouvelle DSL (`assets.directories`, `lint { checkReleaseBuilds }`), compilation Kotlin, tests JUnit ; présence de l'image `system-images;android-36;google_apis;x86_64` ; profil `pixel_9` dans `avdmanager list device -c` ; arbre `uiautomator dump` de l'écran natif (identifiants `fr.rechargeds3.coque:id/champ_id`, `champ_cle`, `bouton_enregistrer`) ; adresse 10.0.2.2 vers le faux câble ; `Network.bindSocket` sur le réseau Wi-Fi de l'émulateur ; thème sombre vu par la page ; liste des fichiers de `assets/` de l'APK (profils `assets/dexopt/` ignorés) ; liste des permissions de l'APK (la permission interne `…DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION` d'androidx.core est tolérée).
+
+## Obtenir la clé locale sans IoT Core (recherche documentaire du 2026-11-21, rien exécuté ni testé)
+
+Sources lues le 2026-11-21 ; aucun identifiant envoyé. **Vérifié** = dit par la source citée, pas éprouvé sur notre câble. **Hypothèse** = déduit, à tester.
+
+Vérifié :
+- Offre d'essai IoT Core : « The Trial Edition only applies to individual developers or works for debugging purposes. Commercial use is prohibited » ; pour IoT Core en général, « After the IoT Core service contract expires, you need to pay for renewal before you can continue to use it » ; la page ne dit rien d'une prolongation gratuite. Limites : environ 26 000 appels API et 68 000 messages par mois, 50 appareils. https://developer.tuya.com/en/docs/iot/membership-service?id=K9m8k45jwvg9j
+- Le README de tinytuya décrit la prolongation (« Extend trial period », questionnaire, 1, 3 ou 6 mois) mais c'est une source communautaire, pas Tuya. Le `wizard` de tinytuya passe par IoT Core. https://github.com/jasonacox/tinytuya
+- L'intégration Tuya officielle de Home Assistant passe par le QR code de l'appli Smart Life / Tuya Smart et le SDK officiel `tuya-device-sharing-sdk` ; elle est « cloud » seulement et ne parle pas de clé locale. https://www.home-assistant.io/integrations/tuya/
+- Ce SDK (MIT, dépôt Tuya) déclare `local_key: str` dans `CustomerDevice`, rempli directement depuis les éléments de la réponse de liste des appareils (`CustomerDevice(**item)`) : la clé n'y est que si le cloud la renvoie. https://github.com/tuya/tuya-device-sharing-sdk (tuya_sharing/device.py)
+- Outil tiers `vineetchoudhary/tuya-local-key` (Apache-2.0, un seul mainteneur, auto-hébergé : Docker, add-on HA, CLI) : annonce l'obtention des clés locales par code utilisateur Smart Life + QR code, sans compte développeur, via `tuya-device-sharing-sdk`. Fil HA du 2026-07-26 (v3.0 le 2026-10-02) : utilisateurs qui disent que ça marche ; derniers commits du dépôt le 2026-11-12. https://github.com/vineetchoudhary/tuya-local-key ; https://community.home-assistant.io/t/get-tuya-local-key-via-smartlife-tuyasmart-qr-login-no-tuya-iot-developer-account/1018805
+- tuya-cloudcutter : ne vise que certaines puces non corrigées (Tuya a corrigé son SDK en février 2022), supprime l'usage des applis Tuya ; « experimental ». https://github.com/tuya-cloudcutter/tuya-cloudcutter
+
+Hypothèses (non vérifiées) :
+- Le câble « dé » (module Wi-Fi 3.5, firmware 1.9.7) apparaît dans le flux du SDK de partage et sa clé locale est renvoyée : à tester avec l'outil, ou avec un script de notre cru, sur le compte dédié.
+- Tuya peut retirer ce champ ou bloquer l'enregistrement d'appli utilisé à tout moment (aucune garantie dans une doc officielle).
+- Les conditions d'utilisation de Tuya sur ce type d'accès n'ont pas été lues.
+
+### Étude du dépôt `vineetchoudhary/tuya-local-key` (2026-11-21, lecture seule du code sur GitHub)
+
+Vérifié par lecture du code (https://raw.githubusercontent.com/vineetchoudhary/tuya-local-key/main/tuya_devices.py, `updates.py`, `device_cache.py`, `pyproject.toml` ; https://raw.githubusercontent.com/tuya/tuya-device-sharing-sdk/main/tuya_sharing/user.py) :
+- Version 4.1.0, Apache-2.0, dépendances : `tuya-device-sharing-sdk >= 0.2.15`, `qrcode[pil]`, `cryptography >= 41`, `tinytuya >= 1.21.1`. Aucun problème ouvert sur GitHub, derniers commits le 2026-11-12.
+- Connexion : `LoginControl().qr_code(CLIENT_ID, SCHEMA, user_code)` avec `CLIENT_ID = "HA_3y9q4ak7g4ephrvke"` et `SCHEMA = "haauthorize"` (enregistrement d'appli de Home Assistant, pas le sien) ; QR code `smartlife--qrLogin?token=…` confirmé dans l'appli ; sondage `login_result`. Aucun mot de passe n'est demandé. Le SDK appelle `https://apigw.iotbing.com` (`/v1.0/m/life/home-assistant/qrcode/tokens…`), puis le `endpoint` renvoyé par la connexion.
+- Clé : lue comme attribut `local_key` des appareils renvoyés par `query_devices_by_home`, affichée en clair (console, JSON, CSV). Pas d'IoT Core.
+- Session : fichier JSON (droits 600) contenant `user_code` et jetons (`access_token`, `refresh_token`), non chiffré dans la sonde CLI ; le cache de la version web est chiffré (Fernet), clé dans un fichier voisin.
+- Appels sortants hors Tuya : seulement la vérification de mise à jour (API GitHub Releases, aucune donnée de compte) et le superviseur Home Assistant local. Pas de télémétrie dans les fichiers lus. Le reste du code (`app.py`, `lan_scan.py`, paquet `tuya_local_key/`) n'a PAS été lu.
+Hypothèses : réutiliser le `CLIENT_ID` de Home Assistant dans une appli diffusée serait un usage d'identité d'un tiers, probablement contraire aux conditions de Tuya (non lues) ; fonctionnement sur notre câble non testé.

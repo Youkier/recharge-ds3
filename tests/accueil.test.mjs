@@ -7,7 +7,7 @@ import {
   programmerSelonMoyen, pastille, secondesRestantes,
   confirmationValable, blocageCable, plageRelue, sousLigneBouton, rechercheAutomatique,
   decisionEnvoi, attenteExpiree, suiviWifiActif, LIBELLES_ATTENTE, ATTENTE_MAX_MS,
-  etapeAttente, lectureDue, suiteLecture, codeEcheance, sousLigneAttente,
+  etapeAttente, lectureDue, quitterSiCache, confValable, resultatNotification, heureNotification, CLE_EN_MEMOIRE_MAX_MS, suiteLecture, codeEcheance, sousLigneAttente,
 } from '../site/accueil.js';
 import { resultatKo } from '../site/service.js';
 
@@ -238,11 +238,38 @@ describe('Attente du Wi-Fi de la maison', () => {
       assert.equal(r.incertain, false);
     }
   });
+  test('arrière-plan : la page cachée ne quitte que l attente en mode appli ouverte', () => {
+    assert.equal(quitterSiCache({ cache: true, arriere: false, prepa: false }), true);
+    assert.equal(quitterSiCache({ cache: true, arriere: true, prepa: false }), false);
+    assert.equal(quitterSiCache({ cache: true, arriere: false, prepa: true }), false); // fenêtre système de permission
+    assert.equal(quitterSiCache({ cache: false, arriere: false, prepa: false }), false);
+  });
+  test('configuration du câble gardée 15 min au plus, horloge cohérente', () => {
+    assert.equal(CLE_EN_MEMOIRE_MAX_MS, 900000);
+    assert.equal(confValable(1000, 1000 + 899999), true);
+    assert.equal(confValable(1000, 1000 + 900000), false);
+    assert.equal(confValable(1000, 500), false);
+    assert.equal(confValable(null, 500), false);
+  });
+  test('notification de fin : résultat et heure', () => {
+    assert.equal(resultatNotification({ code: 'local_attente_annulee' }), 'annulee');
+    assert.equal(resultatNotification({ code: 'local_attente_expiree' }), 'ko');
+    assert.equal(resultatNotification({ res: { etat: 'ok' } }), 'ok');
+    assert.equal(resultatNotification({ res: { etat: 'ko' } }), 'ko');
+    assert.equal(heureNotification({ demande: { allumage: '23:15' }, finHC: '06:00', debutRelu: '23:20' }), '23:20');
+    assert.equal(heureNotification({ demande: { allumage: '23:15' }, finHC: '06:00' }), '23:15');
+    assert.equal(heureNotification({ demande: { desactiver: true }, finHC: '06:00' }), '05:59');
+    assert.equal(heureNotification({ demande: { desactiver: true }, finHC: '00:00' }), '23:59');
+    assert.equal(heureNotification({ demande: null, finHC: 'x' }), null);
+    assert.equal(LIBELLES_ATTENTE.autoriser, 'Autorisez les notifications pour être prévenu écran éteint');
+    assert.equal(LIBELLES_ATTENTE.sansNotifications, "Sans notifications, gardez l'application ouverte");
+  });
   test('source de la page : arrière-plan annule attente, envois comptés', () => {
     const src = readFileSync(new URL('../site/app.js', import.meta.url), 'utf8');
-    assert.match(src, /if \(document\.hidden\) \{ quitterAttente\(\); return; \}/);
-    assert.match(src, /function envoiApresAttente[\s\S]*?attenteExpiree\(a\.debut, Date\.now\(\)\)[\s\S]*?lancerEnvoi\(\)/); // échéance revérifiée avant l'envoi
+    assert.match(src, /if \(quitterSiCache\(\{ cache: document\.hidden, arriere: a\.arriere, prepa: a\.prepa \}\)\) \{ quitterAttente\(\); return; \}/);
+    assert.match(src, /if \(quitterSiCache\(\{ cache: true, arriere: att && att\.arriere, prepa: att && att\.prepa \}\)\) quitterAttente\(\);/);
+    assert.match(src, /function envoiApresAttente[\s\S]*?attenteExpiree\(a\.debut, Date\.now\(\)\)[\s\S]*?lancerEnvoi\(opts\)/); // échéance revérifiée avant l'envoi
     assert.equal((src.match(/opCableLancer\(/g) || []).length, 6); // définition + envoi local, lecture, recherche (attente), majEtatCable, lancerRecherche
-    assert.equal((src.match(/lancerEnvoi\(\)/g) || []).length, 4); // définition + trois appels (service, après contrôle, après attente)
+    assert.equal((src.match(/lancerEnvoi\(/g) || []).length, 4); // définition + service + après contrôle + après attente (avec opts) // définition + trois appels (service, après contrôle, après attente)
   });
 });

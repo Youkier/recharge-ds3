@@ -19,7 +19,7 @@ android {
         // Numéro de la construction GitHub Actions : chaque APK publié dépasse le précédent, ce qui permet
         // de vérifier l'installation par-dessus (mise à jour n+1). En local, 1.
         versionCode = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 1
-        versionName = "0.3.3"
+        versionName = "0.4.0"
     }
 
     // Les fichiers embarqués sont copiés par `node tools/assets-apk.mjs` (liste blanche) dans dist/apk-assets, jamais ailleurs.

@@ -460,10 +460,8 @@ capturer "clair-4-resultat-cle-refusee"
 # éteint et téléphone verrouillé, si le service de premier plan `connectedDevice` (AttenteWifi) garde le processus ?
 # Critère : ligne ESSAI ok et duree_ms < 27000, 10 fois sur 10. Une 11e répétition sous « deviceidle force-idle » est
 # une MESURE rapportée, sans faire échouer le job. Résumé : $SORTIE/e0-resume.txt (une ligne par répétition).
-etape "S20 Arrière-plan (E0) : 10 envois écran éteint et verrouillé, puis 1 sous Doze forcé (mesure)"
+# --- Outils communs de l'attente en arrière-plan (S22, S21, S20) : code de verrouillage, écran, batterie ---
 PIN_E0="1234"
-E0_RESUME="$SORTIE/e0-resume.txt"
-: > "$E0_RESUME"
 E0_PIN_POSE=""
 # Remise en état pour S8/S9, même si S20 échoue (appelée aussi par nettoyer via le drapeau E0_PIN_POSE).
 e0_remettre() {
@@ -497,6 +495,136 @@ e0_deverrouiller() {
   adb shell input keyevent KEYCODE_ENTER
   sleep 2
 }
+# Attend une ligne ESSAI de l'action à l'état donné : attendre_etat <action> <etat> [délai en s].
+attendre_etat() {
+  local action="$1" etat="$2" delai="${3:-60}" ligne="" i
+  for i in $(seq 1 "$delai"); do
+    ligne="$(adb logcat -d -v raw -s "$TAG:I" | tr -d '\015' | grep '^ESSAI ' | grep "\"action\":\"${action}\"" | grep "\"etat\":\"${etat}\"" | tail -1 | sed 's/^ESSAI //' || true)"
+    if [ -n "$ligne" ]; then echo "$ligne"; return 0; fi
+    sleep 1
+  done
+  echec "aucune ligne ESSAI « $action » à l'état « $etat » après ${delai} s"
+}
+# Vrai si une notification affichée contient ce texte (textes fixes de l'appli ; --noredact : contenu complet).
+notification_contient() {
+  local liste
+  liste="$(adb shell dumpsys notification --noredact 2> /dev/null | tr -d '\015' || true)"
+  printf '%s\n' "$liste" | grep -F "$1" > /dev/null
+}
+# Après demarrer_page : câble prêt à l'adresse retenue, ou retrouvé par la recherche automatique (clé ressaisie,
+# données effacées : adresse inconnue).
+page_prete() {
+  local nom="$1" L
+  L="$(attendre_essai page-etat 60)"
+  if LIGNE="$L" node -e 'process.exit(JSON.parse(process.env.LIGNE).etat === "pret" ? 0 : 1)'; then return 0; fi
+  L="$(attendre_essai page-chercher 150)"
+  verifier "$nom câble retrouvé" "$L" 'l.ok === true'
+}
+# Touche un élément de l'interface système (volet des notifications) par son texte exact, sans tenir compte de la casse.
+# Notification repliée : on la déplie en glissant vers le bas sur son titre, puis on recommence.
+toucher_texte_systeme() {
+  local texte="$1" titre="$2" xml noeud nombres
+  for _ in $(seq 1 10); do
+    xml="$(ui_dump || true)"
+    noeud="$(printf '%s' "$xml" | grep -o -i "<node [^>]* text=\"${texte}\"[^>]*>" | head -1 || true)"
+    if [ -n "$noeud" ]; then
+      nombres="$(printf '%s' "$noeud" | grep -o 'bounds="[^"]*"' | grep -o '[0-9]\+' | tr '\n' ' ')"
+      # shellcheck disable=SC2086
+      set -- $nombres
+      adb shell input tap $(( ($1 + $3) / 2 )) $(( ($2 + $4) / 2 ))
+      return 0
+    fi
+    noeud="$(printf '%s' "$xml" | grep -o "<node [^>]* text=\"${titre}[^>]*>" | head -1 || true)"
+    if [ -n "$noeud" ]; then
+      nombres="$(printf '%s' "$noeud" | grep -o 'bounds="[^"]*"' | grep -o '[0-9]\+' | tr '\n' ' ')"
+      # shellcheck disable=SC2086
+      set -- $nombres
+      adb shell input swipe $(( ($1 + $3) / 2 )) "$2" $(( ($1 + $3) / 2 )) $(( $2 + 400 )) 300
+    fi
+    sleep 1
+  done
+  echec "« $texte » introuvable dans le volet des notifications"
+}
+ATTENTE_RESUME="$SORTIE/attente-resume.txt"
+: > "$ATTENTE_RESUME"
+
+# --- Attente en arrière-plan sur la VRAIE page (service AttenteWifi, version publiée) ---
+etape "S22 Attente en arrière-plan annulée depuis la notification : rien n'est envoyé, notification « Attente annulée »"
+demarrer_page
+page_prete "S22"
+adb shell pm grant "$PKG" android.permission.POST_NOTIFICATIONS # après demarrer_page : pm clear retire les permissions
+adb shell svc wifi disable
+sleep 5
+adb logcat -c
+toucher_web "Ajouter 1 %"
+toucher_web "Programmer la charge"
+L="$(attendre_etat page-attente-wifi arriere-plan 40)"
+verifier "S22 attente passée en arrière-plan" "$L" 'l.etat === "arriere-plan"'
+sleep 2
+adb shell dumpsys activity services "$PKG" | tr -d '\015' > "$SORTIE/attente-services-s22.txt" || true
+grep -q "isForeground=true" "$SORTIE/attente-services-s22.txt" || echec "S22 : service d'attente absent ou pas au premier plan"
+notification_contient "En attente du Wi-Fi et du câble" || echec "S22 : notification d'attente absente"
+adb shell cmd statusbar expand-notifications
+sleep 2
+capturer "clair-12-notification-attente"
+toucher_texte_systeme "Annuler" "En attente du Wi-Fi"
+L="$(attendre_etat page-attente-wifi annulee 30)"
+verifier "S22 annulation vue par la page" "$L" 'l.etat === "annulee"'
+sleep 3
+ligne_vue page-programmer && echec "S22 : envoi parti après « Annuler » dans la notification"
+notification_contient "Attente annulée" || echec "S22 : notification « Attente annulée » absente"
+capturer "clair-13-notification-annulee"
+adb shell cmd statusbar collapse
+adb shell svc wifi enable
+sleep 10
+ligne_vue page-programmer && echec "S22 : envoi parti au retour du Wi-Fi après « Annuler »"
+grep -q "ServiceRecord{[^}]*AttenteWifi" <(adb shell dumpsys activity services "$PKG" | tr -d '\015') && echec "S22 : le service tourne encore après l'annulation"
+echo "S22 : annulation par la notification conforme" >> "$ATTENTE_RESUME"
+echo "OK  S22 annulation depuis la notification"
+
+etape "S21 Attente en arrière-plan, écran éteint et verrouillé 330 s, puis envoi au retour du Wi-Fi et notification « Charge programmée »"
+# 330 s : au-delà de 5 min, Chrome ralentit fortement les minuteurs d'une page cachée ; on mesure l'envoi qui suit.
+adb shell locksettings set-pin "$PIN_E0" > /dev/null
+E0_PIN_POSE=1
+adb shell settings put secure lock_screen_lock_after_timeout 0 # verrouillé dès l'extinction de l'écran
+adb shell dumpsys battery unplug
+adb shell svc power stayon false
+e0_deverrouiller
+# Clé ressaisie code posé (clé du magasin recréée dans ces conditions, comme en S20).
+oublier_donnees
+demarrer_page
+page_prete "S21"
+adb shell pm grant "$PKG" android.permission.POST_NOTIFICATIONS
+adb shell svc wifi disable
+sleep 5
+adb logcat -c
+toucher_web "Ajouter 1 %"
+toucher_web "Programmer la charge"
+L="$(attendre_etat page-attente-wifi arriere-plan 40)"
+verifier "S21 attente passée en arrière-plan" "$L" 'l.etat === "arriere-plan"'
+adb shell input keyevent KEYCODE_SLEEP
+sleep 5
+adb shell dumpsys activity services "$PKG" | tr -d '\015' > "$SORTIE/attente-services-s21.txt" || true
+grep -q "isForeground=true" "$SORTIE/attente-services-s21.txt" || echec "S21 : service d'attente absent ou pas au premier plan, écran éteint"
+sleep 325
+ligne_vue page-programmer && echec "S21 : envoi parti sans Wi-Fi"
+ECRAN_S21="$(adb shell dumpsys power | tr -d '\015' | grep -m1 -o 'mWakefulness=[A-Za-z]*' || true)"
+T0=$(date +%s)
+adb shell svc wifi enable
+L="$(attendre_essai page-programmer 180)"
+T1=$(date +%s)
+verifier "S21 envoi au retour du Wi-Fi, écran éteint et verrouillé" "$L" 'l.ok === true && l.fin === "06:00"'
+echo "S21 : envoi relu $(( T1 - T0 )) s après le retour du Wi-Fi, écran éteint et verrouillé depuis 330 s ($ECRAN_S21) : $L" | tee -a "$ATTENTE_RESUME"
+sleep 2
+notification_contient "Charge programmée" || echec "S21 : notification « Charge programmée » absente"
+adb shell dumpsys notification --noredact 2> /dev/null | tr -d '\015' | grep -E "android\.(title|text)=" | grep -v "^ *$" > "$SORTIE/attente-notifications-s21.txt" || true
+e0_remettre
+capturer "clair-14-notification-programmee"
+echo "OK  S21 envoi en arrière-plan après 330 s écran verrouillé"
+
+etape "S20 Arrière-plan (E0) : 10 envois écran éteint et verrouillé, puis 1 sous Doze forcé (mesure)"
+E0_RESUME="$SORTIE/e0-resume.txt"
+: > "$E0_RESUME"
 # Une répétition : e0_repetition <n> <heure> [idle]. Écrit une ligne dans le résumé ; rend 0 si le critère est tenu.
 e0_repetition() {
   local n="$1" heure="$2" idle="${3:-}" pret ligne services premier_plan i
@@ -550,6 +678,7 @@ adb shell dumpsys battery unplug
 adb shell svc power stayon false
 # Clé enregistrée à nouveau, code posé et téléphone déverrouillé (clé du magasin créée dans ces conditions).
 e0_deverrouiller
+oublier_donnees # ressaisie forcée, même si la clé n'a pas changé depuis S21 (code retiré puis reposé entre-temps)
 demarrer lire 10.0.2.2 "" "$CLE_OK"
 L="$(attendre_essai lire 60)"
 verifier "S20 lecture préalable" "$L" 'l.ok === true'

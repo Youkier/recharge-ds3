@@ -18,6 +18,20 @@
 //   envoyer { cx, d }               -> {}
 //   recevoir { cx, delai }          -> { d }        erreur delai | ferme
 //   fermer { cx }                   -> {}           idempotent
+// Attente en arrière-plan (service de premier plan AttenteWifi, version publiée ; textes de notification FIXES côté
+// Kotlin, la page ne fournit qu'une heure HH:MM validée et un résultat pris dans une liste fermée) :
+//   notifications                   -> { autorise }   permission POST_NOTIFICATIONS accordée ET notifications activées
+//   demanderNotifications           -> { autorise }   demande système ; réponse quand l'utilisateur a choisi (prévoir
+//                                      un long délai d'attente), tout de suite si déjà accordée ou refus définitif ;
+//                                      erreur occupe si une demande est déjà ouverte
+//   attenteDebut { heure }          -> {}   | erreur requete_invalide, notifications, occupe, service ; notification
+//                                      continue « En attente du Wi-Fi et du câble » avec « Annuler »
+//   attenteEtat                     -> { active, annulee }   annulee : « Annuler » touché dans la notification
+//   attenteFin { resultat: "ok"|"ko"|"annulee", heure?, incertain? } -> {}   notification de résultat (heure absente :
+//                                      texte sans heure), puis arrêt du service ; acceptée aussi juste après attenteDebut
+// Filets côté service : 15 min sans attenteFin -> « Résultat inconnu » ; appli fermée -> « Programmation non envoyée » ;
+// 60 s après « Annuler » sans attenteFin -> « Résultat inconnu ».
+//   essaiArrierePlan { quoi }       -> mise au point seulement (essai E0)
 // Erreurs du pont : refuse (adresse, port ou taille hors filtre), pas_wifi, occupe, injoignable, delai, ferme,
 // cx_inconnu, operation_inconnue, requete_invalide, origine.
 //

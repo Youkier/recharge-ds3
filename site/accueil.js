@@ -118,6 +118,8 @@ export const LIBELLES_ATTENTE = {
     recherche: 'recherche du câble…',
   },
   annuler: 'Annuler',
+  autoriser: 'Autorisez les notifications pour être prévenu écran éteint',
+  sansNotifications: "Sans notifications, gardez l'application ouverte",
   annonce: 'En attente du Wi-Fi et du câble. Envoi automatique dès que le câble répond, au plus 10 minutes.',
 };
 
@@ -152,6 +154,40 @@ export function suiteLecture(etat) {
   if (etat === 'pret') return 'envoyer';
   if (etat === 'a_relier' || etat === 'cle') return 'relier';
   return 'continuer';
+}
+
+// ---------- Attente en arrière-plan (appli Android : service de premier plan + notification) ----------
+export const CLE_EN_MEMOIRE_MAX_MS = 15 * 60 * 1000; // la configuration du câble n'est gardée que le temps d'une attente
+
+// La configuration lue au toucher est-elle encore utilisable ? (au plus 15 min, horloge cohérente)
+export function confValable(luLe, maintenant) {
+  return Number.isFinite(luLe) && Number.isFinite(maintenant) && maintenant >= luLe && maintenant - luLe < CLE_EN_MEMOIRE_MAX_MS;
+}
+
+// Page cachée : seule l'attente en mode « appli ouverte » est quittée. Pendant la préparation (fenêtre système de
+// permission) ou en arrière-plan, l'attente continue.
+export function quitterSiCache({ cache, arriere, prepa }) {
+  return !!cache && !arriere && !prepa;
+}
+
+// Résultat envoyé à la notification de fin : 'ok' | 'ko' | 'annulee'.
+export function resultatNotification({ code, res }) {
+  if (code === 'local_attente_annulee') return 'annulee';
+  return res && res.etat === 'ok' ? 'ok' : 'ko';
+}
+
+// Heure de la notification de fin : début relu si ok, sinon heure à régler à la main (début demandé ; pour « pas de
+// charge », une minute avant la fin des heures creuses). null si rien d'exploitable.
+export function heureNotification({ demande, finHC, debutRelu }) {
+  const H = /^([01]\d|2[0-3]):[0-5]\d$/;
+  if (typeof debutRelu === 'string' && H.test(debutRelu)) return debutRelu;
+  if (demande && typeof demande.allumage === 'string' && H.test(demande.allumage)) return demande.allumage;
+  if (typeof finHC === 'string' && H.test(finHC)) {
+    const [h, m] = finHC.split(':').map(Number);
+    const t = (h * 60 + m + 1439) % 1440;
+    return String(Math.floor(t / 60)).padStart(2, '0') + ':' + String(t % 60).padStart(2, '0');
+  }
+  return null;
 }
 
 // Code de la carte KO à l'échéance : le téléphone était-il sur le Wi-Fi (cableDepuis connu) ?

@@ -44,6 +44,19 @@ Points clés par option :
 - **F** : compléter MyDS (widget, alertes, âge des données) plutôt que la remplacer. Consultation seule d'abord (`data:telemetry`). **Par la voie officielle, un serveur dans l'UE est obligatoire** (échange du jeton avec un secret client, certificat délivré par Stellantis, réception des notifications de commandes) : coûts, sécurité et RGPD à prévoir. L'API permet ensuite de programmer la charge (`nextDelayedTime`) et le préconditionnement (4 programmes). Freins : l'utilisateur doit activer la connectivité partenaires, « Partner Services » n'existe pas dans tous les pays (France à confirmer), consentement global sur le lot demandé, portail non mis à jour depuis mars 2024. Par la voie officieuse (identifiants des applis officielles), le seul code libre des commandes est sous GPL-3.0.
 - **C** : le cloud Tuya ne sert, au mieux, qu'à récupérer une fois la clé locale.
 
+### Obtenir la clé locale d'un autre utilisateur (condition de toute appli diffusée, 2026-11-21)
+
+Sans clé locale, l'appli ne pilote pas le câble. Options notées à la demande de Mathieu (sources dans `docs/tuya-findings.md`, « Obtenir la clé locale sans IoT Core ») :
+
+| Option | Principe | Pour | Contre |
+|---|---|---|---|
+| **1. Parcours utilisateur sur la plateforme Tuya** | Chaque utilisateur crée son compte développeur, un projet IoT Core, y relie son compte Smart Life et copie sa clé (guide pas à pas dans l'appli) | Aucune dépendance de notre côté ; voie officielle | Long et technique (20-30 min, console en anglais) : la plupart abandonneront ; essai gratuit « usage non commercial », à renouveler ; incompatible avec une appli grand public |
+| **2. Appli ou outil tiers** (ex. `tuya-local-key`, Home Assistant) | L'utilisateur obtient sa clé avec un outil existant puis la saisit dans notre appli | Rien à développer ni à faire valider | On renvoie vers un outil qu'on ne maîtrise pas (un mainteneur, session du compte stockée) ; parcours en deux applis ; réputation liée à un tiers |
+| **3. Tuya nous donne un accès** (partenariat ou identité d'appli propre au flux « QR Smart Life ») | Dans notre appli : « code utilisateur » + QR scanné dans Smart Life → clé récupérée automatiquement | Le meilleur parcours (1 minute, aucun mot de passe) ; conforme si Tuya l'accorde | Dépend d'un accord de Tuya (à demander lors de la relance du 5 décembre) ; peut être payant ou refusé ; un serveur de notre côté peut être exigé |
+| **4. Réutiliser l'identité de Home Assistant** (`HA_…` + `haauthorize`, ce que fait `tuya-local-key`) | Même parcours que l'option 3, sans rien demander | Marche aujourd'hui, sans délai | **Se faire passer pour Home Assistant** : très probablement contraire aux conditions de Tuya, risque de blocage du jour au lendemain pour tous les utilisateurs, et de réputation ; **à exclure pour une appli diffusée** (acceptable seulement pour l'usage personnel de Mathieu, script de secours) |
+
+Recommandation : viser **3** (à demander à Tuya, et en parallèle au fabricant du câble pour l'option D) ; en attendant, **2** comme repli documenté dans un guide ; **1** seulement pour des utilisateurs avancés ; **4** jamais en diffusion.
+
 ## Étapes
 
 ### Usage personnel (voir `PLAN.md`, phase 2a)

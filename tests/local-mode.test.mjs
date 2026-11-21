@@ -3,7 +3,7 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { pontPresent, etatCable, chercherCable, programmerLocal, surLeReseauDeLaMaison } from '../site/local.js';
+import { pontPresent, lireConfigurationCable, etatCable, chercherCable, programmerLocal, surLeReseauDeLaMaison } from '../site/local.js';
 import { lireEtat, programmer } from '../local/tuya-local.js';
 import { fauxCable } from './tuya-local-faux-cable.mjs';
 
@@ -196,5 +196,37 @@ describe('Seconde tentative : sous le plafond de 30 s de la page', () => {
     assert.equal(delais.length, 2);
     assert.equal(delais[0], undefined, 'première tentative : délai par défaut du module (20 s)');
     assert.ok(delais[1] > 0 && delais[1] <= 27000, `seconde tentative bornée : ${delais[1]}`);
+  });
+});
+
+describe('Configuration du câble déjà lue (attente en arrière-plan, téléphone verrouillé)', () => {
+  test('lireConfigurationCable : { cfg, adresse } ; pas de clé : erreur', async () => {
+    const r = await lireConfigurationCable(client());
+    assert.equal(r.adresse, '192.168.1.48');
+    assert.equal(r.cfg.cleLocale, CLE);
+    assert.deepEqual(await lireConfigurationCable(client({ configure: false })), { erreur: 'local_pas_de_cle' });
+    assert.deepEqual(await lireConfigurationCable({ cable() { throw new Error('x'); } }), { erreur: 'local_format' });
+  });
+  test('etatCable, réseau et programmation ne rappellent plus client.cable() ; la clé reste hors des résultats', async () => {
+    const c = client();
+    const confCable = await lireConfigurationCable(c);
+    let lectures = 0;
+    c.cable = async () => { lectures++; return { ok: false }; }; // téléphone verrouillé : illisible
+    const deps = { client: c, lireEtat, programmer, confCable };
+    assert.equal(await surLeReseauDeLaMaison(deps), 'oui');
+    const e = await etatCable(deps);
+    assert.equal(e.etat, 'pret'); sans(e);
+    const p = await programmerLocal({ allumage: '03:30' }, deps, '06:00');
+    assert.equal(p.etat, 'ok', JSON.stringify(p)); sans(p);
+    assert.equal(lectures, 0);
+  });
+  test('recherche : trouvé à une autre adresse, la configuration gardée est mise à jour', async () => {
+    const c = client();
+    const confCable = await lireConfigurationCable(c);
+    c.cable = async () => ({ ok: false });
+    const r = await chercherCable({ client: c, confCable, localiserCable: async () => ({ ok: true, ip: '192.168.1.77', etat: { debut: '03:30', fin: '06:00', plage_active: true } }) });
+    assert.equal(r.ok, true); sans(r);
+    assert.equal(confCable.adresse, '192.168.1.77');
+    assert.deepEqual(c.journal.retenues, ['192.168.1.77']);
   });
 });

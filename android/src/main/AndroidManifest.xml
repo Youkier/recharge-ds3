@@ -7,6 +7,22 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
+    <!-- Attente en arrière-plan (« Programmer » avant le Wi-Fi ou le câble, décisions du 2026-11-21 ; essai E0 réussi en CI
+         sur API 35 et 36). Source : developer.android.com/develop/background-work/services/fgs/service-types
+         (« Connected device », relevé le 2026-11-21) : type `connectedDevice` ; FOREGROUND_SERVICE +
+         FOREGROUND_SERVICE_CONNECTED_DEVICE ; prérequis : au moins une de CHANGE_NETWORK_STATE, CHANGE_WIFI_STATE,
+         CHANGE_WIFI_MULTICAST_STATE, NFC, TRANSMIT_IR (ici CHANGE_NETWORK_STATE, normale, sans demande ; l'appli ne change
+         aucun réglage réseau). WAKE_LOCK : verrou de réveil partiel borné (16 min) pendant l'attente.
+         POST_NOTIFICATIONS : permission d'exécution, demandée par la page avant la première attente ; sans elle, pas
+         d'attente en arrière-plan (la page reste en attente au premier plan).
+         Interdits (vérifiés par la CI) : RECEIVE_BOOT_COMPLETED, SCHEDULE_EXACT_ALARM, USE_EXACT_ALARM : rien ne démarre
+         sans un geste. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
+    <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
     <application
         android:icon="@mipmap/ic_lanceur"
         android:roundIcon="@mipmap/ic_lanceur"
@@ -26,5 +42,12 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- Non exporté : seuls l'appli et sa propre notification (« Annuler », PendingIntent explicite et immuable) le
+             démarrent ; START_NOT_STICKY, 15 min au plus. -->
+        <service
+            android:name=".AttenteWifi"
+            android:exported="false"
+            android:foregroundServiceType="connectedDevice" />
     </application>
 </manifest>

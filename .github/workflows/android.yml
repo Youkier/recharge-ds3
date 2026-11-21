@@ -112,15 +112,26 @@ jobs:
             for P in RECEIVE_BOOT_COMPLETED SCHEDULE_EXACT_ALARM USE_EXACT_ALARM; do
               if grep -q "android.permission.$P'" "sortie-construction/permissions-$NOM.txt"; then echo "$P interdite"; exit 1; fi
             done
-            for P in INTERNET ACCESS_NETWORK_STATE; do grep -q "android.permission.$P" "sortie-construction/permissions-$NOM.txt"; done
-            # Aucune autre permission que ces deux-là. (Exception : la permission interne DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION,
-            # propre à l'application, que la bibliothèque androidx.core ajoute d'elle-même ; elle ne donne aucun accès.)
-            PERMISES="android.permission.INTERNET android.permission.ACCESS_NETWORK_STATE fr.rechargeds3.coque.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION"
-            # Essai de faisabilité E0 (attente en arrière-plan, service de premier plan connectedDevice) : APK de MISE AU POINT
-            # seulement (android/src/debug/AndroidManifest.xml). L'APK publié garde les deux permissions ci-dessus.
-            case "$NOM" in
-              *debug*) PERMISES="$PERMISES android.permission.FOREGROUND_SERVICE android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE android.permission.CHANGE_NETWORK_STATE android.permission.WAKE_LOCK android.permission.POST_NOTIFICATIONS" ;;
-            esac
+            # Pont TCP (INTERNET, ACCESS_NETWORK_STATE) et attente en arrière-plan (service de premier plan connectedDevice,
+            # décisions du 2026-11-21, essai E0 réussi) : FOREGROUND_SERVICE, FOREGROUND_SERVICE_CONNECTED_DEVICE,
+            # CHANGE_NETWORK_STATE (prérequis du type), WAKE_LOCK, POST_NOTIFICATIONS. Toutes présentes, aucune autre.
+            # (Exception : la permission interne DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION, propre à l'application, que la
+            # bibliothèque androidx.core ajoute d'elle-même ; elle ne donne aucun accès.)
+            ATTENDUES="INTERNET ACCESS_NETWORK_STATE FOREGROUND_SERVICE FOREGROUND_SERVICE_CONNECTED_DEVICE CHANGE_NETWORK_STATE WAKE_LOCK POST_NOTIFICATIONS"
+            PERMISES="fr.rechargeds3.coque.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION"
+            for P in $ATTENDUES; do
+              grep -q "name='android.permission.$P'" "sortie-construction/permissions-$NOM.txt" || { echo "permission $P absente"; exit 1; }
+              PERMISES="$PERMISES android.permission.$P"
+            done
+            # Le service d'attente : un seul, non exporté, de type connectedDevice (0x10), jamais lancé au démarrage du téléphone.
+            "$AAPT2" dump xmltree --file AndroidManifest.xml "$APK" > "sortie-construction/manifeste-$NOM.txt"
+            if grep -q "BOOT_COMPLETED" "sortie-construction/manifeste-$NOM.txt"; then echo "BOOT_COMPLETED interdit"; exit 1; fi
+            [ "$(grep -c "E: service " "sortie-construction/manifeste-$NOM.txt" || true)" = 1 ] || { echo "un seul service attendu"; grep -A4 "E: service " "sortie-construction/manifeste-$NOM.txt" || true; exit 1; }
+            SERVICE="$(grep -A6 "E: service " "sortie-construction/manifeste-$NOM.txt")"
+            echo "$SERVICE"
+            echo "$SERVICE" | grep -q 'android:name([^)]*)="fr.rechargeds3.coque.AttenteWifi"' || { echo "service AttenteWifi absent"; exit 1; }
+            echo "$SERVICE" | grep -qE 'android:exported\([^)]*\)=(false|\(type 0x12\)0x0)' || { echo "service exporté ou attribut absent"; exit 1; }
+            echo "$SERVICE" | grep -qE 'android:foregroundServiceType\([^)]*\)=(\(type 0x11\))?(0x0*10|16)( |$)' || { echo "type de service différent de connectedDevice"; exit 1; }
             AUTRES=""
             for NOM_P in $(grep -o "uses-permission: name='[^']*'" "sortie-construction/permissions-$NOM.txt" | sed "s/^uses-permission: name='//; s/'\$//"); do
               case " $PERMISES " in *" $NOM_P "*) ;; *) AUTRES="$AUTRES $NOM_P" ;; esac
@@ -142,7 +153,7 @@ jobs:
     name: Émulateur API ${{ matrix.api }}
     needs: construire
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 75 # S20 (E0) et S21 (attente de 330 s écran verrouillé) ajoutent une vingtaine de minutes
     strategy:
       fail-fast: false
       matrix:

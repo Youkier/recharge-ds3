@@ -1,56 +1,92 @@
-// Garde-fous de l'essai de faisabilité E0 (attente en arrière-plan, décision du 2026-11-21) : le service de premier plan
-// et ses permissions n'existent que dans la version de mise au point tant que E0 n'a pas réussi ; rien ne démarre sans
-// un geste ; la page d'essai lit la configuration du câble avant l'attente et ne la garde pas au-delà de 15 min.
+// Garde-fous de l'attente en arrière-plan de la coque (décisions du 2026-11-21 ; essai de faisabilité E0 réussi en CI) :
+// service de premier plan connectedDevice dans l'APK publié, non exporté, borné ; rien ne démarre sans un geste ;
+// textes de notification fixes ; la page d'essai garde la configuration du câble 15 min au plus.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readFileSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
-const lire = (chemin) => readFileSync(fileURLToPath(new URL(chemin, import.meta.url)), 'utf8');
+const chemin = (c) => fileURLToPath(new URL(c, import.meta.url));
+const lire = (c) => readFileSync(chemin(c), 'utf8');
 const sansCommentairesXml = (s) => s.replace(/<!--[\s\S]*?-->/g, '');
+const sansCommentaires = (s) => s.replace(/\/\/.*$/gm, '');
+const KT = '../android/src/main/kotlin/fr/rechargeds3/coque/';
 
-test('manifeste publié inchangé : ni service, ni permission de service de premier plan', () => {
+test('manifeste principal : sept permissions, service connectedDevice non exporté, rien au démarrage', () => {
   const m = sansCommentairesXml(lire('../android/src/main/AndroidManifest.xml'));
-  assert.ok(!/<service\b/.test(m), 'aucun service dans le manifeste principal');
-  for (const p of ['FOREGROUND_SERVICE', 'WAKE_LOCK', 'POST_NOTIFICATIONS', 'CHANGE_NETWORK_STATE']) {
-    assert.ok(!m.includes(`android.permission.${p}`), p);
-  }
-});
-
-test('manifeste de mise au point : service connectedDevice non exporté, cinq permissions, aucune au démarrage', () => {
-  const m = sansCommentairesXml(lire('../android/src/debug/AndroidManifest.xml'));
   const permissions = [...m.matchAll(/uses-permission android:name="android\.permission\.(\w+)"/g)].map((x) => x[1]).sort();
-  assert.deepEqual(permissions, ['CHANGE_NETWORK_STATE', 'FOREGROUND_SERVICE', 'FOREGROUND_SERVICE_CONNECTED_DEVICE', 'POST_NOTIFICATIONS', 'WAKE_LOCK']);
+  assert.deepEqual(permissions, ['ACCESS_NETWORK_STATE', 'CHANGE_NETWORK_STATE', 'FOREGROUND_SERVICE', 'FOREGROUND_SERVICE_CONNECTED_DEVICE', 'INTERNET', 'POST_NOTIFICATIONS', 'WAKE_LOCK']);
   assert.match(m, /<service\s+android:name="\.AttenteWifi"\s+android:exported="false"\s+android:foregroundServiceType="connectedDevice"\s*\/>/);
-  assert.ok(!/BOOT_COMPLETED|EXACT_ALARM|<receiver\b|intent-filter/.test(m));
+  assert.equal((m.match(/<service\b/g) || []).length, 1);
+  assert.ok(!/BOOT_COMPLETED|EXACT_ALARM|<receiver\b/.test(m));
+  assert.ok(!existsSync(chemin('../android/src/debug/AndroidManifest.xml')), 'plus de manifeste propre à la mise au point');
 });
 
-test('service : START_NOT_STICKY, verrou de réveil borné, arrêt de lui-même à 15 min', () => {
-  const k = lire('../android/src/main/kotlin/fr/rechargeds3/coque/AttenteWifi.kt');
+test('service : START_NOT_STICKY, verrou de réveil borné, 15 min au plus, filets de la règle 2', () => {
+  const k = lire(KT + 'AttenteWifi.kt');
+  assert.ok(!/return START_STICKY|START_REDELIVER_INTENT/.test(k));
   assert.match(k, /return START_NOT_STICKY/);
   assert.match(k, /FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE/);
-  assert.match(k, /PARTIAL_WAKE_LOCK/);
   assert.match(k, /acquire\(VERROU_MAX_MS\)/);
   assert.match(k, /VERROU_MAX_MS = 16L \* 60 \* 1000/);
   assert.match(k, /DUREE_MAX_MS = 15L \* 60 \* 1000/);
   assert.ok(!/\bacquire\(\s*\)/.test(k), 'jamais de verrou sans délai');
+  assert.match(k, /private val filet = Runnable \{ terminer\(Attente\.Issue\.INCONNUE\) \}/, '15 min sans résultat : « Résultat inconnu »');
+  assert.match(k, /override fun onTaskRemoved[\s\S]*?terminer\(Attente\.Issue\.APPLI_FERMEE\)/, 'appli balayée : « non envoyée »');
+  assert.match(k, /PendingIntent\.FLAG_IMMUTABLE/);
+  assert.ok(!/FLAG_MUTABLE/.test(k));
+  assert.match(k, /PendingIntent\.getService\(\s*this, 1, Intent\(this, AttenteWifi::class\.java\)\.setAction\(ACTION_ANNULER\)/, 'Annuler : intention explicite');
 });
 
-test('pont : opération essaiArrierePlan réservée à la mise au point ; onStop sans pauseTimers', () => {
-  const pont = lire('../android/src/main/kotlin/fr/rechargeds3/coque/PontLocal.kt');
+test('textes : fixes, dans strings.xml, apostrophes échappées ; la page ne fournit que l\'heure et un résultat fermé', () => {
+  const x = lire('../android/src/main/res/values/strings.xml');
+  const valeur = (nom) => (x.match(new RegExp(`<string name="${nom}">([^<]*)</string>`)) || [])[1];
+  assert.equal(valeur('attente_titre'), 'En attente du Wi-Fi et du câble');
+  assert.equal(valeur('attente_texte'), 'Programmation de %1$s dès que le câble répond');
+  assert.equal(valeur('resultat_ok_titre'), 'Charge programmée : démarrage %1$s');
+  assert.equal(valeur('resultat_ok_texte'), 'Relu sur le câble.');
+  assert.equal(valeur('resultat_ko_titre'), 'Programmation non faite');
+  assert.equal(valeur('resultat_a_la_main'), 'À régler à la main dans Smart Life : début %1$s.');
+  assert.equal(valeur('resultat_verifier'), 'Vérifiez dans Smart Life ; sinon réglez le début à %1$s.');
+  assert.equal(valeur('resultat_annulee_titre'), 'Attente annulée');
+  assert.equal(valeur('resultat_inconnu_titre'), 'Résultat inconnu');
+  assert.equal(valeur('resultat_fermee_titre'), 'Programmation non envoyée');
+  assert.equal(valeur('resultat_fermee_texte'), 'L\\\'application a été fermée. À régler à la main dans Smart Life : début %1$s.');
+  assert.equal(valeur('resultat_a_la_main_sans_heure'), 'À régler à la main dans Smart Life.');
+  for (const [, v] of x.matchAll(/<string name="[^"]+">([^<]*)<\/string>/g)) {
+    assert.ok(!/(^|[^\\])'/.test(v), `apostrophe non échappée : ${v}`);
+  }
+  // Aucun texte de notification ne vient de la page : setContentTitle / setContentText ne prennent que getString(...).
+  const k = lire(KT + 'AttenteWifi.kt');
+  for (const [, arg] of k.matchAll(/setContent(?:Title|Text)\(([^)]*\)?)\)/g)) {
+    assert.ok(/getString\(|^corps$/.test(arg), `texte de notification : ${arg}`);
+  }
+});
+
+test('pont : opérations d\'attente en version publiée, essaiArrierePlan réservée à la mise au point', () => {
+  const pont = sansCommentaires(lire(KT + 'PontLocal.kt'));
   assert.match(pont, /"essaiArrierePlan" -> rep\(if \(estDebug\)/);
-  const act = lire('../android/src/main/kotlin/fr/rechargeds3/coque/MainActivity.kt');
-  assert.ok(!/pauseTimers/.test(act.replace(/\/\/.*$/gm, ''))); // hors commentaires
+  assert.match(pont, /"notifications", "demanderNotifications", "attenteDebut", "attenteEtat", "attenteFin" -> attente\(op, q, rep\)/);
+  const act = sansCommentaires(lire(KT + 'MainActivity.kt'));
+  assert.ok(!/pauseTimers/.test(act));
   assert.match(act, /if \(!AttenteWifi\.actif\) \{\s*pont\.fermerToutAsync\(\)\s*wifi\.arreter\(\)/);
+  assert.match(act, /!Attente\.heureValide\(h\) -> repondre\(erreur\("requete_invalide"\)\)/);
+  assert.match(act, /!notificationsAutorisees\(\) -> repondre\(erreur\("notifications"\)\)/);
+  assert.match(act, /AttenteWifi\.actif -> repondre\(erreur\("occupe"\)\)/);
+  assert.match(act, /if \(AttenteWifi\.actif && !isChangingConfigurations\) abandonnerAttente\(\)/, 'appli fermée pendant l\'attente');
+  // Le contrat est décrit dans le client JS du pont.
+  const contrat = lire('../android/essai/transport-pont.js');
+  for (const op of ['notifications', 'demanderNotifications', 'attenteDebut', 'attenteEtat', 'attenteFin']) assert.ok(contrat.includes(op), op);
 });
 
-test('workflow : boot et alarmes exactes interdits, permissions du service seulement dans l\'APK de mise au point', () => {
+test('workflow : sept permissions exigées, service contrôlé dans le manifeste compilé, boot et alarmes exactes interdits', () => {
   const w = lire('../.github/workflows/android.yml');
-  assert.match(w, /for P in RECEIVE_BOOT_COMPLETED SCHEDULE_EXACT_ALARM/);
-  assert.match(w, /\*debug\*\) PERMISES="\$PERMISES android\.permission\.FOREGROUND_SERVICE /);
-  const base = w.match(/PERMISES="(android\.permission\.INTERNET[^"]*)"/);
-  assert.ok(base, 'liste de base');
-  assert.ok(!/FOREGROUND|WAKE_LOCK|NOTIFICATIONS/.test(base[1]), 'APK publié : liste de base inchangée');
+  assert.match(w, /for P in RECEIVE_BOOT_COMPLETED SCHEDULE_EXACT_ALARM USE_EXACT_ALARM/);
+  assert.match(w, /ATTENDUES="INTERNET ACCESS_NETWORK_STATE FOREGROUND_SERVICE FOREGROUND_SERVICE_CONNECTED_DEVICE CHANGE_NETWORK_STATE WAKE_LOCK POST_NOTIFICATIONS"/);
+  assert.match(w, /dump xmltree --file AndroidManifest\.xml/);
+  assert.match(w, /android:exported/);
+  assert.match(w, /android:foregroundServiceType/);
+  assert.ok(!/\*debug\*\) PERMISES/.test(w), 'même liste pour les deux APK');
 });
 
 test('page d\'essai : configuration lue avant l\'attente, effacée à 15 min au plus et en fin d\'essai', () => {

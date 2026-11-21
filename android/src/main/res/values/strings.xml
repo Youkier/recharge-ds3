@@ -26,7 +26,23 @@
     <string name="erreur_identifiant">Identifiant invalide : lettres, chiffres, tiret et tiret bas seulement.</string>
     <string name="erreur_cle">Il manque des caractères : la clé en compte 16.</string>
     <string name="erreur_enregistrement">L\'enregistrement a échoué. Réessayez ; si cela persiste, redémarrez le téléphone.</string>
-    <!-- Service d'attente en arrière-plan (essai E0, version de mise au point seulement pour l'instant). -->
+    <!-- Attente en arrière-plan (service AttenteWifi) : textes FIXES ; seule l'heure HH:MM, validée, vient de la page. -->
     <string name="canal_attente">Programmation en attente</string>
-    <string name="notification_essai">Quand charger ? — essai en arrière-plan</string>
+    <string name="canal_resultat">Résultat de la programmation</string>
+    <string name="attente_titre">En attente du Wi-Fi et du câble</string>
+    <string name="attente_texte">Programmation de %1$s dès que le câble répond</string>
+    <string name="resultat_ok_titre">Charge programmée : démarrage %1$s</string>
+    <string name="resultat_ok_texte">Relu sur le câble.</string>
+    <string name="resultat_ko_titre">Programmation non faite</string>
+    <string name="resultat_a_la_main">À régler à la main dans Smart Life : début %1$s.</string>
+    <string name="resultat_verifier">Vérifiez dans Smart Life ; sinon réglez le début à %1$s.</string>
+    <string name="resultat_annulee_titre">Attente annulée</string>
+    <string name="resultat_inconnu_titre">Résultat inconnu</string>
+    <string name="resultat_fermee_titre">Programmation non envoyée</string>
+    <string name="resultat_fermee_texte">L\'application a été fermée. À régler à la main dans Smart Life : début %1$s.</string>
+    <!-- Variantes sans heure : la page n'a pas pu la calculer (attenteFin sans « heure »). -->
+    <string name="resultat_ok_titre_sans_heure">Charge programmée</string>
+    <string name="resultat_a_la_main_sans_heure">À régler à la main dans Smart Life.</string>
+    <string name="resultat_verifier_sans_heure">Vérifiez dans Smart Life.</string>
+    <string name="resultat_fermee_texte_sans_heure">L\'application a été fermée. À régler à la main dans Smart Life.</string>
 </resources>

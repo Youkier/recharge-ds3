@@ -46,6 +46,9 @@ class PontLocal(
     // Essai E0 (version de mise au point seulement) : démarre (« debut ») ou arrête (« fin ») le service d'attente,
     // ou rend seulement l'état de l'écran (« etat »). Appelé sur le fil principal.
     private val essaiArrierePlan: (String) -> JSONObject,
+    // Attente en arrière-plan (version publiée) : notifications, demanderNotifications, attenteDebut, attenteEtat,
+    // attenteFin. Traitées par l'activité, sur le fil principal ; aucune ne touche le réseau ni le coffre.
+    private val attente: (op: String, q: JSONObject, repondre: (JSONObject) -> Unit) -> Unit,
 ) : WebViewCompat.WebMessageListener {
 
     private val principal = Handler(Looper.getMainLooper())
@@ -74,7 +77,7 @@ class PontLocal(
         if (n < 0) return
         val rep = { r: JSONObject -> repondre(replyProxy, n, r) }
         try {
-            when (q.optString("op", "")) {
+            when (val op = q.optString("op", "")) {
                 "demarrage" -> demarrage(rep)
                 "variante" -> rep(JSONObject().put("ok", true).put("variante", variante()))
                 "prefixeWifi" -> prefixeWifi(rep)
@@ -88,6 +91,7 @@ class PontLocal(
                 "fermer" -> fermer(q, rep)
                 // Réservée à la version de mise au point, comme les actions adb : refusée dans la version publiée.
                 "essaiArrierePlan" -> rep(if (estDebug) essaiArrierePlan(q.optString("quoi", "")) else erreur("operation_inconnue"))
+                "notifications", "demanderNotifications", "attenteDebut", "attenteEtat", "attenteFin" -> attente(op, q, rep)
                 else -> rep(erreur("operation_inconnue"))
             }
         } catch (e: RejectedExecutionException) {

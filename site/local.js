@@ -36,12 +36,20 @@ function codeLocal(erreur) {
   }
 }
 
-// Configuration du câble lue au moment de l'appel : { cfg, adresse } ou { erreur }.
-async function configuration(client) {
+// Configuration du câble : { cfg, adresse } ou { erreur }. Lue au moment de l'appel, sauf si l'appelant en fournit une
+// déjà lue (deps.confCable, attente en arrière-plan : la clé est illisible téléphone verrouillé). Cette configuration
+// n'est jamais copiée ni rendue ici ; seule son adresse est mise à jour quand une recherche trouve le câble ailleurs.
+async function configuration(client, confCable = null) {
+  if (confCable && confCable.cfg && typeof confCable.cfg.cleLocale === 'string') return confCable;
   const c = await client.cable();
   if (!c || !c.ok) return { erreur: 'local_format' };
   if (!c.configure || typeof c.cle !== 'string' || typeof c.deviceId !== 'string') return { erreur: 'local_pas_de_cle' };
   return { cfg: { deviceId: c.deviceId, cleLocale: c.cle, version: '3.5' }, adresse: typeof c.adresse === 'string' ? c.adresse : null };
+}
+
+// Lit la configuration du câble pour la garder le temps d'une attente (voir configuration). { cfg, adresse } ou { erreur }.
+export async function lireConfigurationCable(client) {
+  try { return await configuration(client); } catch (e) { return { erreur: 'local_format' }; }
 }
 
 // Le téléphone est-il sur le réseau de l'adresse retenue ? 'oui' | 'non' | 'pas_wifi'.
@@ -57,7 +65,7 @@ async function surLeReseau(client, adresse) {
  */
 export async function surLeReseauDeLaMaison(deps) {
   try {
-    const conf = await configuration(deps.client);
+    const conf = await configuration(deps.client, deps.confCable);
     if (conf.erreur || !conf.adresse) return 'inconnu';
     return await surLeReseau(deps.client, conf.adresse);
   } catch (e) {
@@ -72,7 +80,7 @@ export async function surLeReseauDeLaMaison(deps) {
  */
 export async function etatCable(deps) {
   const { client, lireEtat } = deps;
-  const conf = await configuration(client);
+  const conf = await configuration(client, deps.confCable);
   if (conf.erreur === 'local_pas_de_cle') return { etat: 'a_relier' };
   if (conf.erreur) return { etat: 'erreur' };
   if (!conf.adresse) return { etat: 'sans_adresse' };
@@ -97,7 +105,7 @@ export async function etatCable(deps) {
  */
 export async function chercherCable(deps, surProgres = null) {
   const { client, localiserCable } = deps;
-  const conf = await configuration(client);
+  const conf = await configuration(client, deps.confCable);
   if (conf.erreur === 'local_pas_de_cle') return { ok: false, etat: 'a_relier' };
   if (conf.erreur) return { ok: false, etat: 'erreur' };
   const w = await client.prefixeWifi();
@@ -111,6 +119,7 @@ export async function chercherCable(deps, surProgres = null) {
   let res = await chercher();
   if (!res || res.ok !== true) res = await chercher();
   if (!res || res.ok !== true) return { ok: false, etat: 'introuvable' };
+  if (deps.confCable) deps.confCable.adresse = res.ip; // la suite de l'attente lit la nouvelle adresse
   await client.appeler('retenirAdresse', { ip: res.ip });
   return { ok: true, plage: { debut: res.etat.debut, fin: res.etat.fin, plage_active: res.etat.plage_active } };
 }
@@ -124,7 +133,7 @@ export async function programmerLocal(demande, deps, finHC) {
   try {
     if (!demande) return ko('inattendue');
     const { client, programmer } = deps;
-    const conf = await configuration(client);
+    const conf = await configuration(client, deps.confCable);
     if (conf.erreur) return ko(conf.erreur);
     if (!conf.adresse) return ko('local_muet');
     const reseau = await surLeReseau(client, conf.adresse);
