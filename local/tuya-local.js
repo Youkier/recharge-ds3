@@ -312,6 +312,9 @@ async function executer(cfg, transport, travail) {
   } catch (e) {
     // Seul le code est renvoyé : jamais le message d'une exception (la clé n'apparaît nulle part).
     const code = e instanceof ErreurLocale ? e.code : 'format';
+    // Après l'envoi de l'écriture, toute panne (connexion coupée, écran éteint, clé, format) laisse le câble dans un
+    // état inconnu : « delai » (incertain, vérifier dans Smart Life), jamais un code qui dirait « rien n'a été modifié ».
+    if (ctx.ecrit && code !== 'relecture_differente') return { ok: false, erreur: 'delai' };
     return { ok: false, erreur: code === 'ferme' ? 'hors_ligne' : code };
   } finally {
     clearTimeout(minuteur);
@@ -354,6 +357,7 @@ export async function programmer(cfg, transport, action) {
     if (ctx.cfg.simuler === true) return { ok: true, simulation: true, actuelle: reponsePlage(actuelle), a_ecrire: reponsePlage(voulue, extra) };
     if (memePlage(actuelle, voulue)) return reponsePlage(actuelle, extra); // déjà réglé : rien à envoyer
 
+    ctx.ecrit = true; // à partir d'ici, l'écriture a pu être appliquée même si la suite échoue
     await envoyerTrame(ctx, CMD_ECRITURE, clair);
     // Accusé du câble (cmd 0x0d) : sa forme exacte est à confirmer en réel ; son absence n'est pas une erreur,
     // c'est la relecture qui décide.

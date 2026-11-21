@@ -14,6 +14,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.view.WindowInsets
 import android.view.WindowManager
+import android.view.autofill.AutofillManager
 import android.view.inputmethod.InputMethodManager
 import android.webkit.ConsoleMessage
 import android.webkit.RenderProcessGoneDetail
@@ -27,6 +28,8 @@ import android.widget.Button
 import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.TextView
+import androidx.webkit.ServiceWorkerClientCompat
+import androidx.webkit.ServiceWorkerControllerCompat
 import androidx.webkit.WebViewAssetLoader
 import androidx.webkit.WebViewCompat
 import androidx.webkit.WebViewFeature
@@ -134,7 +137,11 @@ class MainActivity : Activity() {
                 ?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.coerceToText(this)?.toString()
                 ?.filterNot { it.isWhitespace() }?.take(max)
             if (texte.isNullOrEmpty()) erreur.setText(R.string.presse_papiers_vide)
-            else { champ.setText(texte); champ.setSelection(texte.length) }
+            else {
+                champ.setText(texte); champ.setSelection(texte.length)
+                // La clé ne reste pas dans le presse-papiers (d'autres applis pourraient la lire).
+                if (champ === champCle) try { getSystemService(ClipboardManager::class.java).clearPrimaryClip() } catch (e: Exception) { }
+            }
         }
         vue.findViewById<Button>(R.id.coller_id).setOnClickListener { coller(champId, 64) }
         vue.findViewById<Button>(R.id.coller_cle).setOnClickListener { coller(champCle, 16) }
@@ -163,6 +170,8 @@ class MainActivity : Activity() {
                 else -> {
                     enregistrer.isEnabled = false
                     enregistrer.setText(R.string.enregistrement)
+                    // Aucune proposition « Enregistrer le mot de passe ? » : la clé n'irait pas dans un gestionnaire en ligne.
+                    try { getSystemService(AutofillManager::class.java)?.cancel() } catch (e: Exception) { }
                     masquerClavier(vue)
                     // Magasin de clés hors du fil principal.
                     Thread {
@@ -218,6 +227,14 @@ class MainActivity : Activity() {
 
     private fun creerWebView(): WebView {
         WebView.setWebContentsDebuggingEnabled(estDebug)
+        // Service worker : aucune requête ne doit échapper au filtre de shouldInterceptRequest. La page n'en enregistre
+        // pas dans l'appli (sw-register.js) ; s'il y en avait un, toutes ses requêtes recevraient 403.
+        if (WebViewFeature.isFeatureSupported(WebViewFeature.SERVICE_WORKER_BASIC_USAGE) &&
+            WebViewFeature.isFeatureSupported(WebViewFeature.SERVICE_WORKER_SHOULD_INTERCEPT_REQUEST)) {
+            ServiceWorkerControllerCompat.getInstance().setServiceWorkerClient(object : ServiceWorkerClientCompat() {
+                override fun shouldInterceptRequest(request: WebResourceRequest): WebResourceResponse = GestionnaireAssets.interdit()
+            })
+        }
         val chargeur = WebViewAssetLoader.Builder()
             .setDomain(FiltreReseau.HOTE_ORIGINE)
             .addPathHandler("/assets/", GestionnaireAssets(assets))
