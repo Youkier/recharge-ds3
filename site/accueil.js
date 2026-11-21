@@ -164,6 +164,15 @@ export function confValable(luLe, maintenant) {
   return Number.isFinite(luLe) && Number.isFinite(maintenant) && maintenant >= luLe && maintenant - luLe < CLE_EN_MEMOIRE_MAX_MS;
 }
 
+// Plafond de l'envoi local, et de la préparation de l'attente (demande de notifications : 120 s + marge).
+export const ENVOI_PLAFOND_MS = 30000;
+export const PREPARATION_MAX_MS = 125000;
+// Un plafond est-il dépassé ? Horloge incohérente : oui (on n'attend jamais indéfiniment).
+export function plafondDepasse(debut, maintenant, max) {
+  if (!Number.isFinite(debut) || !Number.isFinite(maintenant)) return true;
+  return maintenant < debut || maintenant - debut >= max;
+}
+
 // Page cachée : seule l'attente en mode « appli ouverte » est quittée. Pendant la préparation (fenêtre système de
 // permission) ou en arrière-plan, l'attente continue.
 export function quitterSiCache({ cache, arriere, prepa }) {

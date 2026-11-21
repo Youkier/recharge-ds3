@@ -314,6 +314,16 @@ demarrer lire 10.0.2.2
 L="$(attendre_essai lire 60)"
 verifier "S12 relecture" "$L" "l.ok === true && l.debut === \"${DEBUT_PAGE}\" && l.fin === \"06:00\""
 
+# S15 à S17 : notifications REFUSÉES d'avance (refus définitif, sans fenêtre système) : mode « appli ouverte ».
+refuser_notifications() {
+  adb shell pm revoke "$PKG" android.permission.POST_NOTIFICATIONS > /dev/null 2>&1 || true
+  adb shell pm set-permission-flags "$PKG" android.permission.POST_NOTIFICATIONS user-fixed > /dev/null 2>&1 || true
+}
+accorder_notifications() {
+  adb shell pm clear-permission-flags "$PKG" android.permission.POST_NOTIFICATIONS user-fixed > /dev/null 2>&1 || true
+  adb shell pm grant "$PKG" android.permission.POST_NOTIFICATIONS
+}
+refuser_notifications
 etape "S15 Programmer avant d'être sur le Wi-Fi : attente, puis envoi automatique à la connexion"
 demarrer_page
 L="$(attendre_essai page-etat 60)"
@@ -552,7 +562,7 @@ ATTENTE_RESUME="$SORTIE/attente-resume.txt"
 etape "S22 Attente en arrière-plan annulée depuis la notification : rien n'est envoyé, notification « Attente annulée »"
 demarrer_page
 page_prete "S22"
-adb shell pm grant "$PKG" android.permission.POST_NOTIFICATIONS # après demarrer_page : pm clear retire les permissions
+accorder_notifications # après demarrer_page : pm clear retire les permissions
 adb shell svc wifi disable
 sleep 5
 adb logcat -c
@@ -594,7 +604,7 @@ e0_deverrouiller
 oublier_donnees
 demarrer_page
 page_prete "S21"
-adb shell pm grant "$PKG" android.permission.POST_NOTIFICATIONS
+accorder_notifications
 adb shell svc wifi disable
 sleep 5
 adb logcat -c
@@ -683,7 +693,7 @@ demarrer lire 10.0.2.2 "" "$CLE_OK"
 L="$(attendre_essai lire 60)"
 verifier "S20 lecture préalable" "$L" 'l.ok === true'
 # Après la ressaisie (pm clear peut retirer les permissions accordées) : notification du service visible.
-adb shell pm grant "$PKG" android.permission.POST_NOTIFICATIONS
+accorder_notifications
 E0_REUSSIS=0
 for N in $(seq 1 10); do
   # Une heure différente à chaque fois : la plage change, donc l'écriture part vraiment (sinon « déjà réglé »).

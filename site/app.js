@@ -1,7 +1,7 @@
 import { plan, hm, fmt, fdur, fr, eur } from "./calc.js";
 import { lignesValides, marques, modeles, versions, trouver } from "./vehicules.js";
 import { validerAdresse, validerJeton, choisirDemande, libelleBouton, envoyer, resultatKo } from "./service.js";
-import { confirmationValable, blocageCable, plageRelue, sousLigneBouton, socValide, moyenEnvoi, boutonActif, programmerSelonMoyen, pastille, secondesRestantes, rechercheAutomatique, decisionEnvoi, attenteExpiree, suiviWifiActif, etapeAttente, lectureDue, quitterSiCache, confValable, resultatNotification, heureNotification, suiteLecture, codeEcheance, LIBELLES_ATTENTE, ATTENTE_SONDE_MS, SUIVI_PASTILLE_MS } from "./accueil.js";
+import { confirmationValable, blocageCable, plageRelue, sousLigneBouton, socValide, moyenEnvoi, boutonActif, programmerSelonMoyen, pastille, secondesRestantes, rechercheAutomatique, decisionEnvoi, attenteExpiree, suiviWifiActif, etapeAttente, lectureDue, quitterSiCache, confValable, plafondDepasse, PREPARATION_MAX_MS, ENVOI_PLAFOND_MS, resultatNotification, heureNotification, suiteLecture, codeEcheance, LIBELLES_ATTENTE, ATTENTE_SONDE_MS, SUIVI_PASTILLE_MS } from "./accueil.js";
 
 (function () {
   var DEFAULTS = { cap: 46, soh: 95, target: 80, dep: "07:30", hcStart: "22:00", hcEnd: "06:00", amp: 16, volt: 230, eff: 90, pHC: 0.146688, pHP: 0.196476, mode: "end", soc: 38 };
@@ -625,7 +625,13 @@ import { confirmationValable, blocageCable, plageRelue, sousLigneBouton, socVali
     try { if (a.scrollIntoView) a.scrollIntoView({ block: "nearest" }); } catch (e) { /* défilement facultatif */ }
   }
 
-  var DELAI_LOCAL_MAX_MS = 30000;
+  var DELAI_LOCAL_MAX_MS = ENVOI_PLAFOND_MS, envoiPlafond = null;
+  // Appelée à la reprise de la page et toutes les 5 s : si le plafond de l'envoi est dépassé sans que son minuteur ait sonné
+  // (minuteurs gelés pendant une fenêtre système), l'échec est affiché maintenant, avec l'heure manuelle.
+  function verifierPlafondEnvoi() {
+    var p = envoiPlafond;
+    if (p && busy && plafondDepasse(p.debut, Date.now(), DELAI_LOCAL_MAX_MS)) { envoiPlafond = null; p.declencher(); }
+  }
   var localEnVol = null; // envoi local réel en cours (il peut survivre au plafond de 30 s)
   $("sendBtn").addEventListener("click", function () {
     if (busy || localEnVol || controle || att || !demande || !confirme || !moyen) return;
@@ -695,14 +701,25 @@ import { confirmationValable, blocageCable, plageRelue, sousLigneBouton, socVali
     journal({ action: "page-attente-wifi", etat: "debut" });
     if (surReseau) journal({ action: "page-attente-wifi", etat: "cable" });
     updateSend();
-    // Préparation (a.verif retient les ticks) : notifications, configuration du câble, service de premier plan.
-    preparerArrierePlan(a).then(function (r) {
-      if (att !== a) { if (r) notifierFin(a, "annulee", false, heureNotification({ demande: a.d, finHC: a.finHC })); return; } // annulée pendant la préparation : le service démarré est arrêté
-      a.prepa = false; a.verif = false;
-      if (r) { a.arriere = true; a.conf = r.conf; a.confLuLe = r.luLe; a.info = ""; journal({ action: "page-attente-wifi", etat: "arriere-plan" }); }
-      updateSend();
-      tickAttente();
-    });
+    // Préparation : tant qu'elle dure (a.prepa), aucun tick ne lit le câble ni n'envoie (a.verif les retient). Elle finit
+    // une seule fois : résultat du pont, ou abandon à 125 s (demande de notifications sans réponse = refus).
+    a.prepaTimer = setTimeout(function () { terminerPrepa(a, null); }, PREPARATION_MAX_MS);
+    preparerArrierePlan(a).then(function (r) { terminerPrepa(a, r); });
+  }
+  function terminerPrepa(a, r) {
+    if (a.prepaFinie) {
+      // Réponse arrivée après l'abandon : un service de premier plan démarré trop tard est arrêté.
+      if (r && !a.arriere) notifierFin(a, "annulee", false, heureNotification({ demande: a.d, finHC: a.finHC }));
+      return;
+    }
+    a.prepaFinie = true; clearTimeout(a.prepaTimer);
+    if (att !== a) { if (r) notifierFin(a, "annulee", false, heureNotification({ demande: a.d, finHC: a.finHC })); return; } // annulée pendant la préparation : le service démarré est arrêté
+    a.prepa = false; a.verif = false;
+    if (r) { a.arriere = true; a.conf = r.conf; a.confLuLe = r.luLe; a.info = ""; journal({ action: "page-attente-wifi", etat: "arriere-plan" }); }
+    else if (!a.info) a.info = LIBELLES_ATTENTE.sansNotifications;
+    journal({ action: "page-attente-wifi", etat: "preparation-finie", arriere: !!r });
+    updateSend();
+    tickAttente(); // Wi-Fi et câble déjà prêts : l'envoi part maintenant
   }
   // Mode arrière-plan : notifications autorisées (demandées une fois), configuration du câble lue ici (illisible écran
   // verrouillé) et gardée en mémoire le temps de l'attente seulement, service de premier plan démarré.
@@ -718,6 +735,7 @@ import { confirmationValable, blocageCable, plageRelue, sousLigneBouton, socVali
       return c.client.appeler("demanderNotifications", {}, 120000).then(function (r) { return !!(r && r.ok && r.autorise); });
     }).then(function (autorise) {
       if (!autorise) { a.info = LIBELLES_ATTENTE.sansNotifications; return null; }
+      if (a.prepaFinie) return null; // abandon entre-temps : on ne démarre pas de service
       a.info = "";
       return c.lireConfigurationCable(c.client).then(function (conf) {
         if (!conf || conf.erreur) return null;
@@ -736,6 +754,7 @@ import { confirmationValable, blocageCable, plageRelue, sousLigneBouton, socVali
   }
   // Envoi après attente : la confirmation du % est revérifiée à cet instant (6 h, même jour).
   function envoiApresAttente(a) {
+    if (a.prepa) return; // jamais d'envoi avant la fin de la préparation
     var opts = { conf: a.conf, confLuLe: a.confLuLe, arriere: a.arriere, a: a };
     sortirAttente();
     // Échéance revérifiée juste avant l'envoi : une lecture ou une recherche tardive ne déclenche rien.
@@ -772,7 +791,9 @@ import { confirmationValable, blocageCable, plageRelue, sousLigneBouton, socVali
         koAttente(a, "local_attente_annulee", "Programmation annulée");
       });
     }
-    if (a.verif) return;
+    // Préparation trop longue (minuteurs gelés pendant une fenêtre système) : abandon, mode appli ouverte.
+    if (a.prepa && Date.now() - a.debut >= PREPARATION_MAX_MS) terminerPrepa(a, null);
+    if (a.verif || a.prepa) return; // jamais de lecture ni d'envoi pendant la préparation
     if (quitterSiCache({ cache: document.hidden, arriere: a.arriere, prepa: a.prepa })) { quitterAttente(); return; } // l'événement de visibilité a pu manquer
     if (attenteExpiree(a.debut, Date.now())) {
       sortirAttente(); journal({ action: "page-attente-wifi", etat: "expiree" });
@@ -854,15 +875,21 @@ import { confirmationValable, blocageCable, plageRelue, sousLigneBouton, socVali
         localEnVol = reel;
         var fin = function () { clearTimeout(minuteur); if (localEnVol === reel) { localEnVol = null; try { updateSend(); } catch (e) { /* sans effet */ } } };
         reel.then(fin, fin);
+        // Tout ce qui précède programmerLocal (import, pont, configuration) est dans ce plafond : le minuteur est posé
+        // avant la moindre attente, et verifierPlafondEnvoi le déclenche aussi à la reprise si les minuteurs ont été gelés.
         return Promise.race([
           reel,
-          new Promise(function (ok) { minuteur = setTimeout(function () { ok(resultatKo(d, "local_delai", finHC)); }, DELAI_LOCAL_MAX_MS); }),
+          new Promise(function (ok) {
+            var declencher = function () { ok(resultatKo(d, "local_delai", finHC)); };
+            envoiPlafond = { debut: Date.now(), declencher: declencher };
+            minuteur = setTimeout(declencher, DELAI_LOCAL_MAX_MS);
+          }),
         ]);
       },
     };
     programmerSelonMoyen(m, envoi).catch(function () { return resultatKo(d, "inattendue", finHC); }).then(function (res) {
       try { showAlert(res, d); } catch (e) { try { showAlert(resultatKo(d, "inattendue", finHC), d); } catch (e2) { /* rien de plus */ } }
-      busy = false;
+      busy = false; envoiPlafond = null;
       if (opts && opts.arriere) {
         var pr = plageRelue(res);
         notifierFin(opts.a, resultatNotification({ res: res }), !!(res && res.etat === "ko" && res.incertain), heureNotification({ demande: d, finHC: finHC, debutRelu: pr.debut }));
@@ -981,6 +1008,7 @@ import { confirmationValable, blocageCable, plageRelue, sousLigneBouton, socVali
       if (quitterSiCache({ cache: true, arriere: att && att.arriere, prepa: att && att.prepa })) quitterAttente();
       return;
     }
+    verifierPlafondEnvoi();
     verifierConfirmation();
     if (pontOk && !busy && !att) majEtatCable();
   });
@@ -988,6 +1016,7 @@ import { confirmationValable, blocageCable, plageRelue, sousLigneBouton, socVali
   // dès que le téléphone est sur le bon réseau, une lecture de l'état (jamais de recherche) passe la pastille à « Câble prêt ».
   var suiviEnCours = false;
   function suivreWifiPastille() {
+    verifierPlafondEnvoi();
     if (!pontOk || suiviEnCours || cherche || opCable || controle || !suiviWifiActif({ etat: etatCable, visible: !document.hidden, occupe: busy || !!localEnVol || !!att })) return;
     suiviEnCours = true;
     reseauMaison().then(function (sr) {

@@ -7,7 +7,7 @@ import {
   programmerSelonMoyen, pastille, secondesRestantes,
   confirmationValable, blocageCable, plageRelue, sousLigneBouton, rechercheAutomatique,
   decisionEnvoi, attenteExpiree, suiviWifiActif, LIBELLES_ATTENTE, ATTENTE_MAX_MS,
-  etapeAttente, lectureDue, quitterSiCache, confValable, resultatNotification, heureNotification, CLE_EN_MEMOIRE_MAX_MS, suiteLecture, codeEcheance, sousLigneAttente,
+  etapeAttente, lectureDue, quitterSiCache, confValable, plafondDepasse, PREPARATION_MAX_MS, ENVOI_PLAFOND_MS, resultatNotification, heureNotification, CLE_EN_MEMOIRE_MAX_MS, suiteLecture, codeEcheance, sousLigneAttente,
 } from '../site/accueil.js';
 import { resultatKo } from '../site/service.js';
 
@@ -263,6 +263,26 @@ describe('Attente du Wi-Fi de la maison', () => {
     assert.equal(heureNotification({ demande: null, finHC: 'x' }), null);
     assert.equal(LIBELLES_ATTENTE.autoriser, 'Autorisez les notifications pour être prévenu écran éteint');
     assert.equal(LIBELLES_ATTENTE.sansNotifications, "Sans notifications, gardez l'application ouverte");
+  });
+  test('plafonds : envoi 30 s, préparation 125 s, horloge incohérente = dépassé', () => {
+    assert.equal(ENVOI_PLAFOND_MS, 30000);
+    assert.equal(PREPARATION_MAX_MS, 125000);
+    assert.equal(plafondDepasse(1000, 1000 + 29999, ENVOI_PLAFOND_MS), false);
+    assert.equal(plafondDepasse(1000, 1000 + 30000, ENVOI_PLAFOND_MS), true);
+    assert.equal(plafondDepasse(1000, 500, ENVOI_PLAFOND_MS), true);
+    assert.equal(plafondDepasse(NaN, 500, ENVOI_PLAFOND_MS), true);
+  });
+  test('source de la page : préparation sans tick actif, envoi borné de bout en bout', () => {
+    const src = readFileSync(new URL('../site/app.js', import.meta.url), 'utf8');
+    assert.match(src, /if \(a\.verif \|\| a\.prepa\) return;/); // aucun tick actif pendant la préparation
+    assert.match(src, /function envoiApresAttente\(a\) \{\s*if \(a\.prepa\) return;/);
+    assert.match(src, /setTimeout\(function \(\) \{ terminerPrepa\(a, null\); \}, PREPARATION_MAX_MS\)/);
+    // Le plafond de l'envoi est posé dans le même passage que l'appel au pont (aucune attente avant) et relu à la reprise.
+    const deb = src.indexOf('local: function () {'), fin = src.indexOf('programmerSelonMoyen(m, envoi)');
+    const local = deb > 0 && fin > deb ? src.slice(deb, fin) : null;
+    assert.ok(local, 'bloc local de lancerEnvoi trouvé');
+    assert.ok(local.indexOf('opCableLancer(') < local.indexOf('setTimeout(declencher, DELAI_LOCAL_MAX_MS)'));
+    assert.match(src, /verifierPlafondEnvoi\(\);\s*verifierConfirmation\(\);/);
   });
   test('source de la page : arrière-plan annule attente, envois comptés', () => {
     const src = readFileSync(new URL('../site/app.js', import.meta.url), 'utf8');
