@@ -19,6 +19,7 @@ export function pontPresent(g = globalThis) {
 // Échecs de contact avec le câble qui méritent une seconde tentative (connexion refusée, lente, ou fermée pendant la
 // négociation, que le module lit comme « cle »). Jamais après une écriture.
 const ECHECS_A_RETENTER = new Set(['hors_ligne', 'delai', 'cle']);
+const BUDGET_ECRITURE_MS = 27000; // sous le plafond de 30 s de site/app.js (DELAI_LOCAL_MAX_MS)
 
 const IPV4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/;
 const reseau24 = (ip) => (typeof ip === 'string' && IPV4.test(ip) ? ip.split('.').slice(0, 3).join('.') : null);
@@ -114,11 +115,15 @@ export async function programmerLocal(demande, deps, finHC) {
     if (!conf.adresse) return ko('local_muet');
     const reseau = await surLeReseau(client, conf.adresse);
     if (reseau !== 'oui') return ko('local_hors_wifi');
+    const debut = Date.now();
     let r = await programmer({ ...conf.cfg, ip: conf.adresse }, client.creerTransport(), demande);
     // Une seconde tentative SEULEMENT si le module ne signale pas d'écriture partie (pas de ecrit: true) et que l'échec
     // vient du contact avec le câble. Une écriture peut-être appliquée n'est jamais relancée (règle 2 : résultat incertain).
-    if (r && r.ok !== true && r.ecrit !== true && ECHECS_A_RETENTER.has(r.erreur)) {
-      r = await programmer({ ...conf.cfg, ip: conf.adresse }, client.creerTransport(), demande);
+    // Les deux tentatives tiennent sous le plafond de 30 s de la page (app.js) : la seconde n'a que le temps restant,
+    // et ne part pas s'il en reste trop peu (sinon elle pourrait écrire après l'affichage de l'échec).
+    const reste = BUDGET_ECRITURE_MS - (Date.now() - debut);
+    if (r && r.ok !== true && r.ecrit !== true && ECHECS_A_RETENTER.has(r.erreur) && reste >= 5000) {
+      r = await programmer({ ...conf.cfg, ip: conf.adresse, delaiGlobalMs: reste }, client.creerTransport(), demande);
     }
     if (!r || r.ok !== true) return ko(codeLocal(r && r.erreur));
     const res = interpreterReponse(demande, 200, r, finHC);

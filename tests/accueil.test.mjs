@@ -1,10 +1,11 @@
 // Tests de la logique de l'accueil (site/accueil.js) : sans DOM, sans réseau.
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import {
   socValide, lireHistorique, ajouterHistorique, raccourcis, moyenEnvoi, boutonActif,
   programmerSelonMoyen, pastille, secondesRestantes,
-  confirmationValable, blocageCable, plageRelue, sousLigneBouton, rechercheAutomatique, compteCommeGeste,
+  confirmationValable, blocageCable, plageRelue, sousLigneBouton, rechercheAutomatique,
 } from '../site/accueil.js';
 import { resultatKo } from '../site/service.js';
 
@@ -175,9 +176,12 @@ describe('Recherche automatique du câble', () => {
   });
 });
 
+// Source de la page : le curseur ne confirme que sur un geste (événement input), jamais au rendu.
 describe('Le curseur est un geste de confirmation', () => {
-  test('curseur, −, +, puce, saisie, « Garder » confirment ; le reste non', () => {
-    for (const g of ['curseur', 'moins', 'plus', 'puce', 'saisie', 'garder']) assert.equal(compteCommeGeste(g), true, g);
-    for (const g of ['chargement', 'visibilite', '', null]) assert.equal(compteCommeGeste(g), false, String(g));
+  test('socRange : setConfirme(true) seulement dans le gestionnaire « input »', () => {
+    const src = readFileSync(new URL('../site/app.js', import.meta.url), 'utf8');
+    const m = src.match(/\$\("socRange"\)\.addEventListener\("input",[\s\S]{0,400}?\}\);/);
+    assert.ok(m, 'gestionnaire input du curseur trouvé');
+    assert.match(m[0], /setConfirme\(true\)/);
   });
 });

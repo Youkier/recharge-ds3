@@ -56,6 +56,7 @@ class MainActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        nuit = resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK
         wifi = ReseauWifi(this)
         coffre = CoffreCable(this)
         pont = PontLocal(wifi, coffre, estDebug, surSaisirCle = { afficherFormulaire() }, prendreActionAuto = { actionAuto() })
@@ -82,10 +83,13 @@ class MainActivity : Activity() {
     // configChanges inclut uiMode (pas de recréation pendant un envoi). Pour que la page suive le thème clair ou sombre,
     // l'activité est recréée tout de suite si aucune connexion au câble n'est ouverte, sinon au prochain retour.
     private var themeAChanger = false
+    // Mode clair/sombre connu de l'activité (resources.configuration est déjà la NOUVELLE configuration ici).
+    private var nuit = -1
     override fun onConfigurationChanged(nouvelle: Configuration) {
-        val avant = resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK
         super.onConfigurationChanged(nouvelle)
-        if ((nouvelle.uiMode and Configuration.UI_MODE_NIGHT_MASK) == avant) return
+        val maintenant = nouvelle.uiMode and Configuration.UI_MODE_NIGHT_MASK
+        if (maintenant == nuit) return
+        nuit = maintenant
         if (pont.connexionOuverte()) themeAChanger = true else recreate()
     }
 

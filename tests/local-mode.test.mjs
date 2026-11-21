@@ -172,3 +172,13 @@ describe('Seconde tentative, jamais après une écriture', () => {
     assert.equal(r.etat, 'pret');
   });
 });
+
+describe('Seconde tentative : sous le plafond de 30 s de la page', () => {
+  test('la seconde tentative reçoit seulement le temps restant', async () => {
+    const delais = [];
+    await programmerLocal({ allumage: '23:45' }, { client: client(), programmer: async (cfg) => { delais.push(cfg.delaiGlobalMs); return { ok: false, erreur: 'hors_ligne' }; } }, '06:00');
+    assert.equal(delais.length, 2);
+    assert.equal(delais[0], undefined, 'première tentative : délai par défaut du module (20 s)');
+    assert.ok(delais[1] > 0 && delais[1] <= 27000, `seconde tentative bornée : ${delais[1]}`);
+  });
+});
