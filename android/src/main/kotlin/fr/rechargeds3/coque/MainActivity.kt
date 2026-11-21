@@ -34,7 +34,8 @@ import org.json.JSONObject
 
 /**
  * Une seule activité : l'écran natif de saisie de l'identifiant et de la clé du câble, puis la WebView qui affiche la page
- * d'essai embarquée (android/essai/). Thème plateforme DeviceDefault.DayNight (pas d'AppCompat) : prefers-color-scheme
+ * embarquée (site/, lot C4). La page d'essai (android/essai/) n'est chargée que par la version de mise au point, quand
+ * adb demande une action (scénarios d'émulateur). Thème plateforme DeviceDefault.DayNight (pas d'AppCompat) : prefers-color-scheme
  * de la page suit le thème clair ou sombre du téléphone.
  */
 class MainActivity : Activity() {
@@ -209,7 +210,7 @@ class MainActivity : Activity() {
         racine.addView(w, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
         if (!pageChargee) {
             pageChargee = true
-            w.loadUrl(URL_ESSAI)
+            w.loadUrl(urlPage())
         } else if (nouvelleConfiguration) {
             w.reload()
         }
@@ -224,7 +225,7 @@ class MainActivity : Activity() {
         val w = WebView(this)
         with(w.settings) {
             javaScriptEnabled = true
-            domStorageEnabled = false // la page d'essai n'en a pas besoin ; le lot C4 l'activera pour site/
+            domStorageEnabled = true // réglages de la page (site/) ; jamais la clé, qui reste dans le coffre natif
             allowFileAccess = false
             allowContentAccess = false
             mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
@@ -267,6 +268,10 @@ class MainActivity : Activity() {
         return w
     }
 
+    // Page d'essai seulement en mise au point avec une action adb ; sinon la vraie page.
+    private fun urlPage(): String =
+        if (estDebug && intent?.getStringExtra("action") in ACTIONS_AUTO) URL_ESSAI else URL_SITE
+
     // Action demandée par adb (version de mise au point seulement), rendue une seule fois à la page :
     //   am start -n ... --es action lire|chercher|programmer|filtre|cle [--es ip 10.0.2.2] [--es heure 05:00]
     private fun actionAuto(): JSONObject? {
@@ -282,6 +287,7 @@ class MainActivity : Activity() {
 
     companion object {
         const val TAG_LOG = "RechargeEssai"
+        const val URL_SITE = "${FiltreReseau.ORIGINE}/assets/site/index.html"
         const val URL_ESSAI = "${FiltreReseau.ORIGINE}/assets/android/essai/index.html"
         private val ACTIONS_AUTO = setOf("lire", "chercher", "programmer", "filtre", "cle")
 
