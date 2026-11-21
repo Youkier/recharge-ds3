@@ -17,6 +17,15 @@ class FiltreAssetsTest {
         assertEquals("application/manifest+json", FiltreAssets.typeMime("site/manifest.webmanifest"))
     }
 
+    @Test fun pageDEssaiAbsenteDeLaVersionPubliee() {
+        assertFalse(FiltreAssets.serviEnPublication("android/essai/index.html"))
+        assertFalse(FiltreAssets.serviEnPublication("android/essai/essai.js"))
+        assertFalse(FiltreAssets.serviEnPublication("android/essai/essai.css"))
+        assertTrue(FiltreAssets.serviEnPublication("android/essai/transport-pont.js"))
+        assertTrue(FiltreAssets.serviEnPublication("site/index.html"))
+        assertTrue(FiltreAssets.serviEnPublication("local/tuya-local.js"))
+    }
+
     @Test fun swJsEstTouteJoursIntrouvable() {
         assertNull(FiltreAssets.typeMime("site/sw.js"))
         assertNull(FiltreAssets.typeMime("sw.js"))

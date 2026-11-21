@@ -1,6 +1,7 @@
 // Génère les icônes PNG de la page (site/icons/) sans aucune dépendance.
 // Usage : node tools/gen-icons.mjs
-// Motif : éclair ambre sur fond bleu (couleurs de la page : --charge et --accent sombre).
+// Motif « Quand charger ? » (2026-11-21) : croissant de lune et éclair ambre sur un ciel de nuit bleu.
+// Même dessin que l'icône de l'appli Android (android/src/main/res/drawable/ic_lanceur_*.xml), repère 108 x 108.
 
 import { deflateSync } from "node:zlib";
 import { writeFileSync, mkdirSync } from "node:fs";
@@ -9,14 +10,14 @@ import { dirname, join } from "node:path";
 
 const OUT = join(dirname(fileURLToPath(import.meta.url)), "..", "site", "icons");
 
-const BG = [0x24, 0x57, 0xc5];   // bleu de charge
-const BOLT = [0xf0, 0xa6, 0x3a]; // ambre heures creuses
+const CIEL_HAUT = [0x16, 0x29, 0x5e], CIEL_BAS = [0x24, 0x57, 0xc5];
+const LUNE = [0xff, 0xe7, 0xa3], ECLAIR = [0xf0, 0xa6, 0x3a], CONTOUR = [0x16, 0x29, 0x5e], ETOILE = [0xcf, 0xdc, 0xff];
 
-// Éclair dans un carré unité (x, y entre 0 et 1).
-const BOLT_POLY = [
-  [0.52, 0.05], [0.70, 0.05], [0.56, 0.40], [0.78, 0.40],
-  [0.36, 0.95], [0.46, 0.55], [0.24, 0.55],
-];
+// Repère 108 x 108 (celui des icônes adaptatives d'Android).
+const DISQUE_LUNE = [50, 54, 25], DISQUE_OMBRE = [62, 46, 21];
+const ECLAIR_POLY = [[66, 31], [76, 31], [69, 46], [79, 46], [60, 77], [64, 54], [55, 54]];
+const ETOILES = [[30, 30, 1.4], [80, 26, 1.1], [84, 78, 1.2], [26, 74, 0.9]];
+const EPAISSEUR_CONTOUR = 1.0;
 
 // --- PNG ---
 const CRC_TABLE = (() => {
@@ -81,33 +82,41 @@ function inRoundRect(x, y, r) {
   return (x - cx) ** 2 + (y - cy) ** 2 <= r * r;
 }
 
-// radius : arrondi des coins du fond (0 = carré plein) ; scale : taille de l'éclair.
+const dansDisque = (x, y, [cx, cy, r]) => (x - cx) ** 2 + (y - cy) ** 2 <= r * r;
+const DIRECTIONS = Array.from({ length: 8 }, (_, k) => [Math.cos((k * Math.PI) / 4), Math.sin((k * Math.PI) / 4)]);
+
+// Couleur du point (x, y) du repère 108 (fond compris).
+function couleur(x, y) {
+  if (inPoly(x, y, ECLAIR_POLY)) return ECLAIR;
+  if (DIRECTIONS.some(([dx, dy]) => inPoly(x + dx * EPAISSEUR_CONTOUR, y + dy * EPAISSEUR_CONTOUR, ECLAIR_POLY))) return CONTOUR;
+  if (dansDisque(x, y, DISQUE_LUNE) && !dansDisque(x, y, DISQUE_OMBRE)) return LUNE;
+  if (ETOILES.some((e) => dansDisque(x, y, e))) return ETOILE;
+  const t = y / 108;
+  return CIEL_HAUT.map((c, i) => c + (CIEL_BAS[i] - c) * t);
+}
+
+// radius : arrondi des coins du fond (0 = carré plein) ; scale : taille du dessin (1 = repère 108 en entier).
 function render(size, { radius, scale }) {
   const SS = 4; // suréchantillonnage 4x4 pour l'anticrénelage
   const rgba = Buffer.alloc(size * size * 4);
-  // éclair centré : on centre sa boîte englobante
-  const bx0 = 0.24, bx1 = 0.78, by0 = 0.05, by1 = 0.95;
-  const bcx = (bx0 + bx1) / 2, bcy = (by0 + by1) / 2;
-  const poly = BOLT_POLY.map(([x, y]) => [0.5 + (x - bcx) * scale, 0.5 + (y - bcy) * scale]);
   for (let py = 0; py < size; py++) {
     for (let px = 0; px < size; px++) {
-      let bg = 0, bolt = 0;
+      let n = 0;
+      const somme = [0, 0, 0];
       for (let sy = 0; sy < SS; sy++) {
         for (let sx = 0; sx < SS; sx++) {
           const x = (px + (sx + 0.5) / SS) / size;
           const y = (py + (sy + 0.5) / SS) / size;
-          if (radius === 0 || inRoundRect(x, y, radius)) {
-            bg++;
-            if (inPoly(x, y, poly)) bolt++;
-          }
+          if (radius !== 0 && !inRoundRect(x, y, radius)) continue;
+          n++;
+          // le dessin est centré et mis à l'échelle (le dégradé du ciel suit)
+          const c = couleur(54 + (x - 0.5) * 108 / scale, 54 + (y - 0.5) * 108 / scale);
+          for (let k = 0; k < 3; k++) somme[k] += c[k];
         }
       }
-      const n = SS * SS;
-      const a = bg / n;
-      const t = bg ? bolt / bg : 0;
       const i = (py * size + px) * 4;
-      for (let c = 0; c < 3; c++) rgba[i + c] = Math.round(BG[c] * (1 - t) + BOLT[c] * t);
-      rgba[i + 3] = Math.round(a * 255);
+      for (let k = 0; k < 3; k++) rgba[i + k] = n ? Math.round(somme[k] / n) : 0;
+      rgba[i + 3] = Math.round((n / (SS * SS)) * 255);
     }
   }
   return encodePNG(size, rgba);
@@ -115,14 +124,13 @@ function render(size, { radius, scale }) {
 
 mkdirSync(OUT, { recursive: true });
 const icons = [
-  // purpose "any" : fond arrondi, éclair grand
-  ["icon-192.png", 192, { radius: 0.22, scale: 0.72 }],
-  ["icon-512.png", 512, { radius: 0.22, scale: 0.72 }],
-  // purpose "maskable" : fond plein, éclair dans le cercle de sécurité (rayon 40 %)
-  // demi-diagonale de l'éclair = 0,525 x scale <= 0,40  =>  scale <= 0,76
-  ["icon-maskable-512.png", 512, { radius: 0, scale: 0.6 }],
+  // purpose "any" : fond arrondi, dessin agrandi
+  ["icon-192.png", 192, { radius: 0.22, scale: 1.3 }],
+  ["icon-512.png", 512, { radius: 0.22, scale: 1.3 }],
+  // purpose "maskable" : fond plein, dessin dans le cercle de sécurité (rayon 40 %) : échelle 1 (zone sûre 66/108)
+  ["icon-maskable-512.png", 512, { radius: 0, scale: 1.0 }],
   // écran d'accueil iOS : opaque, iOS arrondit lui-même
-  ["apple-touch-icon.png", 180, { radius: 0, scale: 0.68 }],
+  ["apple-touch-icon.png", 180, { radius: 0, scale: 1.2 }],
 ];
 for (const [name, size, opts] of icons) {
   writeFileSync(join(OUT, name), render(size, opts));

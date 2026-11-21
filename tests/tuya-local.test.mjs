@@ -307,21 +307,21 @@ describe('Rien n\'est écrit quand la valeur du câble est inattendue', () => {
 describe('Vérification après écriture', () => {
   test('écriture sans effet : relecture_differente', async () => {
     const f = FAUX({ ignorerEcriture: true });
-    assert.deepEqual(await programmer(cfgDe(), f.transport, { allumage: '00:15' }), { ok: false, erreur: 'relecture_differente' });
+    assert.deepEqual(await programmer(cfgDe(), f.transport, { allumage: '00:15' }), { ok: false, erreur: 'relecture_differente', ecrit: true });
     assert.equal(f.journal.ecritures.length, 1);
     assert.equal(f.journal.fermetures, 1);
   });
   test('le câble applique une autre valeur : relecture_differente', async () => {
     const f = FAUX({ transformerEcriture: () => plage(2, '00:20', '06:00') });
-    assert.deepEqual(await programmer(cfgDe(), f.transport, { allumage: '00:15' }), { ok: false, erreur: 'relecture_differente' });
+    assert.deepEqual(await programmer(cfgDe(), f.transport, { allumage: '00:15' }), { ok: false, erreur: 'relecture_differente', ecrit: true });
   });
   test('un autre point de réglage change en même temps : relecture_differente', async () => {
     const f = FAUX({ effetsEcriture: { 150: 6 } });
-    assert.deepEqual(await programmer(cfgDe(), f.transport, { allumage: '00:15' }), { ok: false, erreur: 'relecture_differente' });
+    assert.deepEqual(await programmer(cfgDe(), f.transport, { allumage: '00:15' }), { ok: false, erreur: 'relecture_differente', ecrit: true });
   });
   test('un point apparaît : relecture_differente', async () => {
     const f = FAUX({ effetsEcriture: { 999: true } });
-    assert.deepEqual(await programmer(cfgDe(), f.transport, { allumage: '00:15' }), { ok: false, erreur: 'relecture_differente' });
+    assert.deepEqual(await programmer(cfgDe(), f.transport, { allumage: '00:15' }), { ok: false, erreur: 'relecture_differente', ecrit: true });
   });
   test('points volatils (101, 102, 105, 109) ignorés', async () => {
     const f = FAUX({ effetsEcriture: { 101: 300, 102: '{"p":33}', 105: 'x', 109: 'WORKING' } });
@@ -333,7 +333,7 @@ describe('Vérification après écriture', () => {
     const transport = { ...f.transport, async envoyer(o) { await f.transport.envoyer(o); },
       async recevoir(d) { if (f.journal.commandes.filter((c) => c === 0x10).length >= 2) { lectures++; throw Object.assign(new Error('x'), { code: 'delai' }); } return f.transport.recevoir(d); } };
     const r = await programmer(cfgDe(), transport, { allumage: '00:15' });
-    assert.deepEqual(r, { ok: false, erreur: 'delai' });
+    assert.deepEqual(r, { ok: false, erreur: 'delai', ecrit: true });
     assert.ok(lectures >= 1);
   });
 });
@@ -409,7 +409,8 @@ describe('La clé n\'apparaît nulle part', () => {
     const tout = JSON.stringify(resultats) + sortie.join('\n');
     const cleHex = hex(new TextEncoder().encode(CLE));
     assert.ok(!tout.includes(CLE) && !tout.includes(cleHex) && !tout.includes(Buffer.from(CLE).toString('base64')));
-    for (const r of resultats) assert.deepEqual(Object.keys(r).sort(), ['erreur', 'ok']);
+    // Champs permis : ok, erreur, et ecrit (vrai seulement si l'écriture est partie). Jamais rien d'autre.
+    for (const r of resultats) assert.ok(Object.keys(r).every((k) => ['erreur', 'ok', 'ecrit'].includes(k)) && (r.ecrit === undefined || r.ecrit === true));
     assert.deepEqual(resultats.map((r) => r.erreur), ['cle', 'relecture_differente', 'format', 'cle', 'hors_ligne', 'hors_ligne']);
   });
 });

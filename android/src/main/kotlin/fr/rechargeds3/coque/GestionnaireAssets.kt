@@ -13,9 +13,10 @@ import java.io.IOException
  * Sources : developer.android.com, WebViewAssetLoader.PathHandler (handle(path) : suffixe après « /assets/ », null =
  * « non géré » donc repli sur le réseau, d'où la réponse 404 explicite), WebResourceResponse.
  */
-class GestionnaireAssets(private val assets: AssetManager) : WebViewAssetLoader.PathHandler {
+class GestionnaireAssets(private val assets: AssetManager, private val publication: Boolean = false) : WebViewAssetLoader.PathHandler {
 
     override fun handle(path: String): WebResourceResponse? {
+        if (publication && !FiltreAssets.serviEnPublication(path)) return introuvable()
         val mime = FiltreAssets.typeMime(path) ?: return introuvable()
         val flux = try { assets.open(path, AssetManager.ACCESS_STREAMING) } catch (e: IOException) { return introuvable() }
         val entetes = HashMap<String, String>()

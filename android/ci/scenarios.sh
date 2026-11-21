@@ -285,6 +285,18 @@ ligne_vue page-chercher && echec "S11 : une recherche a été lancée sans geste
 sleep 2 # laisse la page finir son rendu (API 36 : capture vide vue le 2026-11-21)
 capturer "clair-5-page-accueil"
 
+etape "S11b Thème sombre en cours d'usage : la page suit (activité recréée hors envoi)"
+adb logcat -c
+mode_theme sombre
+L="$(attendre_essai page-etat 60)"
+verifier "S11b page rechargée en sombre" "$L" 'l.etat === "pret"'
+sleep 2
+capturer "sombre-5-page-accueil"
+adb logcat -c
+mode_theme clair
+L="$(attendre_essai page-etat 60)"
+sleep 2
+
 etape "S12 Vraie page : bouton inactif avant le geste, puis « Programmer » relu conforme"
 adb logcat -c
 toucher_web "Programmer la charge"
@@ -305,6 +317,8 @@ etape "S13 Vraie page, nouvelle clé (données effacées, adresse inconnue) : «
 demarrer_page "$CLE_KO"
 L="$(attendre_essai page-etat 60)"
 verifier "S13 état sans adresse" "$L" 'l.etat === "sans_adresse"'
+L="$(attendre_essai page-chercher 150)"
+verifier "S13 recherche automatique (clé refusée partout)" "$L" 'l.auto === true && l.ok === false'
 adb logcat -c
 toucher_web "Ajouter 1 %"
 toucher_web "Programmer la charge"
@@ -312,8 +326,29 @@ sleep 3
 ligne_vue page-programmer && echec "S13 : envoi lancé alors que le câble est à localiser"
 capturer "clair-7-page-a-localiser"
 demarrer_page "$CLE_OK"
+L="$(attendre_essai page-chercher 150)"
+verifier "S13 recherche automatique après une nouvelle clé" "$L" 'l.auto === true && l.ok === true'
+
+etape "S14 Vraie page, clé refusée à l'adresse retenue : pastille « clé », « Programmer » n'envoie rien"
+# Nouvelle clé saisie SANS effacer les données : l'adresse retenue est gardée.
+adb logcat -c
+adb shell am force-stop "$PKG"
+adb shell am start -W -n "$ACT" --es action cle > /dev/null
+saisir_cle "$CLE_KO"
+CLE_ENREGISTREE="$CLE_KO"
+sleep 2
+demarrer_page "$CLE_KO"
 L="$(attendre_essai page-etat 60)"
-echo "état après ressaisie de la bonne clé : $L"
+verifier "S14 état clé refusée" "$L" 'l.etat === "cle"'
+adb logcat -c
+toucher_web "Ajouter 1 %"
+toucher_web "Programmer la charge"
+sleep 3
+ligne_vue page-programmer && echec "S14 : envoi lancé alors que la clé est refusée"
+capturer "clair-8-page-cle-refusee"
+demarrer_page "$CLE_OK"
+L="$(attendre_essai page-chercher 150)"
+verifier "S14 retour à la bonne clé" "$L" 'l.ok === true'
 
 etape "S10d Oublier le câble : confirmation, puis écran de saisie et fichier vidé"
 adb logcat -c

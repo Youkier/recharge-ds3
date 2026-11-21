@@ -42,4 +42,9 @@ object FiltreAssets {
     }
 
     fun estTexte(chemin: String): Boolean = extension(chemin) in TEXTE
+
+    /** Version publiée : la page d'essai (android/essai/) n'est pas servie, seul son client du pont l'est (la page
+     *  site/ l'importe). Relecture de sécurité du 2026-11-21 : rien d'inutile sous l'origine qui peut demander la clé. */
+    fun serviEnPublication(chemin: String): Boolean =
+        !chemin.startsWith("android/essai/") || chemin == "android/essai/transport-pont.js"
 }

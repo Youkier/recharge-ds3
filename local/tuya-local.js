@@ -314,7 +314,8 @@ async function executer(cfg, transport, travail) {
     const code = e instanceof ErreurLocale ? e.code : 'format';
     // Après l'envoi de l'écriture, toute panne (connexion coupée, écran éteint, clé, format) laisse le câble dans un
     // état inconnu : « delai » (incertain, vérifier dans Smart Life), jamais un code qui dirait « rien n'a été modifié ».
-    if (ctx.ecrit && code !== 'relecture_differente') return { ok: false, erreur: 'delai' };
+    // « ecrit » dit à l'appelant si l'écriture est partie : il ne doit JAMAIS relancer une écriture qui a pu être appliquée.
+    if (ctx.ecrit) return { ok: false, erreur: code === 'relecture_differente' ? code : 'delai', ecrit: true };
     return { ok: false, erreur: code === 'ferme' ? 'hors_ligne' : code };
   } finally {
     clearTimeout(minuteur);

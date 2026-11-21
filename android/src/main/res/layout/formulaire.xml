@@ -132,10 +132,10 @@
 
             <Button
                 android:id="@+id/afficher_cle"
-                style="?android:attr/borderlessButtonStyle"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:minHeight="48dp"
+                android:minWidth="88dp"
                 android:text="@string/afficher" />
         </LinearLayout>
 
@@ -147,6 +147,15 @@
             android:accessibilityLiveRegion="polite"
             android:textColor="@color/erreur"
             android:textSize="16sp" />
+
+        <TextView
+            android:id="@+id/aide_enregistrer"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="@string/aide_enregistrer"
+            android:textColor="?android:attr/textColorSecondary"
+            android:textSize="14sp" />
 
         <Button
             android:id="@+id/bouton_enregistrer"

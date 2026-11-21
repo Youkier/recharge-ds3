@@ -249,7 +249,19 @@ jobs:
           export PATH="$ANDROID_HOME/platform-tools:$PATH"
           AAPT2="$(ls -d "$ANDROID_HOME"/build-tools/*/aapt2 | sort -V | tail -1)"
           if "$AAPT2" dump badging signe/recharge-ds3-coque.apk | grep -q "application-debuggable"; then echo "APK signé déboguable"; exit 1; fi
-          adb install signe/recharge-ds3-coque.apk
+          # Mise à jour réelle : la dernière préversion publiée d'abord, puis la nouvelle par-dessus (même clé de signature,
+          # versionCode plus grand), sans désinstaller. Critère du lot C4 (« une mise à jour ne fait pas ressaisir la clé »).
+          # Lecture publique, sans jeton ni outil de publication (dépôt public).
+          mkdir -p precedente
+          TAG="$(curl -fsSL "https://api.github.com/repos/$GITHUB_REPOSITORY/releases?per_page=20" | jq -r '[.[] | select(.tag_name | startswith("coque-v"))][0].tag_name // empty' || true)"
+          if [ -n "$TAG" ] && curl -fsSL -o precedente/recharge-ds3-coque.apk "https://github.com/$GITHUB_REPOSITORY/releases/download/$TAG/recharge-ds3-coque.apk"; then
+            echo "préversion précédente : $TAG"
+            adb install precedente/recharge-ds3-coque.apk
+            echo "préversion précédente installée"
+          else
+            echo "aucune préversion précédente téléchargeable : installation à neuf"
+          fi
+          adb install -r signe/recharge-ds3-coque.apk
           adb shell am start -W -n fr.rechargeds3.coque/.MainActivity
           sleep 5
           adb shell pidof fr.rechargeds3.coque || { echo "l'application ne tourne pas"; exit 1; }

@@ -2,6 +2,7 @@ package fr.rechargeds3.coque
 
 import android.content.Context
 import android.security.keystore.KeyGenParameterSpec
+import android.security.keystore.KeyPermanentlyInvalidatedException
 import android.security.keystore.KeyProperties
 import java.security.KeyStore
 import javax.crypto.Cipher
@@ -34,7 +35,13 @@ class CoffreCable(contexte: Context) {
     @Synchronized
     fun enregistrer(identifiant: String, cle: String) {
         val c = Cipher.getInstance(TRANSFORMATION)
-        c.init(Cipher.ENCRYPT_MODE, cleDuMagasin(creer = true))
+        try {
+            c.init(Cipher.ENCRYPT_MODE, cleDuMagasin(creer = true))
+        } catch (e: KeyPermanentlyInvalidatedException) {
+            // Clé du magasin devenue inutilisable (changement de verrouillage…) : on la remplace, l'ancien bloc est écrasé.
+            supprimerCleDuMagasin()
+            c.init(Cipher.ENCRYPT_MODE, cleDuMagasin(creer = true))
+        }
         val bloc = Enveloppe.encoder(c.iv, c.doFinal(Enveloppe.contenu(identifiant, cle)))
         check(prefs.edit().putString(BLOC, bloc).commit()) { "enregistrement impossible" }
     }
@@ -43,8 +50,8 @@ class CoffreCable(contexte: Context) {
     @Synchronized
     fun lire(): Pair<String, String>? {
         val (iv, chiffre) = Enveloppe.decoder(prefs.getString(BLOC, null)) ?: return null
-        val k = cleDuMagasin(creer = false) ?: return null
         return try {
+            val k = cleDuMagasin(creer = false) ?: return null // magasin illisible : null, jamais d'exception vers le pont
             val c = Cipher.getInstance(TRANSFORMATION)
             c.init(Cipher.DECRYPT_MODE, k, GCMParameterSpec(Enveloppe.TAILLE_ETIQUETTE * 8, iv))
             Enveloppe.lireContenu(c.doFinal(chiffre))
@@ -68,6 +75,10 @@ class CoffreCable(contexte: Context) {
     @Synchronized
     fun oublier() {
         prefs.edit().clear().commit()
+        supprimerCleDuMagasin()
+    }
+
+    private fun supprimerCleDuMagasin() {
         try {
             KeyStore.getInstance(MAGASIN).apply { load(null) }.deleteEntry(ALIAS)
         } catch (e: Exception) { /* déjà absente */ }

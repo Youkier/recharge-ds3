@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Icône « Quand charger ? » : croissant de lune et éclair (zone sûre : cercle de 66 au centre du repère 108). -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp"
+    android:viewportWidth="108" android:viewportHeight="108">
+    <path android:fillColor="#FFFFE7A3" android:pathData="M49.67 29.00 A25.0 25.0 0 1 0 72.95 63.92 A21.0 21.0 0 0 1 49.67 29.00 Z" />
+    <path android:fillColor="#FFF0A63A" android:strokeColor="#FF16295E" android:strokeWidth="1.6" android:strokeLineJoin="round"
+        android:pathData="M66,31 L76,31 L69,46 L79,46 L60,77 L64,54 L55,54 Z" />
+</vector>

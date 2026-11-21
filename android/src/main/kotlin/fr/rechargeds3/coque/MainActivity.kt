@@ -4,6 +4,7 @@ import android.app.Activity
 import android.app.AlertDialog
 import android.content.ClipboardManager
 import android.content.pm.ApplicationInfo
+import android.content.res.Configuration
 import android.os.Bundle
 import android.text.Editable
 import android.text.InputType
@@ -75,6 +76,17 @@ class MainActivity : Activity() {
     override fun onStart() {
         super.onStart()
         wifi.demarrer()
+        if (themeAChanger) { themeAChanger = false; recreate() } // appli rouverte : plus aucun envoi en cours
+    }
+
+    // configChanges inclut uiMode (pas de recréation pendant un envoi). Pour que la page suive le thème clair ou sombre,
+    // l'activité est recréée tout de suite si aucune connexion au câble n'est ouverte, sinon au prochain retour.
+    private var themeAChanger = false
+    override fun onConfigurationChanged(nouvelle: Configuration) {
+        val avant = resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK
+        super.onConfigurationChanged(nouvelle)
+        if ((nouvelle.uiMode and Configuration.UI_MODE_NIGHT_MASK) == avant) return
+        if (pont.connexionOuverte()) themeAChanger = true else recreate()
     }
 
     // Sortie de l'activité (autre appli, écran éteint, retour) : plus aucune connexion ouverte.
@@ -114,6 +126,7 @@ class MainActivity : Activity() {
         val afficher = vue.findViewById<Button>(R.id.afficher_cle)
         val erreur = vue.findViewById<TextView>(R.id.texte_erreur)
         val enregistrer = vue.findViewById<Button>(R.id.bouton_enregistrer)
+        val aide = vue.findViewById<TextView>(R.id.aide_enregistrer)
 
         fun majEtat() {
             val n = champCle.text.length
@@ -121,6 +134,7 @@ class MainActivity : Activity() {
             val pret = champId.text.isNotBlank() && n == 16
             enregistrer.isEnabled = pret
             enregistrer.alpha = if (pret) 1f else 0.5f
+            aide.visibility = if (pret) View.GONE else View.VISIBLE // dit pourquoi « Enregistrer » est grisé
         }
         val surveillant = object : TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
@@ -237,7 +251,7 @@ class MainActivity : Activity() {
         }
         val chargeur = WebViewAssetLoader.Builder()
             .setDomain(FiltreReseau.HOTE_ORIGINE)
-            .addPathHandler("/assets/", GestionnaireAssets(assets))
+            .addPathHandler("/assets/", GestionnaireAssets(assets, publication = !estDebug))
             .build()
         val w = WebView(this)
         with(w.settings) {

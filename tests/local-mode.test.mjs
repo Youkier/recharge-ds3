@@ -136,3 +136,39 @@ test('site/local.js : un seul import (service.js), ni stockage ni console', () =
   const code = src.replace(/\/\/.*$/gm, '');
   assert.ok(!/localStorage|sessionStorage|indexedDB|console\.|import\(/.test(code));
 });
+
+// Seconde tentative (premier essai réel du 2026-11-21 : premier contact raté, second réussi).
+describe('Seconde tentative, jamais après une écriture', () => {
+  const ok = { ok: true, debut: '23:45', fin: '06:00', plage_active: true };
+  test('échec de contact sans écriture : une seconde tentative, qui réussit', async () => {
+    let n = 0;
+    const r = await programmerLocal({ allumage: '23:45' }, { client: client(), programmer: async () => (++n === 1 ? { ok: false, erreur: 'hors_ligne' } : ok) }, '06:00');
+    assert.equal(n, 2);
+    assert.equal(r.etat, 'ok');
+  });
+  test('écriture partie (ecrit: true) : aucune seconde tentative, résultat incertain', async () => {
+    let n = 0;
+    const r = await programmerLocal({ allumage: '23:45' }, { client: client(), programmer: async () => { n++; return { ok: false, erreur: 'delai', ecrit: true }; } }, '06:00');
+    assert.equal(n, 1, 'une écriture peut-être appliquée n\'est jamais relancée');
+    assert.deepEqual([r.etat, r.incertain], ['ko', true]);
+  });
+  test('relecture différente ou requête invalide : aucune seconde tentative', async () => {
+    for (const e of [{ ok: false, erreur: 'relecture_differente', ecrit: true }, { ok: false, erreur: 'requete_invalide' }, { ok: false, erreur: 'format' }]) {
+      let n = 0;
+      await programmerLocal({ allumage: '23:45' }, { client: client(), programmer: async () => { n++; return e; } }, '06:00');
+      assert.equal(n, 1, e.erreur);
+    }
+  });
+  test('deux échecs de contact : deux tentatives au plus, heure manuelle donnée', async () => {
+    let n = 0;
+    const r = await programmerLocal({ allumage: '23:45' }, { client: client(), programmer: async () => { n++; return { ok: false, erreur: 'delai' }; } }, '06:00');
+    assert.equal(n, 2);
+    assert.match(r.manuel, /début 23:45/);
+  });
+  test('lecture d\'état : seconde lecture plus longue si la première échoue', async () => {
+    const delais = [];
+    const r = await etatCable({ client: client(), lireEtat: async (cfg) => { delais.push(cfg.delaiGlobalMs); return delais.length === 1 ? { ok: false, erreur: 'delai' } : { ok: true, debut: '03:30', fin: '06:00', plage_active: true }; } });
+    assert.deepEqual(delais, [4000, 8000]);
+    assert.equal(r.etat, 'pret');
+  });
+});
