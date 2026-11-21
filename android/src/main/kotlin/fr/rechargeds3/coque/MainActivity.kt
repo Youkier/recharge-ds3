@@ -2,10 +2,13 @@ package fr.rechargeds3.coque
 
 import android.app.Activity
 import android.app.AlertDialog
+import android.app.KeyguardManager
 import android.content.ClipboardManager
+import android.content.Intent
 import android.content.pm.ApplicationInfo
 import android.content.res.Configuration
 import android.os.Bundle
+import android.os.PowerManager
 import android.text.Editable
 import android.text.InputType
 import android.text.TextWatcher
@@ -59,7 +62,12 @@ class MainActivity : Activity() {
         nuit = resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK
         wifi = ReseauWifi(this)
         coffre = CoffreCable(this)
-        pont = PontLocal(wifi, coffre, estDebug, surSaisirCle = { afficherFormulaire() }, prendreActionAuto = { actionAuto() })
+        pont = PontLocal(
+            wifi, coffre, estDebug,
+            surSaisirCle = { afficherFormulaire() },
+            prendreActionAuto = { actionAuto() },
+            essaiArrierePlan = { quoi -> essaiArrierePlan(quoi) },
+        )
 
         racine = FrameLayout(this)
         // Ciblage SDK 36 : l'affichage va sous les barres système ; on réserve leur place (et celle du clavier).
@@ -74,8 +82,13 @@ class MainActivity : Activity() {
         if (coffre.configure()) afficherPage() else afficherFormulaire()
     }
 
+    // Activité visible (entre onStart et onStop).
+    private var visible = false
+
     override fun onStart() {
         super.onStart()
+        visible = true
+        AttenteWifi.surFin = { if (!visible && !AttenteWifi.actif) { pont.fermerToutAsync(); wifi.arreter() } }
         wifi.demarrer()
         if (themeAChanger) { themeAChanger = false; recreate() } // appli rouverte : plus aucun envoi en cours
     }
@@ -93,18 +106,57 @@ class MainActivity : Activity() {
         if (pont.connexionOuverte()) themeAChanger = true else recreate()
     }
 
-    // Sortie de l'activité (autre appli, écran éteint, retour) : plus aucune connexion ouverte.
+    // Sortie de l'activité (autre appli, écran éteint, retour) : plus aucune connexion ouverte. Seule exception : un
+    // service d'attente tourne (essai E0, mise au point seulement) ; le pont et le suivi du Wi-Fi restent alors en
+    // place pour l'envoi différé de la page, et sont fermés à la fin de l'attente (essaiArrierePlan("fin")) ou au
+    // prochain onStop. Pas de pauseTimers : les minuteurs de la page doivent continuer.
     override fun onStop() {
-        pont.fermerToutAsync()
-        wifi.arreter()
+        visible = false
+        if (!AttenteWifi.actif) {
+            pont.fermerToutAsync()
+            wifi.arreter()
+        }
         super.onStop()
     }
 
     override fun onDestroy() {
+        AttenteWifi.surFin = null
         pont.arreter()
         webView?.let { (it.parent as? ViewGroup)?.removeView(it); it.destroy() }
         webView = null
         super.onDestroy()
+    }
+
+    // --- Essai E0 : attente en arrière-plan (version de mise au point seulement, filtrée aussi par le pont) ---
+
+    // « debut » : démarre le service de premier plan (la page est visible : démarrage permis). « fin » : l'arrête et, si
+    // l'activité n'est plus visible, fait la fermeture que onStop a sautée. Toujours : état de l'écran pour la ligne ESSAI.
+    private fun essaiArrierePlan(quoi: String): JSONObject {
+        val r = JSONObject().put("ok", true)
+        if (!estDebug) return JSONObject().put("ok", false).put("erreur", "operation_inconnue")
+        val intention = Intent(this, AttenteWifi::class.java)
+        when (quoi) {
+            "debut" -> {
+                AttenteWifi.actif = true // avant onStop, qui peut arriver avant le démarrage effectif du service
+                try {
+                    startForegroundService(intention)
+                } catch (e: Exception) { // ForegroundServiceStartNotAllowedException, SecurityException (manifeste)…
+                    AttenteWifi.actif = false
+                    r.put("ok", false).put("erreur", "service")
+                }
+            }
+            "fin" -> {
+                stopService(intention)
+                AttenteWifi.actif = false
+                if (!visible) { pont.fermerToutAsync(); wifi.arreter() }
+            }
+            "etat" -> {}
+            else -> return JSONObject().put("ok", false).put("erreur", "requete_invalide")
+        }
+        r.put("interactif", getSystemService(PowerManager::class.java).isInteractive)
+        r.put("verrouille", getSystemService(KeyguardManager::class.java).isDeviceLocked)
+        r.put("service", AttenteWifi.actif)
+        return r
     }
 
     // --- Écran natif de saisie ---
@@ -308,7 +360,8 @@ class MainActivity : Activity() {
         if (estDebug && intent?.getStringExtra("action") in ACTIONS_AUTO) URL_ESSAI else URL_SITE
 
     // Action demandée par adb (version de mise au point seulement), rendue une seule fois à la page :
-    //   am start -n ... --es action lire|chercher|programmer|filtre|cle [--es ip 10.0.2.2] [--es heure 05:00]
+    //   am start -n ... --es action lire|chercher|programmer|filtre|cle|arriere-plan [--es ip 10.0.2.2] [--es heure 05:00]
+    //                   [--es delai 20]   (arriere-plan : attente en secondes avant l'envoi, 900 au plus)
     private fun actionAuto(): JSONObject? {
         if (!estDebug || actionAutoPrise) return null
         val action = intent?.getStringExtra("action") ?: return null
@@ -317,6 +370,7 @@ class MainActivity : Activity() {
         val j = JSONObject().put("action", action)
         intent.getStringExtra("ip")?.let { if (it.length <= 15) j.put("ip", it) }
         intent.getStringExtra("heure")?.let { if (it.length == 5) j.put("heure", it) }
+        intent.getStringExtra("delai")?.toIntOrNull()?.let { if (it in 0..900) j.put("delai", it) }
         return j
     }
 
@@ -324,7 +378,7 @@ class MainActivity : Activity() {
         const val TAG_LOG = "RechargeEssai"
         const val URL_SITE = "${FiltreReseau.ORIGINE}/assets/site/index.html"
         const val URL_ESSAI = "${FiltreReseau.ORIGINE}/assets/android/essai/index.html"
-        private val ACTIONS_AUTO = setOf("lire", "chercher", "programmer", "filtre", "cle")
+        private val ACTIONS_AUTO = setOf("lire", "chercher", "programmer", "filtre", "cle", "arriere-plan")
 
         @Volatile
         private var actionAutoPrise = false

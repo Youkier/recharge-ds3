@@ -108,11 +108,24 @@ jobs:
             "$AAPT2" dump permissions "$APK" > "sortie-construction/permissions-$NOM.txt"
             cat "sortie-construction/permissions-$NOM.txt"
             if grep -q "ACCESS_LOCAL_NETWORK" "sortie-construction/permissions-$NOM.txt"; then echo "ACCESS_LOCAL_NETWORK interdite"; exit 1; fi
+            # Rien ne démarre sans un geste : ni au démarrage du téléphone, ni par une alarme exacte.
+            for P in RECEIVE_BOOT_COMPLETED SCHEDULE_EXACT_ALARM USE_EXACT_ALARM; do
+              if grep -q "android.permission.$P'" "sortie-construction/permissions-$NOM.txt"; then echo "$P interdite"; exit 1; fi
+            done
             for P in INTERNET ACCESS_NETWORK_STATE; do grep -q "android.permission.$P" "sortie-construction/permissions-$NOM.txt"; done
             # Aucune autre permission que ces deux-là. (Exception : la permission interne DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION,
             # propre à l'application, que la bibliothèque androidx.core ajoute d'elle-même ; elle ne donne aucun accès.)
-            AUTRES="$(grep -o "uses-permission: name='[^']*'" "sortie-construction/permissions-$NOM.txt" | grep -v -e "android.permission.INTERNET" -e "android.permission.ACCESS_NETWORK_STATE" -e "fr.rechargeds3.coque.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION" || true)"
-            if [ -n "$AUTRES" ]; then echo "permission(s) inattendue(s) : $AUTRES"; exit 1; fi
+            PERMISES="android.permission.INTERNET android.permission.ACCESS_NETWORK_STATE fr.rechargeds3.coque.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION"
+            # Essai de faisabilité E0 (attente en arrière-plan, service de premier plan connectedDevice) : APK de MISE AU POINT
+            # seulement (android/src/debug/AndroidManifest.xml). L'APK publié garde les deux permissions ci-dessus.
+            case "$NOM" in
+              *debug*) PERMISES="$PERMISES android.permission.FOREGROUND_SERVICE android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE android.permission.CHANGE_NETWORK_STATE android.permission.WAKE_LOCK android.permission.POST_NOTIFICATIONS" ;;
+            esac
+            AUTRES=""
+            for NOM_P in $(grep -o "uses-permission: name='[^']*'" "sortie-construction/permissions-$NOM.txt" | sed "s/^uses-permission: name='//; s/'\$//"); do
+              case " $PERMISES " in *" $NOM_P "*) ;; *) AUTRES="$AUTRES $NOM_P" ;; esac
+            done
+            if [ -n "$AUTRES" ]; then echo "permission(s) inattendue(s) :$AUTRES"; exit 1; fi
           done
 
       - name: Déposer les APK

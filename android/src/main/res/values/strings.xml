@@ -26,4 +26,7 @@
     <string name="erreur_identifiant">Identifiant invalide : lettres, chiffres, tiret et tiret bas seulement.</string>
     <string name="erreur_cle">Il manque des caractères : la clé en compte 16.</string>
     <string name="erreur_enregistrement">L\'enregistrement a échoué. Réessayez ; si cela persiste, redémarrez le téléphone.</string>
+    <!-- Service d'attente en arrière-plan (essai E0, version de mise au point seulement pour l'instant). -->
+    <string name="canal_attente">Programmation en attente</string>
+    <string name="notification_essai">Quand charger ? — essai en arrière-plan</string>
 </resources>

@@ -43,6 +43,9 @@ class PontLocal(
     private val estDebug: Boolean,
     private val surSaisirCle: () -> Unit,
     private val prendreActionAuto: () -> JSONObject?,
+    // Essai E0 (version de mise au point seulement) : démarre (« debut ») ou arrête (« fin ») le service d'attente,
+    // ou rend seulement l'état de l'écran (« etat »). Appelé sur le fil principal.
+    private val essaiArrierePlan: (String) -> JSONObject,
 ) : WebViewCompat.WebMessageListener {
 
     private val principal = Handler(Looper.getMainLooper())
@@ -83,6 +86,8 @@ class PontLocal(
                 "envoyer" -> envoyer(q, rep)
                 "recevoir" -> recevoir(q, rep)
                 "fermer" -> fermer(q, rep)
+                // Réservée à la version de mise au point, comme les actions adb : refusée dans la version publiée.
+                "essaiArrierePlan" -> rep(if (estDebug) essaiArrierePlan(q.optString("quoi", "")) else erreur("operation_inconnue"))
                 else -> rep(erreur("operation_inconnue"))
             }
         } catch (e: RejectedExecutionException) {

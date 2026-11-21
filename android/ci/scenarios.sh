@@ -35,6 +35,7 @@ nettoyer() {
   adb exec-out screencap -p > "$SORTIE/derniere-capture.png" 2> /dev/null || true
   adb shell uiautomator dump /sdcard/ui-final.xml > /dev/null 2>&1 && adb exec-out cat /sdcard/ui-final.xml > "$SORTIE/derniere-interface.xml" 2> /dev/null || true
   if [ -n "$FAUX_PID" ]; then kill "$FAUX_PID" 2> /dev/null || true; fi
+  [ -n "${E0_PIN_POSE:-}" ] && e0_remettre
   adb shell cmd uimode night no > /dev/null 2>&1 || true
   exit "$code"
 }
@@ -453,6 +454,121 @@ L="$(attendre_essai lire 60)"
 verifier "S7 résultat clé refusée" "$L" 'l.erreur === "cle"'
 sleep 1
 capturer "clair-4-resultat-cle-refusee"
+
+# --- Essai de faisabilité E0 : envoi en arrière-plan, écran éteint, téléphone verrouillé (décision du 2026-11-21) ---
+# Question : le JS de la WebView lit-il, écrit-il et relit-il le câble pendant que l'activité est en arrière-plan, écran
+# éteint et téléphone verrouillé, si le service de premier plan `connectedDevice` (AttenteWifi) garde le processus ?
+# Critère : ligne ESSAI ok et duree_ms < 27000, 10 fois sur 10. Une 11e répétition sous « deviceidle force-idle » est
+# une MESURE rapportée, sans faire échouer le job. Résumé : $SORTIE/e0-resume.txt (une ligne par répétition).
+etape "S20 Arrière-plan (E0) : 10 envois écran éteint et verrouillé, puis 1 sous Doze forcé (mesure)"
+PIN_E0="1234"
+E0_RESUME="$SORTIE/e0-resume.txt"
+: > "$E0_RESUME"
+E0_PIN_POSE=""
+# Remise en état pour S8/S9, même si S20 échoue (appelée aussi par nettoyer via le drapeau E0_PIN_POSE).
+e0_remettre() {
+  adb shell dumpsys deviceidle unforce > /dev/null 2>&1 || true
+  adb shell input keyevent KEYCODE_WAKEUP > /dev/null 2>&1 || true
+  sleep 1
+  adb shell wm dismiss-keyguard > /dev/null 2>&1 || true
+  if [ -n "$E0_PIN_POSE" ]; then
+    sleep 1
+    adb shell input text "$PIN_E0" > /dev/null 2>&1 || true
+    adb shell input keyevent KEYCODE_ENTER > /dev/null 2>&1 || true
+    sleep 1
+    adb shell locksettings clear --old "$PIN_E0" > /dev/null 2>&1 || true
+    E0_PIN_POSE=""
+  fi
+  adb shell settings delete secure lock_screen_lock_after_timeout > /dev/null 2>&1 || true
+  adb shell dumpsys battery reset > /dev/null 2>&1 || true
+  adb shell svc power stayon true > /dev/null 2>&1 || true
+}
+# Réveil et déverrouillage par le code : la clé du coffre (setUnlockedDeviceRequired) n'est lisible que déverrouillé.
+# On éteint d'abord (verrouillage immédiat, réglé plus bas) : le code n'est ainsi tapé que dans l'écran de verrouillage,
+# jamais dans une appli restée au premier plan.
+e0_deverrouiller() {
+  adb shell input keyevent KEYCODE_SLEEP
+  sleep 1
+  adb shell input keyevent KEYCODE_WAKEUP
+  sleep 1
+  adb shell wm dismiss-keyguard
+  sleep 1
+  adb shell input text "$PIN_E0"
+  adb shell input keyevent KEYCODE_ENTER
+  sleep 2
+}
+# Une répétition : e0_repetition <n> <heure> [idle]. Écrit une ligne dans le résumé ; rend 0 si le critère est tenu.
+e0_repetition() {
+  local n="$1" heure="$2" idle="${3:-}" pret ligne services premier_plan i
+  e0_deverrouiller
+  adb logcat -c
+  adb shell am force-stop "$PKG"
+  adb shell am start -W -n "$ACT" --es action arriere-plan --es ip 10.0.2.2 --es heure "$heure" --es delai 15 > /dev/null
+  pret=""
+  for i in $(seq 1 30); do
+    pret="$(adb logcat -d -v raw -s "$TAG:I" | tr -d '\015' | grep '^ESSAI ' | grep '"action":"arriere-plan-pret"' | tail -1 | sed 's/^ESSAI //' || true)"
+    [ -n "$pret" ] && break
+    sleep 1
+  done
+  if [ -z "$pret" ]; then echo "E0 $n${idle:+ (idle)} : pas de ligne arriere-plan-pret" | tee -a "$E0_RESUME"; return 1; fi
+  if ! LIGNE="$pret" node -e 'process.exit(JSON.parse(process.env.LIGNE).ok === true ? 0 : 1)'; then
+    echo "E0 $n${idle:+ (idle)} : préparation refusée (téléphone verrouillé au départ ?) $pret" | tee -a "$E0_RESUME"; return 1
+  fi
+  # La page a lu la configuration et démarré le service : on éteint l'écran (verrouillage immédiat, code posé).
+  adb shell input keyevent KEYCODE_SLEEP
+  sleep 3
+  if [ -n "$idle" ]; then
+    adb shell dumpsys deviceidle force-idle 2>&1 | tr -d '\r' | sed 's/^/  deviceidle : /'
+  fi
+  services="$(adb shell dumpsys activity services "$PKG" 2> /dev/null | tr -d '\r' || true)"
+  premier_plan="non"
+  printf '%s\n' "$services" | grep -q "isForeground=true" && premier_plan="oui"
+  [ "$n" = 1 ] && printf '%s\n' "$services" > "$SORTIE/e0-services-pendant.txt"
+  ligne=""
+  for i in $(seq 1 60); do
+    ligne="$(adb logcat -d -v raw -s "$TAG:I" | tr -d '\015' | grep '^ESSAI ' | grep '"action":"arriere-plan"' | tail -1 | sed 's/^ESSAI //' || true)"
+    [ -n "$ligne" ] && break
+    sleep 1
+  done
+  [ -n "$idle" ] && adb shell dumpsys deviceidle unforce > /dev/null 2>&1 || true
+  if [ -z "$ligne" ]; then echo "E0 $n${idle:+ (idle)} : AUCUNE ligne en 60 s (page endormie ?) service_premier_plan=$premier_plan" | tee -a "$E0_RESUME"; return 1; fi
+  printf 'E0 %s %s\n' "$n${idle:+-idle}" "$ligne" >> "$LIGNES"
+  if LIGNE="$ligne" HEURE="$heure" node -e '
+    const l = JSON.parse(process.env.LIGNE);
+    const ok = l.ok === true && typeof l.duree_ms === "number" && l.duree_ms < 27000 && l.fin === "06:00"
+      && (l.debut === process.env.HEURE || l.immediat === true) && /^eteint-verrouille$/.test(l.ecran);
+    process.exit(ok ? 0 : 1);'; then
+    echo "E0 $n${idle:+ (idle)} : OK service_premier_plan=$premier_plan $ligne" | tee -a "$E0_RESUME"; return 0
+  fi
+  echo "E0 $n${idle:+ (idle)} : ÉCHEC service_premier_plan=$premier_plan $ligne" | tee -a "$E0_RESUME"; return 1
+}
+
+adb shell locksettings set-pin "$PIN_E0" > /dev/null
+E0_PIN_POSE=1
+adb shell settings put secure lock_screen_lock_after_timeout 0 # verrouillé dès l'extinction de l'écran
+adb shell dumpsys battery unplug
+adb shell svc power stayon false
+# Clé enregistrée à nouveau, code posé et téléphone déverrouillé (clé du magasin créée dans ces conditions).
+e0_deverrouiller
+demarrer lire 10.0.2.2 "" "$CLE_OK"
+L="$(attendre_essai lire 60)"
+verifier "S20 lecture préalable" "$L" 'l.ok === true'
+# Après la ressaisie (pm clear peut retirer les permissions accordées) : notification du service visible.
+adb shell pm grant "$PKG" android.permission.POST_NOTIFICATIONS
+E0_REUSSIS=0
+for N in $(seq 1 10); do
+  # Une heure différente à chaque fois : la plage change, donc l'écriture part vraiment (sinon « déjà réglé »).
+  # 02:4x : démarrage immédiat seulement si l'essai tourne entre 02:41 et 06:00 (heure de Paris).
+  if e0_repetition "$N" "$(printf '02:%02d' $(( 40 + N )))"; then E0_REUSSIS=$(( E0_REUSSIS + 1 )); fi
+done
+e0_repetition 11 "02:51" idle && E0_IDLE="OK" || E0_IDLE="ÉCHEC"
+adb shell dumpsys activity services "$PKG" 2> /dev/null | tr -d '\r' > "$SORTIE/e0-services-apres.txt" || true
+e0_remettre
+echo "E0 : ${E0_REUSSIS}/10 envois conformes écran éteint et verrouillé ; sous Doze forcé (mesure) : ${E0_IDLE}" | tee -a "$E0_RESUME"
+[ "$E0_REUSSIS" = 10 ] || echec "S20 : ${E0_REUSSIS}/10 envois conformes en arrière-plan (détail dans e0-resume.txt)"
+# Le service s'est arrêté : plus de notification d'attente.
+if grep -q "ServiceRecord{[^}]*AttenteWifi" "$SORTIE/e0-services-apres.txt"; then echec "S20 : le service d'attente tourne encore après les essais"; fi
+echo "OK  S20 arrière-plan"
 
 # --- Rien ne reste ouvert, rien d'interdit dans logcat ---
 etape "S8 Aucune connexion restée ouverte"

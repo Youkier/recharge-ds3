@@ -47,11 +47,16 @@ function horloge() {
   const f = new Intl.DateTimeFormat('fr-FR', { timeZone: 'Europe/Paris', hour: '2-digit', minute: '2-digit' });
   $('horloge').textContent = `Heure du téléphone (Paris) : ${f.format(new Date())}. Si elle est fausse, la décision « démarrage immédiat » le sera aussi.`;
 }
-function journaliser(action, r, ip) {
+// Le seul appel de console de la page : une ligne « ESSAI {json} », sans clé ni identifiant.
+function ecrireLigne(ligne) {
+  console.log('ESSAI ' + JSON.stringify(ligne));
+}
+function journaliser(action, r, ip, mesures) {
   const ligne = { action, ok: r.ok === true, erreur: r.ok ? undefined : r.erreur, debut: r.debut, fin: r.fin, ip };
   if (r.immediat) ligne.immediat = true;
   if (r.courte) ligne.courte = true;
-  console.log('ESSAI ' + JSON.stringify(ligne));
+  if (mesures) Object.assign(ligne, mesures); // essai E0 : durées et état de l'écran, jamais de donnée du câble
+  ecrireLigne(ligne);
 }
 const plageTexte = (r) => `de ${r.debut} à ${r.fin} (${r.plage_active ? 'activée' : 'désactivée'})`;
 function principal(id) { for (const b of ['lire', 'cle']) $(b).classList.toggle('principal', b === id); }
@@ -137,6 +142,67 @@ async function actionProgrammer(heure) {
   return { r: { ...r, erreur: e }, ip: p.ip, texte: msg(e) + suite };
 }
 
+// --- Essai E0 : envoi différé en arrière-plan (version de mise au point seulement) ---
+// Question : le JS de la WebView peut-il lire, écrire et relire le câble pendant que l'activité est en arrière-plan,
+// écran éteint et téléphone verrouillé, si un service de premier plan `connectedDevice` garde le processus ?
+// Déroulé : configuration du câble lue MAINTENANT (téléphone déverrouillé : la clé du magasin est illisible une fois
+// verrouillé, setUnlockedDeviceRequired), gardée en mémoire 15 min au plus puis effacée (décision du 2026-11-21) ;
+// service démarré ; ligne « arriere-plan-pret » (le script éteint alors l'écran) ; attente de `delai` secondes ; même
+// programmation que « Programmer » ; service arrêté dans tous les cas.
+const ATTENTE_MAX_S = 900;
+let memoire = null; // { cfg, minuteur } : seule copie de la configuration pendant l'attente
+
+function oublierMemoire() {
+  if (!memoire) return;
+  clearTimeout(memoire.minuteur);
+  memoire.cfg = null;
+  memoire = null;
+}
+const patienter = (ms) => new Promise((r) => setTimeout(r, ms));
+const ecranTexte = (e) => (e && e.ok ? `${e.interactif ? 'allume' : 'eteint'}${e.verrouille ? '-verrouille' : ''}` : 'inconnu');
+
+async function actionArrierePlan(params) {
+  const delaiS = Number.isInteger(params.delai) ? Math.min(Math.max(params.delai, 0), ATTENTE_MAX_S) : 20;
+  const h = (params.heure ?? '').trim();
+  const ip = $('ip').value.trim();
+  if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(h) || !adressePrivee(ip)) {
+    return { r: { ok: false, erreur: 'requete_invalide' }, ip, texte: msg('requete_invalide') };
+  }
+  oublierMemoire();
+  const c = await client.cable();
+  if (!c.ok || !c.configure || typeof c.cle !== 'string' || typeof c.deviceId !== 'string') {
+    const e = await client.appeler('essaiArrierePlan', { quoi: 'etat' });
+    ecrireLigne({ action: 'arriere-plan-pret', ok: false, erreur: 'pas_de_cle', ecran: ecranTexte(e) });
+    return { r: { ok: false, erreur: 'pas_de_cle' }, ip, texte: msg('pas_de_cle') };
+  }
+  memoire = { cfg: { deviceId: c.deviceId, cleLocale: c.cle, version: '3.5' }, minuteur: setTimeout(oublierMemoire, ATTENTE_MAX_S * 1000) };
+  const d = await client.appeler('essaiArrierePlan', { quoi: 'debut' });
+  ecrireLigne({ action: 'arriere-plan-pret', ok: d.ok === true, erreur: d.ok ? undefined : d.erreur, ecran: ecranTexte(d), delai_s: delaiS });
+  if (!d.ok) {
+    oublierMemoire();
+    return { r: { ok: false, erreur: d.erreur ?? 'service' }, ip, texte: 'Le service d\'attente n\'a pas démarré.' };
+  }
+  etat(`Attente de ${delaiS} s, puis programmation du câble…`);
+  try {
+    const t0 = Date.now();
+    await patienter(delaiS * 1000);
+    const retard = Date.now() - t0 - delaiS * 1000; // retard du minuteur : mesure de la mise en sommeil de la page
+    const e = await client.appeler('essaiArrierePlan', { quoi: 'etat' });
+    const mesures = { ecran: ecranTexte(e), visibilite: document.visibilityState, retard_ms: retard };
+    if (!memoire) return { r: { ok: false, erreur: 'memoire_effacee' }, ip, texte: 'Attente trop longue : configuration effacée.', mesures };
+    const debut = Date.now();
+    client.dernierMotif = null;
+    const r = await programmer({ ...memoire.cfg, ip }, client.creerTransport(), { allumage: h });
+    mesures.duree_ms = Date.now() - debut; // lecture + écriture + relecture
+    if (r.ok) return { r, ip, texte: `Câble programmé et relu en arrière-plan. Charge ${plageTexte(r)}.`, mesures };
+    const err = erreurFinale(r);
+    return { r: { ...r, erreur: err }, ip, texte: msg(err), mesures };
+  } finally {
+    oublierMemoire();
+    await client.appeler('essaiArrierePlan', { quoi: 'fin' });
+  }
+}
+
 // Vérifie que le pont natif refuse ce qu'il doit refuser, sans qu'aucun octet ne parte, et que sw.js est en 404.
 async function actionFiltre() {
   const essais = [
@@ -169,6 +235,7 @@ async function lancer(action, params = {}) {
     else if (action === 'chercher') res = await actionChercher();
     else if (action === 'programmer' && variante === 'debug') res = await actionProgrammer(params.heure);
     else if (action === 'filtre' && variante === 'debug') res = await actionFiltre();
+    else if (action === 'arriere-plan' && variante === 'debug') res = await actionArrierePlan(params);
     else return;
     etat(res.texte, res.r.ok ? 'ok' : 'ko');
     principal(res.r.erreur === 'cle' || res.r.erreur === 'pas_de_cle' ? 'cle' : 'lire');
@@ -176,7 +243,7 @@ async function lancer(action, params = {}) {
     if (res.r.ok && res.ip && (action === 'lire' || action === 'chercher' || action === 'programmer')) {
       await client.appeler('retenirAdresse', { ip: res.ip });
     }
-    journaliser(action, res.r, res.ip);
+    journaliser(action, res.r, res.ip, res.mesures);
   } catch (e) {
     const r = { ok: false, erreur: 'format' };
     etat('Échec inattendu : fermez l\'application puis rouvrez-la.', 'ko');
@@ -215,7 +282,7 @@ async function demarrer() {
   if (auto && typeof auto.action === 'string') {
     if (typeof auto.ip === 'string') { $('ip').value = auto.ip; $('ip').closest('details').open = true; }
     if (typeof auto.heure === 'string') $('heure').value = auto.heure;
-    await lancer(auto.action, { heure: auto.heure });
+    await lancer(auto.action, { heure: auto.heure, delai: auto.delai });
   }
 }
 
