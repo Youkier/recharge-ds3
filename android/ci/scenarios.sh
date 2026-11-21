@@ -90,12 +90,13 @@ centre() {
 }
 toucher() { local c; c="$(centre "$1")"; adb shell input tap $c; }
 
-# Même chose pour un élément de la page (WebView) : uiautomator expose l'attribut id HTML comme resource-id="<id>".
+# Même chose pour un élément de la page (WebView) : uiautomator n'expose pas les id HTML (resource-id vide), seulement
+# le texte accessible ; on cherche donc le nœud dont le texte COMMENCE par <texte> (ex. « Programmer la charge »).
 centre_web() {
   local nom="$1" xml noeud nombres
   for _ in $(seq 1 20); do
     xml="$(ui_dump || true)"
-    noeud="$(printf '%s' "$xml" | grep -o "<node [^>]*resource-id=\"${nom}\"[^>]*>" | head -1 || true)"
+    noeud="$(printf '%s' "$xml" | grep -o "<node [^>]* text=\"${nom}[^>]*>" | head -1 || true)"
     if [ -n "$noeud" ]; then
       nombres="$(printf '%s' "$noeud" | grep -o 'bounds="[^"]*"' | grep -o '[0-9]\+' | tr '\n' ' ')"
       # shellcheck disable=SC2086
@@ -285,11 +286,11 @@ capturer "clair-5-page-accueil"
 
 etape "S12 Vraie page : bouton inactif avant le geste, puis « Programmer » relu conforme"
 adb logcat -c
-toucher_web sendBtn
+toucher_web "Programmer la charge"
 sleep 3
 ligne_vue page-programmer && echec "S12 : envoi parti sans confirmation de la batterie"
-toucher_web socPlus
-toucher_web sendBtn
+toucher_web "Ajouter 1 %"
+toucher_web "Programmer la charge"
 L="$(attendre_essai page-programmer 60)"
 verifier "S12 programmer depuis la page" "$L" 'l.ok === true && /^[0-2][0-9]:[0-5][0-9]$/.test(l.debut) && l.fin === "06:00"'
 DEBUT_PAGE="$(LIGNE="$L" node -e 'console.log(JSON.parse(process.env.LIGNE).debut)')"
@@ -304,8 +305,8 @@ demarrer_page "$CLE_KO"
 L="$(attendre_essai page-etat 60)"
 verifier "S13 état clé refusée" "$L" 'l.etat === "cle"'
 adb logcat -c
-toucher_web socPlus
-toucher_web sendBtn
+toucher_web "Ajouter 1 %"
+toucher_web "Programmer la charge"
 sleep 3
 ligne_vue page-programmer && echec "S13 : envoi lancé alors que la clé est refusée"
 capturer "clair-7-page-cle-refusee"
