@@ -547,7 +547,12 @@ import { confirmationValable, blocageCable, plageRelue, sousLigneBouton, socVali
   function setDemande(d) {
     demande = d;
     // Attente du Wi-Fi : la demande est figée au toucher ; si elle change (% ou réglages), l'attente est annulée.
-    if (att && JSON.stringify(d) !== att.cle) { sortirAttente(); journal({ action: "page-attente-wifi", etat: "annulee" }); }
+    // On le dit, avec l'heure de l'ancienne demande : rien ne doit laisser croire qu'un envoi est encore en cours.
+    if (att && JSON.stringify(d) !== att.cle) {
+      var ancienne = sortirAttente();
+      journal({ action: "page-attente-wifi", etat: "annulee" });
+      koAttente(ancienne, "local_attente_modifiee", "Attente annulée");
+    }
     // Une alerte qui concerne une autre demande que l'actuelle est périmée.
     if (!busy && alertKey !== null && alertKey !== JSON.stringify(d)) hideAlert();
     updateSend();
@@ -616,6 +621,8 @@ import { confirmationValable, blocageCable, plageRelue, sousLigneBouton, socVali
     reseauMaison().then(function (sr) {
       controle = false;
       if (busy || localEnVol || att || !demande || !confirme) return; // l'état a changé pendant le contrôle (une seule lecture, quasi instantanée)
+      // Page passée en arrière-plan pendant ce contrôle : rien ne part, ni attente ni envoi (règle 1) ; on le dit (règle 2).
+      if (document.hidden) { koAttente({ d: demande, finHC: fmt(hm(cur.hcEnd)) }, "local_attente_quittee", "Programmation non envoyée"); return; }
       if (decisionEnvoi({ etat: etatCable, surReseau: sr }) === "attendre") demarrerAttente(); else lancerEnvoi();
     });
   });
