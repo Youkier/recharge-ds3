@@ -1,6 +1,7 @@
 import { plan, hm, fmt, fdur, fr, eur } from "./calc.js";
 import { lignesValides, marques, modeles, versions, trouver } from "./vehicules.js";
-import { validerAdresse, validerJeton, choisirDemande, libelleBouton, consigneManuelle, envoyerEtAfficher } from "./service.js";
+import { validerAdresse, validerJeton, choisirDemande, libelleBouton, envoyer, resultatKo } from "./service.js";
+import { confirmationValable, blocageCable, plageRelue, sousLigneBouton, socValide, lireHistorique, ajouterHistorique, raccourcis, moyenEnvoi, boutonActif, programmerSelonMoyen, pastille, secondesRestantes } from "./accueil.js";
 
 (function () {
   var DEFAULTS = { cap: 46, soh: 95, target: 80, dep: "07:30", hcStart: "22:00", hcEnd: "06:00", amp: 16, volt: 230, eff: 90, pHC: 0.146688, pHP: 0.196476, mode: "end", soc: 38 };
@@ -44,7 +45,7 @@ import { validerAdresse, validerJeton, choisirDemande, libelleBouton, consigneMa
       if (isFinite(e)) p.eff = e;
     }
     ids.forEach(function (k) { setVal(k, p[k]); });
-    $("soc").value = p.soc; $("socRange").value = p.soc;
+    $("soc").value = p.soc;
   }
   function save(p) { try { localStorage.setItem(KEY, JSON.stringify(p)); } catch (e) {} }
 
@@ -156,6 +157,7 @@ import { validerAdresse, validerJeton, choisirDemande, libelleBouton, consigneMa
         t.appendChild(a);
         pe.hidden = false;
         pe.textContent = "Valeur manquante ou impossible : " + pbad.map(function (k) { return LABELS[k]; }).join(", ") + ". Le calcul reste en attente tant qu'elle n'est pas corrigée.";
+        if (pbad.some(function (k) { return k !== "target" && k !== "dep"; })) $("avance").open = true;
         if (pbad.some(function (k) { return CAR.indexOf(k) >= 0; })) $("carBox").open = true;
         if (pbad.some(function (k) { return CABLE.indexOf(k) >= 0; })) $("cableBox").open = true;
       }
@@ -301,23 +303,67 @@ import { validerAdresse, validerJeton, choisirDemande, libelleBouton, consigneMa
     if (charging && sv && p.mode === "start") $("aFinS").textContent = "à régler aussi";
   }
 
-  // ---------- Saisie de la batterie : champ, boutons − / + et curseur synchronisés ----------
+  // ---------- Saisie de la batterie ----------
+  // La valeur affichée au départ est celle d'hier : tant qu'aucun geste ne l'a confirmée (saisie, − / +, raccourci,
+  // « Garder »), le bouton « Programmer » reste inactif. Impossible de programmer sur le % d'hier sans s'en rendre compte.
+  var KEY_HIST = "recharge-ds3-soc-recents";
+  var hist = [];
+  var confirme = false, confirmeLe = null;
+  function histLoad() { try { hist = lireHistorique(localStorage.getItem(KEY_HIST)); } catch (e) { hist = []; } }
+  function histNote(v) {
+    hist = ajouterHistorique(hist, v);
+    try { localStorage.setItem(KEY_HIST, JSON.stringify(hist)); } catch (e) {}
+    drawChips();
+  }
+  function setConfirme(oui) {
+    confirme = oui;
+    confirmeLe = oui ? Date.now() : null;
+    $("socCard").className = "card soc-card" + (oui ? "" : " unconfirmed");
+    $("socHint").hidden = oui;
+    updateSend();
+  }
+  function drawChips() {
+    var box = $("chips"), r = raccourcis(hist);
+    box.textContent = "";
+    box.hidden = r.length < 2;
+    // Avec les puces, la dernière valeur est une puce : « Garder » ne sert qu'en leur absence.
+    $("keepBtn").hidden = r.length >= 2;
+    $("socHintText").textContent = r.length >= 2 ? "Saisissez la valeur de MyDS, ou touchez la dernière :" : "Dernière valeur, à confirmer";
+    var now = socValide($("soc").value);
+    r.forEach(function (v) {
+      var b = el("button", "chipbtn", v + " %"); b.type = "button";
+      b.setAttribute("data-v", String(v));
+      b.setAttribute("aria-pressed", confirme && now === v ? "true" : "false");
+      box.appendChild(b);
+    });
+  }
   function syncStepper() {
     var v = Number($("soc").value), empty = String($("soc").value).trim() === "";
     $("socMinus").disabled = !empty && v <= 0;
     $("socPlus").disabled = !empty && v >= 100;
+    var n = socValide($("soc").value);
+    $("keepBtn").textContent = "Garder " + (n === null ? cur.soc : n) + " %";
   }
   function bump(d) {
     var raw = String($("soc").value).trim(), v = Number(raw);
     if (raw === "" || !isFinite(v)) v = cur.soc;
     v = Math.min(100, Math.max(0, Math.round(v) + d));
-    $("soc").value = v; $("socRange").value = v;
-    render();
+    $("soc").value = v;
+    setConfirme(true); render(); drawChips();
   }
   $("socMinus").addEventListener("click", function () { bump(-1); });
   $("socPlus").addEventListener("click", function () { bump(1); });
-  $("socRange").addEventListener("input", function () { $("soc").value = this.value; render(); });
-  $("soc").addEventListener("input", function () { if ($("soc").value !== "") $("socRange").value = $("soc").value; render(); });
+  $("soc").addEventListener("input", function () { setConfirme(String($("soc").value).trim() !== ""); render(); drawChips(); });
+  $("soc").addEventListener("change", function () { histNote($("soc").value); });
+  $("soc").addEventListener("keydown", function (e) { if (e.key === "Enter") this.blur(); });
+  $("soc").addEventListener("focus", function () { if (!confirme) this.select(); }); // une frappe remplace la valeur d'hier
+  $("keepBtn").addEventListener("click", function () { var v = socValide($("soc").value); setConfirme(true); if (v !== null) histNote(v); drawChips(); });
+  $("chips").addEventListener("click", function (e) {
+    var b = e.target.closest ? e.target.closest("button[data-v]") : null;
+    if (!b) return;
+    $("soc").value = b.getAttribute("data-v");
+    setConfirme(true); render(); histNote(b.getAttribute("data-v"));
+  });
 
   // Changer le courant ou la tension recalcule le rendement ; une saisie manuelle reste jusqu'au prochain changement.
   ["amp", "volt"].forEach(function (k) {
@@ -408,9 +454,7 @@ import { validerAdresse, validerJeton, choisirDemande, libelleBouton, consigneMa
     if (v === shown) return;
     shown = v;
     VIEWS.forEach(function (n) { $("v-" + n).hidden = n !== v; });
-    Array.prototype.forEach.call(document.querySelectorAll(".tabbar a"), function (a) {
-      if (a.getAttribute("data-nav") === v) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current");
-    });
+    document.body.setAttribute("data-vue", v);
     window.scrollTo(0, 0);
     if (v === "calcul") fitChargeLabel();
     if (focus) $(HEADINGS[v]).focus({ preventScroll: true });
@@ -451,7 +495,8 @@ import { validerAdresse, validerJeton, choisirDemande, libelleBouton, consigneMa
   var KEY_URL = "recharge-ds3-service-url";
   var KEY_TOK = "recharge-ds3-service-jeton";
   var svc = { adresse: null, jeton: null };
-  var demande = null, busy = false, alertKey = null;
+  var demande = null, busy = false, alertKey = null, moyen = null, reussi = null, etatCable = null, debugPont = false;
+  var pontOk = !!(globalThis.PontLocal && typeof globalThis.PontLocal.postMessage === "function");
 
   function lsGet(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
   function lsSet(k, v) { try { localStorage.setItem(k, v); return true; } catch (e) { return false; } }
@@ -532,25 +577,27 @@ import { validerAdresse, validerJeton, choisirDemande, libelleBouton, consigneMa
     svcSummary();
     var b = $("sendBtn"), help = $("sendHelp");
     var lab = libelleBouton(demande);
-    var configured = !!(svc.adresse && svc.jeton);
+    moyen = moyenEnvoi({ pont: pontOk, adresse: svc.adresse, jeton: svc.jeton });
     $("sendMain").textContent = busy ? "Envoi en cours…" : (lab ? lab.principal : "Programmer la charge");
-    $("sendSub").textContent = busy ? "patientez, jusqu'à 25 secondes" : (lab ? lab.secondaire : "saisie à corriger");
-    b.disabled = busy || !configured || !demande;
-    // Sans adresse ni jeton, la carte entière est masquée : réglage manuel dans Smart Life (voir Aide).
-    // Une alerte affichée (OK ou KO) garde la carte visible : jamais de résultat masqué (règle 2).
-    var alerte = $("sendOk").textContent !== "" || $("sendKo").textContent !== "";
-    $("sendCard").hidden = !configured && !busy && !alerte;
-    help.textContent = "";
-    if (!demande && !busy) {
-      help.hidden = false;
-      help.textContent = "Corrigez la saisie pour pouvoir programmer la charge.";
-    } else help.hidden = true;
+    var cle = demande ? JSON.stringify(demande) : null;
+    $("sendSub").textContent = sousLigneBouton({
+      occupe: busy, delaiS: moyen === "local" ? 30 : 25, demande: demande, confirme: confirme,
+      reussi: reussi && reussi.cle === cle ? "programmé à " + reussi.heure + " · relu sur le câble" : null,
+      blocage: moyen === "local" ? blocageCable(etatCable) : null,
+      secondaire: lab ? lab.secondaire : "",
+    });
+    b.disabled = !boutonActif({ moyen: moyen, demande: demande, confirme: confirme, occupe: busy });
+    // Sans moyen d'envoi, la barre est masquée : réglage manuel avec l'heure affichée (voir Aide).
+    $("sendBar").hidden = !moyen;
+    document.body.classList.toggle("has-sendbar", !!moyen);
+    help.hidden = !(moyen && !demande && !busy);
+    if (!help.hidden) help.textContent = "Corrigez la saisie pour pouvoir programmer la charge.";
     b.setAttribute("aria-busy", busy ? "true" : "false");
   }
 
   // Deux conteneurs permanents (présents dès le chargement, annoncés par les lecteurs d'écran) :
   // on ne fait que les remplir ou les vider.
-  function hideAlert() { $("sendOk").textContent = ""; $("sendKo").textContent = ""; alertKey = null; }
+  function hideAlert() { $("sendOk").textContent = ""; $("sendKo").textContent = ""; alertKey = null; reussi = null; $("sendResult").className = "card send vide"; }
   function showAlert(res, d) {
     hideAlert();
     var a = res.etat === "ok" ? $("sendOk") : $("sendKo");
@@ -567,20 +614,139 @@ import { validerAdresse, validerJeton, choisirDemande, libelleBouton, consigneMa
       a.appendChild(l);
     }
     alertKey = JSON.stringify(d);
+    if (res.etat === "ok") { var h = plageRelue(res).debut; reussi = h ? { cle: alertKey, heure: h } : null; }
+    $("sendResult").className = "card send";
     try { if (a.scrollIntoView) a.scrollIntoView({ block: "nearest" }); } catch (e) { /* défilement facultatif */ }
   }
 
+  var DELAI_LOCAL_MAX_MS = 30000;
   $("sendBtn").addEventListener("click", function () {
-    if (busy || !demande || !svc.adresse || !svc.jeton) return;
-    var d = demande;
+    if (busy || !demande || !confirme || !moyen) return;
+    if (moyen === "local" && blocageCable(etatCable)) { ouvrirPanneau(true); return; } // câble pas prêt à recevoir : on l'explique, rien n'est envoyé
+    var d = demande, m = moyen, finHC = fmt(hm(cur.hcEnd));
+    var v = socValide($("soc").value); if (v !== null) histNote(v);
     busy = true;
     try { hideAlert(); updateSend(); } catch (e) { /* l'envoi et son alerte restent garantis ci-dessous */ }
-    envoyerEtAfficher(svc.adresse, svc.jeton, d, function (res) { showAlert(res, d); }, { finHC: fmt(hm(cur.hcEnd)) }).then(function () {
+    var envoi = {
+      service: function () { return envoyer(svc.adresse, svc.jeton, d, { finHC: finHC }); },
+      local: function () {
+        // Aucun repli vers le service : si le mode Local échoue, l'échec est affiché avec l'heure à régler à la main.
+        return Promise.race([
+          localPret().then(function (l) { return l.programmerLocal(d, l.deps, finHC); }),
+          new Promise(function (ok) { setTimeout(function () { ok(resultatKo(d, "local_delai", finHC)); }, DELAI_LOCAL_MAX_MS); }),
+        ]);
+      },
+    };
+    programmerSelonMoyen(m, envoi).catch(function () { return resultatKo(d, "inattendue", finHC); }).then(function (res) {
+      try { showAlert(res, d); } catch (e) { try { showAlert(resultatKo(d, "inattendue", finHC), d); } catch (e2) { /* rien de plus */ } }
       busy = false;
-      // La demande a pu changer pendant l'envoi : l'alerte ne doit pas rester pour une autre demande.
-      setDemande(demande);
+      setDemande(demande); // la demande a pu changer pendant l'envoi
+      if (m === "local") {
+        var pl = plageRelue(res);
+        journal({ action: "page-programmer", ok: !!res && res.etat === "ok", debut: pl.debut, fin: pl.fin, code: res && res.etat === "ko" ? res.code : undefined, manuel: res && res.etat === "ko" ? res.manuel : undefined });
+        if (res && res.etat === "ok") majEtatCable();
+      }
     });
   });
+
+  // ---------- Appli Android : pont natif, état du câble, recherche (mode Local) ----------
+  // Chargé seulement si le pont est présent : sur GitHub Pages, ces chemins n'existent pas et ne sont jamais demandés.
+  var cherche = false, minuteurRecherche = null, localCache = null;
+  // Journal des essais sur émulateur : version de mise au point seulement, une ligne par action, jamais de clé,
+  // d'identifiant ni de trame (le résultat de service.js n'en contient pas).
+  function journal(o) { if (debugPont) { try { console.log("ESSAI " + JSON.stringify(o)); } catch (e) { /* sans effet */ } } }
+  function localPret() {
+    if (!localCache) {
+      localCache = Promise.all([
+        import("./local.js"), import("../local/tuya-local.js"), import("../local/recherche.js"), import("../android/essai/transport-pont.js"),
+      ]).then(function (mods) {
+        var client = mods[3].creerClientPont(globalThis.PontLocal);
+        return client.demarrage().then(function (dem) {
+          debugPont = !!(dem && dem.ok && dem.variante === "debug");
+          return {
+            programmerLocal: mods[0].programmerLocal, etatCable: mods[0].etatCable, chercherCable: mods[0].chercherCable,
+            client: client,
+            deps: { client: client, lireEtat: mods[1].lireEtat, programmer: mods[1].programmer, localiserCable: mods[2].localiserCable },
+          };
+        });
+      });
+      localCache.catch(function () { localCache = null; }); // nouvel essai possible au prochain geste
+    }
+    return localCache;
+  }
+  function ouvrirPanneau(oui) { $("cablePanel").hidden = !oui; $("pill").setAttribute("aria-expanded", oui ? "true" : "false"); }
+  function actionPanneau(action) {
+    var label = { chercher: "Chercher sur le Wi-Fi", relier: "Relier le câble", reessayer: "Réessayer" }[action];
+    var act = $("cableAction");
+    act.hidden = !label; act.textContent = label || ""; act.setAttribute("data-action", action || "");
+  }
+  function pastilleMontre(etat) {
+    var d = pastille(etat);
+    if (etat !== "verification" && etat !== "recherche") etatCable = etat;
+    var interactive = !!(d.aide || d.action);
+    $("pill").hidden = !interactive; $("pillFixe").hidden = interactive;
+    var box = interactive ? $("pill") : $("pillFixe");
+    box.className = "pill " + d.ton;
+    $(interactive ? "pillText" : "pillFixeText").textContent = d.texte;
+    $("cableMsg").textContent = d.aide || "";
+    actionPanneau(d.action);
+    if (!interactive) ouvrirPanneau(false);
+    updateSend();
+  }
+  function majEtatCable() {
+    if (!pontOk || cherche) return Promise.resolve();
+    pastilleMontre("verification");
+    return localPret().then(function (l) { return l.etatCable(l.deps); }).then(function (r) {
+      journal({ action: "page-etat", etat: r.etat });
+      if (!cherche) pastilleMontre(r.etat);
+    }).catch(function () { if (!cherche) pastilleMontre("erreur"); });
+  }
+  function lancerRecherche() {
+    if (cherche) return;
+    cherche = true;
+    var echeance = null;
+    pastilleMontre("recherche");
+    ouvrirPanneau(true); actionPanneau(null);
+    function texte() {
+      var s = secondesRestantes(echeance, Date.now());
+      $("cableMsg").textContent = s === null ? "Recherche du câble sur le Wi-Fi…" : "Recherche du câble sur le Wi-Fi : au plus " + s + " s.";
+    }
+    texte();
+    minuteurRecherche = setInterval(texte, 1000);
+    var fin = function (r) {
+      clearInterval(minuteurRecherche); cherche = false;
+      journal({ action: "page-chercher", ok: !!(r && r.ok), etat: r && r.ok ? "pret" : r && r.etat });
+      if (r && r.ok) { pastilleMontre("pret"); ouvrirPanneau(false); return; }
+      var e = r && r.etat;
+      pastilleMontre(e === "a_relier" ? "a_relier" : e === "hors_wifi" ? "hors_wifi" : e === "introuvable" ? "muet" : "erreur");
+      if (e === "introuvable") $("cableMsg").textContent = "Aucun câble trouvé sur le Wi-Fi. Vérifiez qu'il est branché, fermez Smart Life s'il est ouvert, puis réessayez.";
+      ouvrirPanneau(true);
+    };
+    localPret().then(function (l) {
+      return l.chercherCable(l.deps, function (p) { if (p && Number.isFinite(p.echeance)) echeance = p.echeance; });
+    }).then(fin).catch(function () { fin({ ok: false, etat: "erreur" }); });
+  }
+  $("pill").addEventListener("click", function () {
+    if (!$("cableMsg").textContent && $("cableAction").hidden) return; // rien à proposer
+    ouvrirPanneau($("cablePanel").hidden);
+  });
+  $("cableAction").addEventListener("click", function () {
+    var a = this.getAttribute("data-action");
+    if (a === "chercher") lancerRecherche(); // seulement sur ce geste
+    else if (a === "relier") localPret().then(function (l) { return l.client.saisirCle(); }).catch(function () { $("cableMsg").textContent = "L'application ne répond pas : fermez-la puis rouvrez-la."; });
+    else if (a === "reessayer") majEtatCable();
+  });
+  // Retour de l'écran de saisie de la clé, ou du réglage du Wi-Fi : on relit l'état (une lecture, jamais de recherche).
+  document.addEventListener("visibilitychange", function () {
+    if (document.hidden) return;
+    verifierConfirmation();
+    if (pontOk && !busy) majEtatCable();
+  });
+  // Confirmation du % périmée (nouveau jour, ou plus de 6 h) : on redemande, et les anciens résultats disparaissent.
+  function verifierConfirmation() {
+    if (busy || !confirme || confirmationValable(confirmeLe, Date.now())) return;
+    hideAlert(); setConfirme(false); drawChips();
+  }
 
   // Stockage persistant : sans lui, Chrome peut vider les réglages et le jeton si le téléphone
   // manque de place. Chrome l'accorde en général à une page installée, sans fenêtre de demande.
@@ -595,6 +761,7 @@ import { validerAdresse, validerJeton, choisirDemande, libelleBouton, consigneMa
     }).catch(function () { /* stockage ordinaire, la page fonctionne pareil */ });
   }
 
-  load(); loadService(); chargerVehicules(); render(); route(false);
+  hideAlert(); load(); histLoad(); loadService(); chargerVehicules(); render(); drawChips(); setConfirme(false); route(false);
+  if (pontOk) { $("svcBox").hidden = true; majEtatCable(); } // dans l'appli, le service n'est pas joignable : pas de carte service
   protegerStockage();
 })();

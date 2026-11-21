@@ -324,7 +324,7 @@ describe("Critères 2c : alerte KO distincte, aide hors ligne, avertissement aff
   });
   test("l'avertissement de fin de plage est affiché dans l'alerte OK, et la fin des Paramètres est transmise", () => {
     assert.match(app, /if \(res\.avertissement\) a\.appendChild/);
-    assert.match(app, /finHC: fmt\(hm\(cur\.hcEnd\)\)/);
+    assert.match(app, /finHC = fmt\(hm\(cur\.hcEnd\)\)/);
   });
   test("l'Aide est dans la page mise en cache : vue #aide dans index.html, index.html et app.js dans le précache", () => {
     assert.match(html, /id="v-aide"/);
