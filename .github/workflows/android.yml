@@ -26,6 +26,8 @@ on:
       - "tools/assets-apk.mjs"
       - "tools/faux-cable-tcp.mjs"
       - "tests/tuya-local-faux-cable.mjs"
+      - "tests/tuya-local-vecteurs.json"
+      - "tests/tuya-local-cas.json"
       - ".github/workflows/android.yml"
   workflow_dispatch:
 
