@@ -339,7 +339,12 @@ toucher_web "Retirer 1 %"
 toucher_web "Programmer la charge"
 L="$(attendre_essai page-attente-wifi 30)"
 verifier "S16 attente du Wi-Fi" "$L" 'l.etat === "debut"'
-toucher_web "Annuler"
+# « Annuler » est affiché mais absent de l'arbre d'accessibilité lu par uiautomator (constaté le 2026-11-21, à corriger
+# côté page pour TalkBack) : on le touche juste au-dessus du bouton principal (48 dp + marge, densité lue sur l'appareil).
+C="$(centre_web "En attente du Wi-Fi")"
+B="$(ui_dump | grep -o "<node [^>]* text=\"En attente du Wi-Fi[^>]*>" | head -1 | grep -o 'bounds="[^"]*"' | grep -o '[0-9]\+' | sed -n 2p)"
+DENS="$(adb shell wm density | tr -d '\015' | grep -o '[0-9]\+' | tail -1)"
+adb shell input tap "${C%% *}" "$(( B - 32 * DENS / 160 ))"
 ANNULEE=""
 for _ in $(seq 1 20); do
   J="$(adb logcat -d -v raw -s "$TAG:I" | tr -d '\015' || true)"
