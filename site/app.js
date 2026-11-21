@@ -739,7 +739,10 @@ import { confirmationValable, blocageCable, plageRelue, sousLigneBouton, socVali
       if (r && r.ok) { rechercheEchouee = false; pastilleMontre("pret"); ouvrirPanneau(false); return; }
       rechercheEchouee = true;
       var e = r && r.etat;
-      pastilleMontre(e === "a_relier" ? "a_relier" : e === "hors_wifi" ? "hors_wifi" : e === "introuvable" ? "muet" : "erreur");
+      // Recherche ratée sans aucune adresse connue : le câble reste « à localiser » (Programmer ouvre le panneau,
+      // aucun envoi possible) ; « muet » est réservé à un câble connu qui ne répond pas.
+      var inconnu = etatCable === "sans_adresse";
+      pastilleMontre(e === "a_relier" ? "a_relier" : e === "hors_wifi" ? "hors_wifi" : e === "introuvable" ? (inconnu ? "sans_adresse" : "muet") : "erreur");
       if (e === "introuvable") $("cableMsg").textContent = "Aucun câble trouvé sur le Wi-Fi. Vérifiez qu'il est branché, fermez Smart Life s'il est ouvert, puis réessayez.";
       ouvrirPanneau(true);
     };
