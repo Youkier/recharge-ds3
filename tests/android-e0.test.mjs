@@ -73,7 +73,7 @@ test('pont : opérations d\'attente en version publiée, essaiArrierePlan réser
   assert.match(act, /!Attente\.heureValide\(h\) -> repondre\(erreur\("requete_invalide"\)\)/);
   assert.match(act, /!notificationsAutorisees\(\) -> repondre\(erreur\("notifications"\)\)/);
   assert.match(act, /AttenteWifi\.actif -> repondre\(erreur\("occupe"\)\)/);
-  assert.match(act, /if \(AttenteWifi\.actif && !isChangingConfigurations\) abandonnerAttente\(\)/, 'appli fermée pendant l\'attente');
+  assert.match(act, /if \(AttenteWifi\.actif\) abandonnerAttente\(\)/, 'appli fermée pendant l\'attente');
   // Le contrat est décrit dans le client JS du pont.
   const contrat = lire('../android/essai/transport-pont.js');
   for (const op of ['notifications', 'demanderNotifications', 'attenteDebut', 'attenteEtat', 'attenteFin']) assert.ok(contrat.includes(op), op);

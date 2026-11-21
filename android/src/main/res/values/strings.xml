@@ -33,6 +33,8 @@
     <string name="attente_texte">Programmation de %1$s dès que le câble répond</string>
     <string name="resultat_ok_titre">Charge programmée : démarrage %1$s</string>
     <string name="resultat_ok_texte">Relu sur le câble.</string>
+    <string name="resultat_aucune_titre">Pas de charge cette nuit</string>
+    <string name="resultat_immediat_titre">Charge programmée : démarrage immédiat</string>
     <string name="resultat_ko_titre">Programmation non faite</string>
     <string name="resultat_a_la_main">À régler à la main dans Smart Life : début %1$s.</string>
     <string name="resultat_verifier">Vérifiez dans Smart Life ; sinon réglez le début à %1$s.</string>

@@ -127,7 +127,9 @@ class MainActivity : Activity() {
     override fun onDestroy() {
         // Activité détruite pendant une attente (appli fermée, hors changement de configuration) : la page disparaît,
         // rien ne sera envoyé ; on le dit par la notification (règle 2) et le service s'arrête.
-        if (AttenteWifi.actif && !isChangingConfigurations) abandonnerAttente()
+        // Toujours : la page est détruite avec l'activité, même pour un changement de configuration non couvert par
+        // configChanges (police, langue) ; l'attente ne peut plus aboutir.
+        if (AttenteWifi.actif) abandonnerAttente()
         demandeNotifications = null
         AttenteWifi.surFin = null
         pont.arreter()
@@ -213,8 +215,9 @@ class MainActivity : Activity() {
 
     private fun abandonnerAttente() {
         val service = AttenteWifi.instance
-        if (service != null) service.terminer(Attente.Issue.APPLI_FERMEE)
-        else AttenteWifi.finDemandee = Attente.Issue.APPLI_FERMEE to heureAttente
+        // Un résultat déjà publié (attenteFin reçu, service en cours d'arrêt) n'est jamais écrasé par « non envoyée ».
+        if (service != null) { if (service.attendEncore) service.terminer(Attente.Issue.APPLI_FERMEE) }
+        else if (AttenteWifi.finDemandee == null) AttenteWifi.finDemandee = Attente.Issue.APPLI_FERMEE to heureAttente
     }
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {

@@ -81,6 +81,9 @@ class AttenteWifi : Service() {
      * Fin de l'attente : notification de résultat (si issue non nulle), puis arrêt. h : heure à annoncer (par défaut celle
      * de l'attente ; null : texte sans heure, la page n'a pas pu la calculer).
      */
+    /** Vrai tant que l'attente n'est pas terminée (aucun résultat publié). */
+    val attendEncore: Boolean get() = enAttente
+
     fun terminer(issue: Attente.Issue?, h: String? = heure) {
         if (issue != null) publierResultat(this, issue, h?.takeIf { Attente.heureValide(it) })
         enAttente = false

@@ -19,11 +19,13 @@ object Attente {
     const val INVALIDE = "invalide"
 
     /** Issue d'une attente, telle qu'annoncée par la notification de résultat. */
-    enum class Issue { PROGRAMMEE, NON_FAITE, INCERTAINE, ANNULEE, INCONNUE, APPLI_FERMEE }
+    enum class Issue { PROGRAMMEE, AUCUNE, IMMEDIATE, NON_FAITE, INCERTAINE, ANNULEE, INCONNUE, APPLI_FERMEE }
 
     /** Résultat annoncé par la page (« ok » | « ko » | « annulee ») ; null si la valeur est hors liste. */
     fun issue(resultat: String?, incertain: Boolean): Issue? = when (resultat) {
         "ok" -> Issue.PROGRAMMEE
+        "aucune" -> Issue.AUCUNE
+        "immediat" -> Issue.IMMEDIATE
         "ko" -> if (incertain) Issue.INCERTAINE else Issue.NON_FAITE
         "annulee" -> Issue.ANNULEE
         else -> null
@@ -35,6 +37,8 @@ object Attente {
      */
     fun textes(issue: Issue, avecHeure: Boolean): Pair<Int, Int> = if (avecHeure) when (issue) {
         Issue.PROGRAMMEE -> R.string.resultat_ok_titre to R.string.resultat_ok_texte
+        Issue.AUCUNE -> R.string.resultat_aucune_titre to R.string.resultat_ok_texte
+        Issue.IMMEDIATE -> R.string.resultat_immediat_titre to R.string.resultat_ok_texte
         Issue.NON_FAITE -> R.string.resultat_ko_titre to R.string.resultat_a_la_main
         Issue.INCERTAINE -> R.string.resultat_ko_titre to R.string.resultat_verifier
         Issue.ANNULEE -> R.string.resultat_annulee_titre to R.string.resultat_a_la_main
@@ -42,6 +46,8 @@ object Attente {
         Issue.APPLI_FERMEE -> R.string.resultat_fermee_titre to R.string.resultat_fermee_texte
     } else when (issue) {
         Issue.PROGRAMMEE -> R.string.resultat_ok_titre_sans_heure to R.string.resultat_ok_texte
+        Issue.AUCUNE -> R.string.resultat_aucune_titre to R.string.resultat_ok_texte
+        Issue.IMMEDIATE -> R.string.resultat_immediat_titre to R.string.resultat_ok_texte
         Issue.NON_FAITE -> R.string.resultat_ko_titre to R.string.resultat_a_la_main_sans_heure
         Issue.INCERTAINE -> R.string.resultat_ko_titre to R.string.resultat_verifier_sans_heure
         Issue.ANNULEE -> R.string.resultat_annulee_titre to R.string.resultat_a_la_main_sans_heure

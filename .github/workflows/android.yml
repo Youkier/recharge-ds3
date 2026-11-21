@@ -127,7 +127,7 @@ jobs:
             "$AAPT2" dump xmltree --file AndroidManifest.xml "$APK" > "sortie-construction/manifeste-$NOM.txt"
             if grep -q "BOOT_COMPLETED" "sortie-construction/manifeste-$NOM.txt"; then echo "BOOT_COMPLETED interdit"; exit 1; fi
             [ "$(grep -c "E: service " "sortie-construction/manifeste-$NOM.txt" || true)" = 1 ] || { echo "un seul service attendu"; grep -A4 "E: service " "sortie-construction/manifeste-$NOM.txt" || true; exit 1; }
-            SERVICE="$(grep -A6 "E: service " "sortie-construction/manifeste-$NOM.txt")"
+            SERVICE="$(grep -A10 "E: service " "sortie-construction/manifeste-$NOM.txt")"
             echo "$SERVICE"
             echo "$SERVICE" | grep -q 'android:name([^)]*)="fr.rechargeds3.coque.AttenteWifi"' || { echo "service AttenteWifi absent"; exit 1; }
             echo "$SERVICE" | grep -qE 'android:exported\([^)]*\)=(false|\(type 0x12\)0x0)' || { echo "service exporté ou attribut absent"; exit 1; }

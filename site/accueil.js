@@ -173,7 +173,10 @@ export function quitterSiCache({ cache, arriere, prepa }) {
 // Résultat envoyé à la notification de fin : 'ok' | 'ko' | 'annulee'.
 export function resultatNotification({ code, res }) {
   if (code === 'local_attente_annulee') return 'annulee';
-  return res && res.etat === 'ok' ? 'ok' : 'ko';
+  if (!res || res.etat !== 'ok') return 'ko';
+  if (res.aucune === true) return 'aucune';     // « pas de charge cette nuit » : jamais « Charge programmée »
+  if (res.immediat === true) return 'immediat'; // heure passée : « démarrage immédiat », pas « démarrage HH:MM »
+  return 'ok';
 }
 
 // Heure de la notification de fin : début relu si ok, sinon heure à régler à la main (début demandé ; pour « pas de

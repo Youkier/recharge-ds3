@@ -137,7 +137,7 @@ function interpreterSansAvertissement(demande, status, json, ko) {
   if (demande && demande.desactiver) {
     // Plage courte : OK seulement si activée, marquée courte, et début = fin - 1 min (relus sur le câble).
     if (json.plage_active === true && json.courte === true && estHeure(json.debut) && estHeure(json.fin) && json.debut === moinsUneMinute(json.fin)) {
-      return { etat: 'ok', message: 'Pas de charge cette nuit : plage réduite à une minute (' + json.debut + '–' + json.fin + '), inutile de brancher.', detail: null };
+      return { etat: 'ok', message: 'Pas de charge cette nuit : plage réduite à une minute (' + json.debut + '–' + json.fin + '), inutile de brancher.', detail: null, aucune: true };
     }
     return ko('relecture_differente');
   }
@@ -147,7 +147,7 @@ function interpreterSansAvertissement(demande, status, json, ko) {
   }
   const fin = estHeure(json.fin) ? 'Fin de la plage : ' + json.fin + '.' : null;
   if (json.immediat === true) {
-    return { etat: 'ok', message: 'Démarrage immédiat : l\'heure calculée était passée.', detail: ['Début relu sur le câble : ' + json.debut + '.', fin].filter(Boolean).join(' ') };
+    return { etat: 'ok', message: 'Démarrage immédiat : l\'heure calculée était passée.', detail: ['Début relu sur le câble : ' + json.debut + '.', fin].filter(Boolean).join(' '), immediat: true };
   }
   if (json.debut !== demande.allumage) return ko('relecture_differente');
   return { etat: 'ok', message: 'Charge programmée : démarrage ' + json.debut, detail: fin };

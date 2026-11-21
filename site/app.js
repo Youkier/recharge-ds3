@@ -871,7 +871,9 @@ import { confirmationValable, blocageCable, plageRelue, sousLigneBouton, socVali
       if (m === "local") {
         var pl = plageRelue(res);
         journal({ action: "page-programmer", ok: !!res && res.etat === "ok", debut: pl.debut, fin: pl.fin, code: res && res.etat === "ko" ? res.code : undefined, manuel: res && res.etat === "ko" ? res.manuel : undefined });
-        if (res && res.etat === "ok") majEtatCable();
+        // Écran éteint après un envoi en arrière-plan : pas de lecture (clé illisible téléphone verrouillé) ;
+        // le retour au premier plan relit l'état.
+        if (res && res.etat === "ok" && !(opts && opts.arriere && document.hidden)) majEtatCable();
       }
     });
   }
