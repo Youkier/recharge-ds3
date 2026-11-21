@@ -2,6 +2,9 @@
 <!-- Thème clair : barres système sombres sur fond clair (icônes lisibles), mêmes teintes que bg de essai.css. -->
 <resources>
     <style name="Theme.Coque" parent="@android:style/Theme.DeviceDefault.DayNight">
+        <!-- Pas de barre de titre native : la page et l'écran de saisie ont leur propre titre. -->
+        <item name="android:windowActionBar">false</item>
+        <item name="android:windowNoTitle">true</item>
         <item name="android:windowBackground">#f2f4f8</item>
         <item name="android:colorBackground">#f2f4f8</item>
         <item name="android:colorPrimary">#f2f4f8</item>

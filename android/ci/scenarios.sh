@@ -282,6 +282,7 @@ demarrer_page
 L="$(attendre_essai page-etat 60)"
 verifier "S11 état à l'ouverture" "$L" 'l.etat === "pret"'
 ligne_vue page-chercher && echec "S11 : une recherche a été lancée sans geste"
+sleep 2 # laisse la page finir son rendu (API 36 : capture vide vue le 2026-11-21)
 capturer "clair-5-page-accueil"
 
 etape "S12 Vraie page : bouton inactif avant le geste, puis « Programmer » relu conforme"

@@ -222,6 +222,8 @@ details .row:first-of-type { border-top: 1px solid var(--line); }
 .send-sub { font-size: 13px; opacity: .9; }
 .send-btn:disabled { background: var(--neutral-bg); color: var(--muted); border: 1px solid var(--line); cursor: not-allowed; }
 .send-btn:disabled .send-sub { opacity: 1; }
+/* Câble à relier ou à localiser : le bouton reste touchable (il ouvre le panneau du câble) mais n'a pas l'air prêt à envoyer. */
+.send-btn.attente { background: var(--neutral-bg); color: var(--ink); border: 1px solid var(--line); }
 .send-btn:not(:disabled):active { filter: brightness(.9); }
 .send-help { font-size: 14px; color: var(--muted); text-align: center; }
 .send-help a { font-weight: 600; }

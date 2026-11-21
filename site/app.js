@@ -588,6 +588,7 @@ import { confirmationValable, blocageCable, plageRelue, sousLigneBouton, socVali
       secondaire: lab ? lab.secondaire : "",
     });
     b.disabled = !boutonActif({ moyen: moyen, demande: demande, confirme: confirme, occupe: occ });
+    b.classList.toggle("attente", !b.disabled && moyen === "local" && !!blocageCable(etatCable));
     // Sans moyen d'envoi, la barre est masquée : réglage manuel avec l'heure affichée (voir Aide).
     $("sendBar").hidden = !moyen;
     document.body.classList.toggle("has-sendbar", !!moyen);
