@@ -5,6 +5,8 @@
 //   node tools/tuya-local.mjs etat
 //   node tools/tuya-local.mjs ecrire-debut HH:MM [--confirmer]
 //   node tools/tuya-local.mjs desactiver [--confirmer]
+//   ... --trace : affiche chaque trame envoyée et reçue (sens, commande, séquence, longueur, code retour, texte JSON
+//                 de session) pour diagnostiquer ; jamais la clé, l'identifiant du câble ni les octets chiffrés.
 //
 // Sans --confirmer, rien n'est écrit : le câble est lu, et l'écriture qui serait faite est affichée.
 // Lit tools/.env : TUYA_DEVICE_ID, TUYA_LOCAL_KEY, TUYA_LOCAL_IP (variable d'environnement prioritaire) et,
@@ -87,11 +89,25 @@ const MESSAGES = {
   requete_invalide: 'Demande invalide : heure HH:MM attendue.',
 };
 
+const NOMS_CMD = { 3: 'NEG_DEBUT', 4: 'NEG_REPONSE', 5: 'NEG_FIN', 8: 'STATUS', 0x0d: 'CONTROL_NEW', 0x10: 'DP_QUERY_NEW' };
+
+// Ligne de journal d'une trame ou d'une étape (voir cfg.trace dans local/tuya-local.js). Aucune valeur secrète n'y arrive :
+// le module masque la clé et l'identifiant, et ne donne jamais les octets chiffrés.
+export function formaterTrace(e) {
+  const t = `[+${String(e.ms).padStart(5)} ms]`;
+  if (e.note) return `${t} ${e.note}`;
+  const nom = NOMS_CMD[e.cmd] ?? '?';
+  const ret = e.retcode === undefined ? '' : ` retcode=${e.retcode}`;
+  const txt = e.texte === undefined ? '' : ` ${e.texte}`;
+  return `${t} ${e.sens} cmd=0x${e.cmd.toString(16).padStart(2, '0')} ${nom} seq=${e.seq} long=${e.longueur}${ret}${txt}`;
+}
+
 const plageTexte = (r) => `${r.debut}–${r.fin}, plage ${r.plage_active ? 'active' : 'désactivée (charge immédiate)'}`;
 
 async function main(argv) {
   const args = argv.filter((a) => !a.startsWith('--'));
   const confirme = argv.includes('--confirmer');
+  const trace = argv.includes('--trace') ? (e) => console.log(formaterTrace(e)) : undefined;
   const action = args[0];
   if (!action || action === 'aide') { console.log(AIDE); return 0; }
   if (!['etat', 'ecrire-debut', 'desactiver'].includes(action)) { console.log(AIDE); return 1; }
@@ -107,7 +123,8 @@ async function main(argv) {
   try { cfg = chargerConfig(undefined, undefined, { ipFacultative: true }); } catch (e) { console.error(e.message); return 1; }
 
   // Adresse du câble : TUYA_LOCAL_IP, puis la dernière trouvée ; si elle ne répond pas, recherche sur le réseau (lecture seule).
-  const { ip: ipConfig, ...cfgSansIp } = cfg;
+  const { ip: ipConfig, ...cfgBase } = cfg;
+  const cfgSansIp = action === 'etat' && trace ? { ...cfgBase, trace } : cfgBase;
   const loc = await localiserCable({
     cfg: cfgSansIp, departs: [ipConfig, lireAdresseEnregistree()].filter(Boolean), interfaces: adressesDuPc(),
     creerTransport: creerTransportNode, sonder: sonderPort,
@@ -129,7 +146,7 @@ async function main(argv) {
     console.log(`Plage de charge (dp 151) : ${plageTexte(r)}.`);
     return 0;
   }
-  const r = await programmer({ ...cfg, simuler: !confirme }, transport, demande);
+  const r = await programmer({ ...cfg, simuler: !confirme, ...(trace ? { trace } : {}) }, transport, demande);
   if (!r.ok) { console.error(`ECHEC (${r.erreur}) : ${MESSAGES[r.erreur] ?? ''}`); return 1; }
   if (r.simulation) {
     console.log(`Valeur actuelle : ${plageTexte(r.actuelle)}.`);

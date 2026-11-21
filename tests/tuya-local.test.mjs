@@ -26,7 +26,8 @@ describe('Exports (aucune fonction d\'envoi générique)', () => {
     const src = readFileSync(new URL('../local/tuya-local.js', import.meta.url), 'utf8');
     assert.equal((src.match(/envoyerTrame\(ctx, CMD_ECRITURE/g) || []).length, 1);
     assert.equal((src.match(/CMD_ECRITURE\b/g) || []).length, 3); // définition, envoi, filtre de l'accusé
-    assert.equal((src.match(/corpsEcriture\(/g) || []).length, 2); // définition + appel
+    // définition, validation avant tout envoi, construction dans l'unique fonction d'envoi (envoyerEcriture)
+    assert.equal((src.match(/corpsEcriture\(/g) || []).length, 3);
   });
 });
 
@@ -506,4 +507,29 @@ describe('Relecture du lot C1 : filtre d\'adresses et trames malformées', () =>
       assert.ok(estFerme());
     });
   }
+});
+
+// Câble en veille (trace réelle du 2026-11-21) : la première écriture le réveille et est jetée.
+describe('Câble en veille (dp 109 = SLEEP)', () => {
+  const enVeille = () => fauxCable({ cle: CLE, dps: { ...dpsBase(), 109: 'SLEEP' }, veille: true });
+  test('première écriture jetée : un second envoi de la même valeur, puis relu conforme', async () => {
+    const f = enVeille();
+    const r = await programmer(cfgDe(), f.transport, { allumage: '00:15' });
+    assert.equal(r.ok, true, JSON.stringify(r));
+    assert.equal(r.debut, '00:15');
+    assert.equal(f.journal.ecritures.length, 2);
+    assert.deepEqual(f.journal.ecritures[0].corps.data.dps, f.journal.ecritures[1].corps.data.dps, 'même valeur renvoyée');
+  });
+  test('câble éveillé qui ignore l\'écriture : jamais de second envoi', async () => {
+    const f = FAUX({ ignorerEcriture: true });
+    const r = await programmer(cfgDe(), f.transport, { allumage: '00:15' });
+    assert.deepEqual(r, { ok: false, erreur: 'relecture_differente', ecrit: true });
+    assert.equal(f.journal.ecritures.length, 1);
+  });
+  test('en veille et qui ignore toujours : deux envois au plus, puis relecture différente', async () => {
+    const f = fauxCable({ cle: CLE, dps: { ...dpsBase(), 109: 'SLEEP' }, veille: true, ignorerEcriture: true });
+    const r = await programmer(cfgDe(), f.transport, { allumage: '00:15' });
+    assert.deepEqual(r, { ok: false, erreur: 'relecture_differente', ecrit: true });
+    assert.equal(f.journal.ecritures.length, 2);
+  });
 });

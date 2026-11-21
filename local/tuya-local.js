@@ -38,6 +38,7 @@ const CMD_LECTURE = 0x10; // DP_QUERY_NEW
 
 const DP_PLAGE = '151'; // x_charge_mode (docs/tuya-findings.md, T2)
 const DP_VOLATILS = new Set(['101', '102', '105', '109']); // mêmes que tools/tuya-local-test.py
+const DP_ETAT = '109'; // x_work_st_debug : WAIT, WORKING, SLEEP, IDLE… (docs/tuya-findings.md)
 const CLES_PLAGE = ['m', 'dt', 'ss', 'se'];
 const MODES_CONNUS = [0, 2]; // 2 = plage active, 0 = charge immédiate
 const HEURE_VALIDE = /^([01]\d|2[0-3]):[0-5]\d$/;
@@ -119,7 +120,7 @@ async function depaqueter(cle, trame) {
     throw new ErreurLocale('cle'); // étiquette refusée : clé fausse, câble réappairé ou trame altérée
   }
   if (clair.length < 4) throw new ErreurLocale('format');
-  return { seq: u32(trame, 6), cmd: u32(trame, 10), retcode: u32(clair, 0), payload: clair.subarray(4) };
+  return { seq: u32(trame, 6), cmd: u32(trame, 10), longueur, retcode: u32(clair, 0), payload: clair.subarray(4) };
 }
 
 // Extrait une trame complète du tampon, ou null s'il en manque. Se recale sur le préfixe (XenonDevice._receive).
@@ -155,9 +156,31 @@ function tempsRestant(ctx) {
   return r;
 }
 
+// Journal facultatif (cfg.trace : fonction appelée avec un objet simple). Sans effet quand il est absent. Il ne reçoit
+// jamais la clé locale, la clé de session, ni les octets chiffrés ; l'identifiant du câble et la clé sont masqués
+// jusque dans le texte. Le texte n'est donné que pour les trames de session (lecture, écriture, annonces d'état) :
+// la négociation ne contient que des aléas et des empreintes. Une erreur du journal ne perturbe jamais le protocole.
+function tracer(ctx, evt) {
+  if (typeof ctx.cfg.trace !== 'function') return;
+  try { ctx.cfg.trace({ ms: ctx.horloge() - ctx.debut, ...evt }); } catch { /* le journal ne doit rien casser */ }
+}
+function texteTrace(ctx, octets) {
+  if (ctx.phase !== 'session') return undefined;
+  let p = octets;
+  if (p.length >= 3 && p[0] === 0x33 && p[1] === 0x2e && p[2] === 0x35) p = p.subarray(15);
+  let t;
+  try { t = dec.decode(p); } catch { return `(${octets.length} octets non texte)`; }
+  for (const secret of [ctx.cfg.deviceId, ctx.cfg.cleLocale]) {
+    if (typeof secret === 'string' && secret.length >= 4) t = t.split(secret).join('***');
+  }
+  return t;
+}
+
 async function envoyerTrame(ctx, cmd, clair) {
   tempsRestant(ctx);
-  const trame = await empaqueter(ctx.cleActive, ctx.seq++, cmd, clair, ctx.aleas.octets(12));
+  const seq = ctx.seq++;
+  const trame = await empaqueter(ctx.cleActive, seq, cmd, clair, ctx.aleas.octets(12));
+  tracer(ctx, { sens: '->', cmd, seq, longueur: clair.length + 28, texte: texteTrace(ctx, clair) });
   try { await ctx.transport.envoyer(trame); } catch (e) { throw erreurTransport(e); }
 }
 
@@ -168,6 +191,7 @@ async function attendreTrame(ctx, filtre, delaiMs = DELAI_TRAME_MS) {
     let trame = extraireTrame(ctx);
     while (trame) {
       const msg = await depaqueter(ctx.cleActive, trame);
+      tracer(ctx, { sens: '<-', cmd: msg.cmd, seq: msg.seq, longueur: msg.longueur, retcode: msg.retcode, texte: texteTrace(ctx, msg.payload) });
       if (filtre(msg)) return msg;
       trame = extraireTrame(ctx);
     }
@@ -288,7 +312,7 @@ async function executer(cfg, transport, travail) {
   const delaiGlobal = cfg.delaiGlobalMs ?? DELAI_GLOBAL_MS;
   const ctx = {
     transport, cfg, cleLocale: cle, cleActive: cle, seq: 1, tampon: new Uint8Array(0), phase: 'negociation',
-    horloge, echeance: horloge() + delaiGlobal, annule: false,
+    horloge, debut: horloge(), echeance: horloge() + delaiGlobal, annule: false,
     aleas: cfg.aleas ?? { octets: (n) => globalThis.crypto.getRandomValues(new Uint8Array(n)) },
     pause: cfg.pause ?? pauseParDefaut,
     maintenant: cfg.maintenant ?? (() => new Date()),
@@ -299,11 +323,13 @@ async function executer(cfg, transport, travail) {
   });
   const tache = (async () => {
     try { await transport.ouvrir(cfg.ip, PORT, Math.min(DELAI_CONNEXION_MS, delaiGlobal)); } catch (e) { throw erreurTransport(e); }
+    tracer(ctx, { note: 'connexion ouverte' });
     try { await negocier(ctx); } catch (e) {
       // Connexion fermée par le câble pendant la négociation : clé refusée (hypothèse tinytuya ERR_KEY_OR_VER, à confirmer en réel).
       throw e instanceof ErreurLocale && e.code === 'ferme' ? new ErreurLocale('cle') : e;
     }
     ctx.phase = 'session';
+    tracer(ctx, { note: 'session établie' });
     return travail(ctx);
   })();
   tache.catch(() => {}); // une rejection tardive (après échéance) ne doit pas remonter
@@ -321,6 +347,7 @@ async function executer(cfg, transport, travail) {
     clearTimeout(minuteur);
     ctx.annule = true;
     try { await Promise.resolve(transport.fermer()); } catch { /* rien à faire */ }
+    tracer(ctx, { note: 'connexion fermée' });
   }
 }
 
@@ -354,26 +381,42 @@ export async function programmer(cfg, transport, action) {
       extra = d.immediat ? { immediat: true } : {};
     }
     const t = Math.floor(ctx.maintenant().getTime() / 1000);
-    const { voulue, clair } = corpsEcriture(actuelle, debut, t);
+    const { voulue } = corpsEcriture(actuelle, debut, t); // valide aussi le format, avant tout envoi
     if (ctx.cfg.simuler === true) return { ok: true, simulation: true, actuelle: reponsePlage(actuelle), a_ecrire: reponsePlage(voulue, extra) };
     if (memePlage(actuelle, voulue)) return reponsePlage(actuelle, extra); // déjà réglé : rien à envoyer
 
-    ctx.ecrit = true; // à partir d'ici, l'écriture a pu être appliquée même si la suite échoue
-    await envoyerTrame(ctx, CMD_ECRITURE, clair);
-    // Accusé du câble (cmd 0x0d) : sa forme exacte est à confirmer en réel ; son absence n'est pas une erreur,
-    // c'est la relecture qui décide.
-    try { await attendreTrame(ctx, (m) => m.cmd === CMD_ECRITURE, DELAI_ACCUSE_MS); } catch (e) {
-      if (!(e instanceof ErreurLocale) || e.code !== 'delai' || ctx.annule || ctx.echeance - ctx.horloge() <= 0) throw e;
-    }
+    // Un seul endroit construit et envoie l'écriture (toujours la même valeur voulue : seuls ss et m du dp 151).
+    const envoyerEcriture = async (tEnvoi) => {
+      const { clair: trame } = corpsEcriture(actuelle, debut, tEnvoi);
+      tracer(ctx, { note: 'écriture : envoi de la commande' });
+      ctx.ecrit = true; // à partir d'ici, l'écriture a pu être appliquée même si la suite échoue
+      await envoyerTrame(ctx, CMD_ECRITURE, trame);
+      // Accusé du câble (cmd 0x0d, retcode 0 vu le 2026-11-21) : son absence n'est pas une erreur, la relecture décide.
+      try { await attendreTrame(ctx, (m) => m.cmd === CMD_ECRITURE, DELAI_ACCUSE_MS); } catch (e) {
+        if (!(e instanceof ErreurLocale) || e.code !== 'delai' || ctx.annule || ctx.echeance - ctx.horloge() <= 0) throw e;
+      }
+    };
+    await envoyerEcriture(t);
 
+    // Câble en veille (dp 109 = « SLEEP ») : il se réveille avec la première écriture et la jette (accusé retcode 0,
+    // plage inchangée, 109 passe à IDLE). Constaté par trace le 2026-11-21 (docs/tuya-findings.md). On renvoie alors
+    // UNE fois la même valeur : sans effet si elle avait été appliquée entre-temps.
+    let renvoyee = false;
+    const enVeille = avant[DP_ETAT] === 'SLEEP';
     for (const attente of ctx.cfg.attentes ?? ATTENTES_RELECTURE_MS) {
       if (attente >= tempsRestant(ctx)) throw new ErreurLocale('delai'); // plus le temps de relire : résultat incertain
+      tracer(ctx, { note: `pause ${attente} ms avant relecture` });
       await ctx.pause(attente);
       const apres = await lireDps(ctx);
       const relue = plageDepuisDps(apres);
       if (memePlage(relue, voulue)) {
         if (autresPointsModifies(avant, apres)) throw new ErreurLocale('relecture_differente');
         return reponsePlage(relue, extra);
+      }
+      if (enVeille && !renvoyee && memePlage(relue, actuelle)) {
+        renvoyee = true;
+        tracer(ctx, { note: 'câble sorti de veille, écriture ignorée : second envoi de la même valeur' });
+        await envoyerEcriture(Math.floor(ctx.maintenant().getTime() / 1000));
       }
     }
     throw new ErreurLocale('relecture_differente');

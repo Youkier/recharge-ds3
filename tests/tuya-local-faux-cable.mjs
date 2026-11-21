@@ -44,6 +44,8 @@ const aleatoire = (n) => globalThis.crypto.getRandomValues(new Uint8Array(n));
  * opts.cleFausse   si la trame 1 ne se déchiffre pas : "repondre" (défaut), "fermer" ou "silence"
  * opts.silenceLecture  ne répond jamais à la lecture
  * opts.ignorerEcriture l'écriture est acceptée mais sans effet
+ * opts.veille        dp 109 à « SLEEP » : la première écriture réveille le câble (109 -> IDLE) et est jetée
+ *                    (comportement du vrai câble, trace du 2026-11-21)
  * opts.transformerEcriture(valeur151) -> valeur réellement appliquée
  * opts.effetsEcriture  { dp: valeur } appliqués en plus à l'écriture (autre point modifié)
  * opts.formatLecture   "dps" (défaut) | "data" | "entete" (corps précédé de « 3.5 » + 12 zéros)
@@ -116,7 +118,9 @@ export function fauxCable(opts = {}) {
     } else if (m.cmd === 0x0d) {
       const corps = JSON.parse(new TextDecoder().decode(m.clair.subarray(15)));
       journal.ecritures.push({ entete: new TextDecoder().decode(m.clair.subarray(0, 3)), corps });
-      if (!opts.ignorerEcriture) {
+      const jetee = opts.veille && dps['109'] === 'SLEEP';
+      if (jetee) dps['109'] = 'IDLE';
+      if (!opts.ignorerEcriture && !jetee) {
         for (const [k, v] of Object.entries(corps.data.dps)) dps[k] = k === '151' && opts.transformerEcriture ? opts.transformerEcriture(v) : v;
         Object.assign(dps, opts.effetsEcriture ?? {});
       }

@@ -184,6 +184,15 @@ Choix du module, non fournis par tinytuya : nombre de relectures (3, précédée
 
 **À confirmer sur le vrai câble (lot C2)** : forme exacte de l'accusé d'écriture et des annonces d'état (le faux câble en suppose : un accusé cmd 0x0d vide, puis une annonce cmd 8) ; forme de la réponse de lecture (`dps` ou `data.dps`, avec ou sans en-tête de version : le module accepte les trois) ; comportement d'un câble qui reçoit une négociation avec une mauvaise clé (le module conclut `cle` sur trame refusée ou connexion fermée, mais `delai` si le câble se tait) ; comportement du câble quand Smart Life est ouverte sur le même câble ; délai réel de répercussion de l'écriture (trois relectures espacées de 0,5, 1,5 et 2,5 s suffisent-elles ?) ; adresse IPv4 réservée dans la box.
 
+### Câble en veille : la première écriture est jetée (observé le 2026-11-21)
+
+Source : trace réelle `node tools/tuya-local.mjs ecrire-debut 23:45 --confirmer --trace` (15:28), câble à 192.168.1.48, puis même commande à 00:10 (15:29). Contexte : refus intermittent vu dans l'appli Android et par `tools/tuya-local.mjs`, alors que `tools/tuya-local-test.py` (tinytuya) réussissait.
+
+- Formes confirmées : accusé d'écriture = cmd 0x0d, **corps vide, retcode 0** ; annonces d'état = cmd 0x08 `{"protocol":4,"t":…,"data":{"dps":{…}}}` (ex. `{"109":"IDLE"}`, mesures du dp 102) ; réponse de lecture = `{"dps":{…}}` sans en-tête. dp lus en local : 101, 102, 106, 107, 109, 150, 151, 152, 155, 156, 157, 188, 189.
+- **dp 109 (`x_work_st_debug`) = `SLEEP`** avant l'écriture : la lecture (0x10) ne le réveille pas. L'écriture est **accusée (retcode 0) mais pas appliquée** ; le câble annonce aussitôt `109 = IDLE` (probablement le « clac » de relais entendu par Mathieu). Trois relectures sur 4,6 s : plage inchangée.
+- Une minute plus tard, câble en `IDLE` : même module, même enchaînement (lecture puis écriture dans la même connexion), écriture **appliquée et relue conforme en 0,5 s**. La structure de session n'est donc pas en cause.
+- Conséquence dans `local/tuya-local.js` : si 109 valait `SLEEP` et que la première relecture montre la plage d'avant, **un second envoi de la même valeur** (une seule fois), puis relecture. Délai avant le retour en veille : à mesurer.
+
 ## Recherche automatique du câble (lot C2, partie code, 2026-11-17)
 
 Source : code et tests (`local/recherche.js`, `tests/tuya-local-recherche.test.mjs`), faux réseau seulement ; **rien n'est encore vérifié sur le vrai réseau**.
