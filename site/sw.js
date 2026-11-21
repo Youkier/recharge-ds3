@@ -14,7 +14,7 @@
 // précache modifiée) et active immédiatement le nouveau service worker
 // (skipWaiting + clients.claim), donc au plus deux ouvertures dans tous les cas.
 
-const VERSION = "v18";
+const VERSION = "v19";
 const CACHE = "recharge-ds3-" + VERSION;
 const TIMEOUT_MS = 4000;
 

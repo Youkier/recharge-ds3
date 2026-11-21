@@ -241,6 +241,8 @@ describe('Attente du Wi-Fi de la maison', () => {
   test('source de la page : arrière-plan annule attente, envois comptés', () => {
     const src = readFileSync(new URL('../site/app.js', import.meta.url), 'utf8');
     assert.match(src, /if \(document\.hidden\) \{ quitterAttente\(\); return; \}/);
+    assert.match(src, /function envoiApresAttente[\s\S]*?attenteExpiree\(a\.debut, Date\.now\(\)\)[\s\S]*?lancerEnvoi\(\)/); // échéance revérifiée avant l'envoi
+    assert.equal((src.match(/opCableLancer\(/g) || []).length, 6); // définition + envoi local, lecture, recherche (attente), majEtatCable, lancerRecherche
     assert.equal((src.match(/lancerEnvoi\(\)/g) || []).length, 4); // définition + trois appels (service, après contrôle, après attente)
   });
 });

@@ -472,6 +472,21 @@ import { confirmationValable, blocageCable, plageRelue, sousLigneBouton, socVali
   var KEY_URL = "recharge-ds3-service-url";
   var KEY_TOK = "recharge-ds3-service-jeton";
   var svc = { adresse: null, jeton: null };
+  // Une seule opération sur le câble à la fois (lecture, recherche, envoi), au niveau du module : le drapeau n'est
+  // relâché qu'à la fin réelle de la promesse, jamais par une sortie d'attente ni un plafond de temps.
+  var opCable = false, opFin = Promise.resolve(), clicEnAttente = false;
+  function opCableLancer(fn) {
+    opCable = true;
+    var reel = Promise.resolve().then(fn);
+    var rel = function () { opCable = false; };
+    opFin = reel.then(rel, rel);
+    return reel;
+  }
+  // Borne d'attente pour l'appelant seulement : l'opération réelle continue, et garde son drapeau.
+  function borne(p, ms, repli) {
+    var t = null;
+    return Promise.race([p, new Promise(function (ok) { t = setTimeout(function () { ok(repli); }, ms); })]).then(function (r) { clearTimeout(t); return r; }, function (e) { clearTimeout(t); throw e; });
+  }
   var att = null, controle = false; // att : attente du Wi-Fi en cours ; controle : contrôle du réseau au toucher
   var demande = null, busy = false, alertKey = null, moyen = null, reussi = null, etatCable = null, debugPont = false;
   var pontOk = !!(globalThis.PontLocal && typeof globalThis.PontLocal.postMessage === "function");
@@ -612,6 +627,11 @@ import { confirmationValable, blocageCable, plageRelue, sousLigneBouton, socVali
   var localEnVol = null; // envoi local réel en cours (il peut survivre au plafond de 30 s)
   $("sendBtn").addEventListener("click", function () {
     if (busy || localEnVol || controle || att || !demande || !confirme || !moyen) return;
+    // Lecture ou recherche en vol : le toucher attend sa fin (jamais deux opérations en même temps), puis on décide.
+    if (opCable && moyen === "local") {
+      if (!clicEnAttente) { clicEnAttente = true; opFin.then(function () { clicEnAttente = false; $("sendBtn").click(); }); }
+      return;
+    }
     // Page restée affichée d'un soir à l'autre sans changer de visibilité : la confirmation est revérifiée au clic.
     if (!confirmationValable(confirmeLe, Date.now())) { verifierConfirmation(); return; }
     if (moyen !== "local") { lancerEnvoi(); return; }
@@ -664,7 +684,14 @@ import { confirmationValable, blocageCable, plageRelue, sousLigneBouton, socVali
   }
   // Envoi après attente : la confirmation du % est revérifiée à cet instant (6 h, même jour).
   function envoiApresAttente(a) {
-    sortirAttente(); journal({ action: "page-attente-wifi", etat: "envoi" });
+    sortirAttente();
+    // Échéance revérifiée juste avant l'envoi : une lecture ou une recherche tardive ne déclenche rien.
+    if (attenteExpiree(a.debut, Date.now())) {
+      journal({ action: "page-attente-wifi", etat: "expiree" });
+      koAttente(a, codeEcheance(a.cableDepuis), "Programmation non envoyée");
+      return;
+    }
+    journal({ action: "page-attente-wifi", etat: "envoi" });
     if (!confirme || !confirmationValable(confirmeLe, Date.now())) {
       hideAlert(); setConfirme(false);
       koAttente(a, "local_attente_confirmation", "Programmation non envoyée");
@@ -688,8 +715,9 @@ import { confirmationValable, blocageCable, plageRelue, sousLigneBouton, socVali
       koAttente(a, codeEcheance(a.cableDepuis), "Programmation non envoyée");
       return;
     }
+    if (opCable) return; // une opération sur le câble est encore en vol : on attend sa fin
     a.verif = true;
-    reseauMaison().then(function (sr) {
+    borne(reseauMaison(), 10000, "inconnu").then(function (sr) {
       if (att !== a) return null;
       var now = Date.now();
       if (sr !== "oui") { a.cableDepuis = null; a.verif = false; changerEtape(a, "wifi"); return null; }
@@ -702,7 +730,10 @@ import { confirmationValable, blocageCable, plageRelue, sousLigneBouton, socVali
     }).catch(function () { if (att === a) a.verif = false; });
   }
   function lireCablePendantAttente(a) {
-    return localPret().then(function (l) { return l.etatCable(l.deps); }).then(function (r) {
+    var reel = opCableLancer(function () { return localPret().then(function (l) { return l.etatCable(l.deps); }); });
+    // Si la lecture dépasse 10 s, l'attente reprend la main ; la réponse tardive est quand même traitée.
+    borne(reel.then(function () {}, function () {}), 10000).then(function () { if (att === a) { a.verif = false; if (!Number.isFinite(a.derniere)) a.derniere = Date.now(); } });
+    return reel.then(function (r) {
       if (att !== a) return;
       a.derniere = Date.now(); a.verif = false;
       var suite = suiteLecture(r && r.etat);
@@ -714,7 +745,12 @@ import { confirmationValable, blocageCable, plageRelue, sousLigneBouton, socVali
   function chercherPendantAttente(a) {
     a.rechercheFaite = true;
     journal({ action: "page-attente-wifi", etat: "recherche" });
-    return localPret().then(function (l) { return l.chercherCable(l.deps); }).then(function (r) {
+    cherche = true;
+    var reel = opCableLancer(function () { return localPret().then(function (l) { return l.chercherCable(l.deps); }); });
+    var fini = function () { cherche = false; };
+    reel.then(fini, fini);
+    borne(reel.then(function () {}, function () {}), 45000).then(function () { if (att === a) { a.verif = false; a.derniere = null; changerEtape(a, "cable"); } });
+    return reel.then(function (r) {
       if (att !== a) return;
       a.derniere = null; a.verif = false;
       if (r && r.ok) { pastilleMontre("pret"); envoiApresAttente(a); }
@@ -746,7 +782,7 @@ import { confirmationValable, blocageCable, plageRelue, sousLigneBouton, socVali
         // Aucun repli vers le service : si le mode Local échoue, l'échec est affiché avec l'heure à régler à la main.
         // Plafond de 30 s : l'échec est affiché, mais le bouton reste occupé jusqu'à la fin réelle de l'envoi.
         var minuteur = null;
-        var reel = localPret().then(function (l) { return l.programmerLocal(d, l.deps, finHC); });
+        var reel = opCableLancer(function () { return localPret().then(function (l) { return l.programmerLocal(d, l.deps, finHC); }); });
         localEnVol = reel;
         var fin = function () { clearTimeout(minuteur); if (localEnVol === reel) { localEnVol = null; try { updateSend(); } catch (e) { /* sans effet */ } } };
         reel.then(fin, fin);
@@ -813,9 +849,9 @@ import { confirmationValable, blocageCable, plageRelue, sousLigneBouton, socVali
     updateSend();
   }
   function majEtatCable() {
-    if (!pontOk || cherche) return Promise.resolve();
+    if (!pontOk || cherche || opCable) return Promise.resolve();
     pastilleMontre("verification");
-    return localPret().then(function (l) { return l.etatCable(l.deps); }).then(function (r) {
+    return opCableLancer(function () { return localPret().then(function (l) { return l.etatCable(l.deps); }); }).then(function (r) {
       journal({ action: "page-etat", etat: r.etat });
       if (cherche) return;
       pastilleMontre(r.etat);
@@ -824,7 +860,7 @@ import { confirmationValable, blocageCable, plageRelue, sousLigneBouton, socVali
     }).catch(function () { if (!cherche) pastilleMontre("erreur"); });
   }
   function lancerRecherche(auto) {
-    if (cherche) return;
+    if (cherche || opCable) return;
     cherche = true;
     var echeance = null;
     pastilleMontre("recherche");
@@ -848,8 +884,10 @@ import { confirmationValable, blocageCable, plageRelue, sousLigneBouton, socVali
       if (e === "introuvable") $("cableMsg").textContent = "Aucun câble trouvé sur le Wi-Fi. Vérifiez qu'il est branché, fermez Smart Life s'il est ouvert, puis réessayez.";
       ouvrirPanneau(true);
     };
-    localPret().then(function (l) {
-      return l.chercherCable(l.deps, function (p) { if (p && Number.isFinite(p.echeance)) echeance = p.echeance; });
+    opCableLancer(function () {
+      return localPret().then(function (l) {
+        return l.chercherCable(l.deps, function (p) { if (p && Number.isFinite(p.echeance)) echeance = p.echeance; });
+      });
     }).then(fin).catch(function () { fin({ ok: false, etat: "erreur" }); });
   }
   $("pill").addEventListener("click", function () {
@@ -858,7 +896,7 @@ import { confirmationValable, blocageCable, plageRelue, sousLigneBouton, socVali
   });
   $("cableAction").addEventListener("click", function () {
     var a = this.getAttribute("data-action");
-    if (att) return; // une seule lecture ou recherche à la fois : l'attente en a la main
+    if (att || opCable) return; // une seule lecture ou recherche à la fois : l'attente en a la main
     if (a === "chercher") lancerRecherche(); // seulement sur ce geste
     else if (a === "relier") localPret().then(function (l) { return l.client.saisirCle(); }).catch(function () { $("cableMsg").textContent = "L'application ne répond pas : fermez-la puis rouvrez-la."; });
     else if (a === "reessayer") majEtatCable();
@@ -873,7 +911,7 @@ import { confirmationValable, blocageCable, plageRelue, sousLigneBouton, socVali
   // dès que le téléphone est sur le bon réseau, une lecture de l'état (jamais de recherche) passe la pastille à « Câble prêt ».
   var suiviEnCours = false;
   function suivreWifiPastille() {
-    if (!pontOk || suiviEnCours || cherche || controle || !suiviWifiActif({ etat: etatCable, visible: !document.hidden, occupe: busy || !!localEnVol || !!att })) return;
+    if (!pontOk || suiviEnCours || cherche || opCable || controle || !suiviWifiActif({ etat: etatCable, visible: !document.hidden, occupe: busy || !!localEnVol || !!att })) return;
     suiviEnCours = true;
     reseauMaison().then(function (sr) {
       if (sr === "oui" && etatCable === "hors_wifi" && !document.hidden && !att && !busy && !localEnVol) return majEtatCable();
