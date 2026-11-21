@@ -40,7 +40,12 @@ nettoyer() {
 }
 trap nettoyer EXIT
 
-echec() { echo "ÉCHEC : $*" >&2; exit 1; }
+# En cas d'échec, l'écran du moment est déposé avec les captures (zéro si l'émulateur ne répond plus).
+echec() {
+  echo "ÉCHEC : $*" >&2
+  adb exec-out screencap -p > "$SORTIE/echec-ecran.png" 2> /dev/null || true
+  exit 1
+}
 etape() { echo; echo "=== $*"; }
 
 # --- Faux câble ---
@@ -127,7 +132,22 @@ saisir_cle() {
   local cle="$1"
   toucher champ_id;  adb shell input text "$IDENTIFIANT"
   toucher champ_cle; adb shell input text "$cle"
-  toucher bouton_enregistrer
+  toucher_apres_defilement bouton_enregistrer
+}
+
+# Vue sous le clavier ou hors de l'écran (formulaire dans un ScrollView depuis la v0.3) : uiautomator ne la liste pas.
+# On fait défiler vers le bas jusqu'à la voir (4 essais), puis on la touche.
+toucher_apres_defilement() {
+  local nom="$1" xml taille l h essai
+  taille="$(adb shell wm size | tr -d '\r' | grep -o '[0-9]\+x[0-9]\+' | tail -1)"
+  l="${taille%x*}"; h="${taille#*x}"
+  for essai in 1 2 3 4; do
+    xml="$(ui_dump || true)"
+    if printf '%s' "$xml" | grep -q "resource-id=\"[^\"]*:id/${nom}\""; then toucher "$nom"; return 0; fi
+    adb shell input swipe $(( l / 2 )) $(( h / 2 )) $(( l / 2 )) $(( h / 5 )) 300
+    sleep 1
+  done
+  toucher "$nom"
 }
 
 capturer() { adb exec-out screencap -p > "$SORTIE/$1.png"; echo "capture : $1.png"; }
@@ -297,7 +317,7 @@ etape "S10d Oublier le câble : confirmation, puis écran de saisie et fichier v
 adb logcat -c
 adb shell am force-stop "$PKG"
 adb shell am start -W -n "$ACT" --es action cle > /dev/null
-toucher bouton_oublier
+toucher_apres_defilement bouton_oublier
 toucher button1
 sleep 2
 formulaire_affiche || echec "S10d : l'écran de saisie n'est pas affiché après « Oublier »"
