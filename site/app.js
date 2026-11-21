@@ -576,23 +576,24 @@ import { confirmationValable, blocageCable, plageRelue, sousLigneBouton, socVali
   function updateSend() {
     svcSummary();
     var b = $("sendBtn"), help = $("sendHelp");
+    var occ = busy || !!localEnVol; // un envoi local dont le plafond est tombé tourne encore : pas de second envoi
     var lab = libelleBouton(demande);
     moyen = moyenEnvoi({ pont: pontOk, adresse: svc.adresse, jeton: svc.jeton });
-    $("sendMain").textContent = busy ? "Envoi en cours…" : (lab ? lab.principal : "Programmer la charge");
+    $("sendMain").textContent = occ ? "Envoi en cours…" : (lab ? lab.principal : "Programmer la charge");
     var cle = demande ? JSON.stringify(demande) : null;
     $("sendSub").textContent = sousLigneBouton({
-      occupe: busy, delaiS: moyen === "local" ? 30 : 25, demande: demande, confirme: confirme,
+      occupe: occ, delaiS: moyen === "local" ? 30 : 25, demande: demande, confirme: confirme,
       reussi: reussi && reussi.cle === cle ? "programmé à " + reussi.heure + " · relu sur le câble" : null,
       blocage: moyen === "local" ? blocageCable(etatCable) : null,
       secondaire: lab ? lab.secondaire : "",
     });
-    b.disabled = !boutonActif({ moyen: moyen, demande: demande, confirme: confirme, occupe: busy });
+    b.disabled = !boutonActif({ moyen: moyen, demande: demande, confirme: confirme, occupe: occ });
     // Sans moyen d'envoi, la barre est masquée : réglage manuel avec l'heure affichée (voir Aide).
     $("sendBar").hidden = !moyen;
     document.body.classList.toggle("has-sendbar", !!moyen);
-    help.hidden = !(moyen && !demande && !busy);
+    help.hidden = !(moyen && !demande && !occ);
     if (!help.hidden) help.textContent = "Corrigez la saisie pour pouvoir programmer la charge.";
-    b.setAttribute("aria-busy", busy ? "true" : "false");
+    b.setAttribute("aria-busy", occ ? "true" : "false");
   }
 
   // Deux conteneurs permanents (présents dès le chargement, annoncés par les lecteurs d'écran) :
@@ -620,8 +621,11 @@ import { confirmationValable, blocageCable, plageRelue, sousLigneBouton, socVali
   }
 
   var DELAI_LOCAL_MAX_MS = 30000;
+  var localEnVol = null; // envoi local réel en cours (il peut survivre au plafond de 30 s)
   $("sendBtn").addEventListener("click", function () {
-    if (busy || !demande || !confirme || !moyen) return;
+    if (busy || localEnVol || !demande || !confirme || !moyen) return;
+    // Page restée affichée d'un soir à l'autre sans changer de visibilité : la confirmation est revérifiée au clic.
+    if (!confirmationValable(confirmeLe, Date.now())) { verifierConfirmation(); return; }
     if (moyen === "local" && blocageCable(etatCable)) { ouvrirPanneau(true); return; } // câble pas prêt à recevoir : on l'explique, rien n'est envoyé
     var d = demande, m = moyen, finHC = fmt(hm(cur.hcEnd));
     var v = socValide($("soc").value); if (v !== null) histNote(v);
@@ -631,9 +635,15 @@ import { confirmationValable, blocageCable, plageRelue, sousLigneBouton, socVali
       service: function () { return envoyer(svc.adresse, svc.jeton, d, { finHC: finHC }); },
       local: function () {
         // Aucun repli vers le service : si le mode Local échoue, l'échec est affiché avec l'heure à régler à la main.
+        // Plafond de 30 s : l'échec est affiché, mais le bouton reste occupé jusqu'à la fin réelle de l'envoi.
+        var minuteur = null;
+        var reel = localPret().then(function (l) { return l.programmerLocal(d, l.deps, finHC); });
+        localEnVol = reel;
+        var fin = function () { clearTimeout(minuteur); if (localEnVol === reel) { localEnVol = null; try { updateSend(); } catch (e) { /* sans effet */ } } };
+        reel.then(fin, fin);
         return Promise.race([
-          localPret().then(function (l) { return l.programmerLocal(d, l.deps, finHC); }),
-          new Promise(function (ok) { setTimeout(function () { ok(resultatKo(d, "local_delai", finHC)); }, DELAI_LOCAL_MAX_MS); }),
+          reel,
+          new Promise(function (ok) { minuteur = setTimeout(function () { ok(resultatKo(d, "local_delai", finHC)); }, DELAI_LOCAL_MAX_MS); }),
         ]);
       },
     };

@@ -105,7 +105,12 @@ centre_web() {
 toucher_web() { local c; c="$(centre_web "$1")"; adb shell input tap $c; }
 
 # Vrai si une ligne ESSAI de l'action est déjà dans logcat (sans attendre).
-ligne_vue() { adb logcat -d -v raw -s "$TAG:I" | tr -d '\015' | grep '^ESSAI ' | grep -q "\"action\":\"$1\""; }
+# Journal lu d'abord en entier : un « grep -q » en bout de tube pourrait faire échouer le tube (SIGPIPE, pipefail).
+ligne_vue() {
+  local journal
+  journal="$(adb logcat -d -v raw -s "$TAG:I" | tr -d '\015' || true)"
+  printf '%s\n' "$journal" | grep '^ESSAI ' | grep -c "\"action\":\"$1\"" > /dev/null
+}
 
 # Ouvre l'appli sur la vraie page (site/), sans action adb. La clé n'est saisie que si elle change.
 demarrer_page() {
