@@ -300,16 +300,16 @@ demarrer lire 10.0.2.2
 L="$(attendre_essai lire 60)"
 verifier "S12 relecture" "$L" "l.ok === true && l.debut === \"${DEBUT_PAGE}\" && l.fin === \"06:00\""
 
-etape "S13 Vraie page, clé refusée : pastille « clé », « Programmer » n'envoie rien"
+etape "S13 Vraie page, nouvelle clé (données effacées, adresse inconnue) : « Câble à localiser », « Programmer » n'envoie rien"
 demarrer_page "$CLE_KO"
 L="$(attendre_essai page-etat 60)"
-verifier "S13 état clé refusée" "$L" 'l.etat === "cle"'
+verifier "S13 état sans adresse" "$L" 'l.etat === "sans_adresse"'
 adb logcat -c
 toucher_web "Ajouter 1 %"
 toucher_web "Programmer la charge"
 sleep 3
-ligne_vue page-programmer && echec "S13 : envoi lancé alors que la clé est refusée"
-capturer "clair-7-page-cle-refusee"
+ligne_vue page-programmer && echec "S13 : envoi lancé alors que le câble est à localiser"
+capturer "clair-7-page-a-localiser"
 demarrer_page "$CLE_OK"
 L="$(attendre_essai page-etat 60)"
 echo "état après ressaisie de la bonne clé : $L"
