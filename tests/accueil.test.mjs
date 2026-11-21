@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import {
   socValide, lireHistorique, ajouterHistorique, raccourcis, moyenEnvoi, boutonActif,
   programmerSelonMoyen, pastille, secondesRestantes,
-  confirmationValable, blocageCable, plageRelue, sousLigneBouton,
+  confirmationValable, blocageCable, plageRelue, sousLigneBouton, rechercheAutomatique, compteCommeGeste,
 } from '../site/accueil.js';
 import { resultatKo } from '../site/service.js';
 
@@ -159,5 +159,25 @@ describe('Plage relue et sous-ligne du bouton', () => {
     assert.equal(sousLigneBouton({ ...base, reussi: 'programmé à 00:35 · relu sur le câble' }), 'programmé à 00:35 · relu sur le câble');
     assert.equal(sousLigneBouton({ ...base, blocage: "câble à relier d'abord" }), "câble à relier d'abord");
     assert.equal(sousLigneBouton(base), 'démarrage 00:35');
+  });
+});
+
+describe('Recherche automatique du câble', () => {
+  test('une seule fois, seulement sans adresse et avec le pont', () => {
+    assert.equal(rechercheAutomatique({ etat: 'sans_adresse', dejaFaite: false, pont: true }), true);
+    assert.equal(rechercheAutomatique({ etat: 'sans_adresse', dejaFaite: true, pont: true }), false);
+    assert.equal(rechercheAutomatique({ etat: 'sans_adresse', dejaFaite: false, pont: false }), false);
+  });
+  test('jamais pour muet, hors Wi-Fi, clé refusée, erreur, à relier, prêt', () => {
+    for (const e of ['muet', 'hors_wifi', 'cle', 'erreur', 'a_relier', 'pret', 'verification', null]) {
+      assert.equal(rechercheAutomatique({ etat: e, dejaFaite: false, pont: true }), false, String(e));
+    }
+  });
+});
+
+describe('Le curseur est un geste de confirmation', () => {
+  test('curseur, −, +, puce, saisie, « Garder » confirment ; le reste non', () => {
+    for (const g of ['curseur', 'moins', 'plus', 'puce', 'saisie', 'garder']) assert.equal(compteCommeGeste(g), true, g);
+    for (const g of ['chargement', 'visibilite', '', null]) assert.equal(compteCommeGeste(g), false, String(g));
   });
 });

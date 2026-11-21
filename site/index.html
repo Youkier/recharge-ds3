@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; manifest-src 'self'; worker-src 'self'; connect-src 'self' https://*.workers.dev; base-uri 'none'; form-action 'none'">
-<title>Recharge VE de nuit</title>
+<title>Quand charger ?</title>
 <meta name="theme-color" content="#f2f4f8" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#0f1420" media="(prefers-color-scheme: dark)">
 <link rel="manifest" href="manifest.webmanifest">
@@ -18,12 +18,12 @@
   <!-- Vue 1 : Ce soir (accueil) -->
   <div class="view" id="v-calcul">
     <header class="top">
-      <h1 id="t-soir" tabindex="-1">Recharge VE</h1>
+      <h1 id="t-soir" tabindex="-1">Quand charger ?</h1>
       <a class="icon-btn" href="#parametres" data-nav="parametres" aria-label="Paramètres"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></a>
     </header>
 
     <div class="statusrow">
-      <button type="button" class="pill neutre" id="pill" aria-expanded="false" aria-controls="cablePanel" hidden><span class="dot" aria-hidden="true"></span><span id="pillText"></span></button>
+      <button type="button" class="pill neutre" id="pill" aria-expanded="false" aria-controls="cablePanel" hidden><span class="dot" aria-hidden="true"></span><span id="pillText"></span><svg class="chev" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button>
       <span class="pill neutre" id="pillFixe" role="status" hidden><span class="dot" aria-hidden="true"></span><span id="pillFixeText"></span></span>
       <a class="chip" id="chip" href="#parametres" data-nav="parametres"><span><span class="chip-k">Départ </span><span id="chipText">07:30 · 80 %</span></span><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></a>
     </div>
@@ -39,6 +39,7 @@
         <div class="bigval"><input type="number" id="soc" min="0" max="100" step="1" value="38" inputmode="numeric" enterkeyhint="done" aria-describedby="socHint"><span class="pct" aria-hidden="true">%</span></div>
         <button type="button" class="step" id="socPlus" aria-label="Ajouter 1 %">+</button>
       </div>
+      <input type="range" id="socRange" class="socrange" min="0" max="100" step="1" value="38" aria-label="Batterie à l'arrivée, curseur de 0 à 100 %">
       <div class="soc-hint" id="socHint"><span id="socHintText">Dernière valeur, à confirmer</span><button type="button" class="btn2" id="keepBtn">Garder 38 %</button></div>
       <div class="chips" id="chips" role="group" aria-label="Valeurs récentes" hidden></div>
     </section>

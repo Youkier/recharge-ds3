@@ -1,7 +1,7 @@
 {
   "id": "/recharge-ds3/",
-  "name": "Recharge VE",
-  "short_name": "Recharge",
+  "name": "Quand charger ?",
+  "short_name": "Quand charger",
   "description": "Heure d'allumage de la prise pour recharger une voiture électrique en heures creuses.",
   "lang": "fr",
   "dir": "ltr",

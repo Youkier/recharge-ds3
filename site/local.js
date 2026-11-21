@@ -16,6 +16,10 @@ export function pontPresent(g = globalThis) {
   return !!(g && g.PontLocal && typeof g.PontLocal.postMessage === 'function');
 }
 
+// Échecs de contact avec le câble qui méritent une seconde tentative (connexion refusée, lente, ou fermée pendant la
+// négociation, que le module lit comme « cle »). Jamais après une écriture.
+const ECHECS_A_RETENTER = new Set(['hors_ligne', 'delai', 'cle']);
+
 const IPV4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/;
 const reseau24 = (ip) => (typeof ip === 'string' && IPV4.test(ip) ? ip.split('.').slice(0, 3).join('.') : null);
 
@@ -59,7 +63,11 @@ export async function etatCable(deps) {
   if (!conf.adresse) return { etat: 'sans_adresse' };
   const reseau = await surLeReseau(client, conf.adresse);
   if (reseau !== 'oui') return { etat: 'hors_wifi' };
-  const r = await lireEtat({ ...conf.cfg, ip: conf.adresse, delaiGlobalMs: deps.delaiLectureMs ?? 4000 }, client.creerTransport());
+  // Premier contact souvent lent ou refusé (constaté au premier essai réel, 2026-11-21) : une seconde lecture, plus longue.
+  let r = await lireEtat({ ...conf.cfg, ip: conf.adresse, delaiGlobalMs: deps.delaiLectureMs ?? 4000 }, client.creerTransport());
+  if (!(r && r.ok === true) && ECHECS_A_RETENTER.has(r && r.erreur)) {
+    r = await lireEtat({ ...conf.cfg, ip: conf.adresse, delaiGlobalMs: deps.delaiSecondeLectureMs ?? 8000 }, client.creerTransport());
+  }
   if (r && r.ok === true) {
     await client.appeler('retenirAdresse', { ip: conf.adresse });
     return { etat: 'pret', plage: { debut: r.debut, fin: r.fin, plage_active: r.plage_active } };
@@ -80,10 +88,13 @@ export async function chercherCable(deps, surProgres = null) {
   const w = await client.prefixeWifi();
   if (!w || !w.ok) return { ok: false, etat: 'hors_wifi' };
   const departs = conf.adresse && reseau24(conf.adresse) === w.prefixe ? [conf.adresse] : [];
-  const res = await localiserCable({
+  const chercher = () => localiserCable({
     cfg: conf.cfg, departs, interfaces: [`${w.prefixe}.1`],
     creerTransport: client.creerTransport, sonder: client.sonder, surProgres,
   });
+  // Premier essai réel : « introuvable » puis trouvé au second passage. Un second passage automatique.
+  let res = await chercher();
+  if (!res || res.ok !== true) res = await chercher();
   if (!res || res.ok !== true) return { ok: false, etat: 'introuvable' };
   await client.appeler('retenirAdresse', { ip: res.ip });
   return { ok: true, plage: { debut: res.etat.debut, fin: res.etat.fin, plage_active: res.etat.plage_active } };
@@ -103,7 +114,12 @@ export async function programmerLocal(demande, deps, finHC) {
     if (!conf.adresse) return ko('local_muet');
     const reseau = await surLeReseau(client, conf.adresse);
     if (reseau !== 'oui') return ko('local_hors_wifi');
-    const r = await programmer({ ...conf.cfg, ip: conf.adresse }, client.creerTransport(), demande);
+    let r = await programmer({ ...conf.cfg, ip: conf.adresse }, client.creerTransport(), demande);
+    // Une seconde tentative SEULEMENT si le module ne signale pas d'écriture partie (pas de ecrit: true) et que l'échec
+    // vient du contact avec le câble. Une écriture peut-être appliquée n'est jamais relancée (règle 2 : résultat incertain).
+    if (r && r.ok !== true && r.ecrit !== true && ECHECS_A_RETENTER.has(r.erreur)) {
+      r = await programmer({ ...conf.cfg, ip: conf.adresse }, client.creerTransport(), demande);
+    }
     if (!r || r.ok !== true) return ko(codeLocal(r && r.erreur));
     const res = interpreterReponse(demande, 200, r, finHC);
     if (res.etat === 'ok') await client.appeler('retenirAdresse', { ip: conf.adresse });

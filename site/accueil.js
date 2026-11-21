@@ -93,6 +93,16 @@ export function blocageCable(etat) {
   return null;
 }
 
+// Gestes qui confirment le % de batterie : saisie, − / +, curseur, puce récente, « Garder ».
+export const GESTES_CONFIRMATION = ['saisie', 'moins', 'plus', 'curseur', 'puce', 'garder'];
+export function compteCommeGeste(source) { return GESTES_CONFIRMATION.includes(source); }
+
+// Recherche automatique du câble : une seule fois par chargement de page, seulement dans l'appli (pont présent)
+// et seulement quand aucune adresse n'est connue. Jamais pour muet, hors Wi-Fi, clé refusée ou erreur.
+export function rechercheAutomatique({ etat, dejaFaite, pont }) {
+  return !!pont && !dejaFaite && etat === 'sans_adresse';
+}
+
 // Plage relue sur le câble, extraite d'un résultat « ok » de service.js : { debut, fin } (chaque champ peut manquer).
 export function plageRelue(res) {
   if (!res || res.etat !== 'ok') return {};

@@ -1,7 +1,7 @@
 import { plan, hm, fmt, fdur, fr, eur } from "./calc.js";
 import { lignesValides, marques, modeles, versions, trouver } from "./vehicules.js";
 import { validerAdresse, validerJeton, choisirDemande, libelleBouton, envoyer, resultatKo } from "./service.js";
-import { confirmationValable, blocageCable, plageRelue, sousLigneBouton, socValide, lireHistorique, ajouterHistorique, raccourcis, moyenEnvoi, boutonActif, programmerSelonMoyen, pastille, secondesRestantes } from "./accueil.js";
+import { confirmationValable, blocageCable, plageRelue, sousLigneBouton, socValide, lireHistorique, ajouterHistorique, raccourcis, moyenEnvoi, boutonActif, programmerSelonMoyen, pastille, secondesRestantes, rechercheAutomatique } from "./accueil.js";
 
 (function () {
   var DEFAULTS = { cap: 46, soh: 95, target: 80, dep: "07:30", hcStart: "22:00", hcEnd: "06:00", amp: 16, volt: 230, eff: 90, pHC: 0.146688, pHP: 0.196476, mode: "end", soc: 38 };
@@ -342,6 +342,7 @@ import { confirmationValable, blocageCable, plageRelue, sousLigneBouton, socVali
     $("socMinus").disabled = !empty && v <= 0;
     $("socPlus").disabled = !empty && v >= 100;
     var n = socValide($("soc").value);
+    $("socRange").value = $("soc").value.trim() === "" || !isFinite(v) ? cur.soc : Math.min(100, Math.max(0, v));
     $("keepBtn").textContent = "Garder " + (n === null ? cur.soc : n) + " %";
   }
   function bump(d) {
@@ -353,6 +354,11 @@ import { confirmationValable, blocageCable, plageRelue, sousLigneBouton, socVali
   }
   $("socMinus").addEventListener("click", function () { bump(-1); });
   $("socPlus").addEventListener("click", function () { bump(1); });
+  $("socRange").addEventListener("input", function () {
+    $("soc").value = this.value;
+    setConfirme(true); render(); drawChips();
+  });
+  $("socRange").addEventListener("change", function () { histNote(this.value); });
   $("soc").addEventListener("input", function () { setConfirme(String($("soc").value).trim() !== ""); render(); drawChips(); });
   $("soc").addEventListener("change", function () { histNote($("soc").value); });
   $("soc").addEventListener("keydown", function (e) { if (e.key === "Enter") this.blur(); });
@@ -662,7 +668,7 @@ import { confirmationValable, blocageCable, plageRelue, sousLigneBouton, socVali
 
   // ---------- Appli Android : pont natif, état du câble, recherche (mode Local) ----------
   // Chargé seulement si le pont est présent : sur GitHub Pages, ces chemins n'existent pas et ne sont jamais demandés.
-  var cherche = false, minuteurRecherche = null, localCache = null;
+  var cherche = false, minuteurRecherche = null, localCache = null, rechercheAutoFaite = false, rechercheEchouee = false;
   // Journal des essais sur émulateur : version de mise au point seulement, une ligne par action, jamais de clé,
   // d'identifiant ni de trame (le résultat de service.js n'en contient pas).
   function journal(o) { if (debugPont) { try { console.log("ESSAI " + JSON.stringify(o)); } catch (e) { /* sans effet */ } } }
@@ -687,7 +693,7 @@ import { confirmationValable, blocageCable, plageRelue, sousLigneBouton, socVali
   }
   function ouvrirPanneau(oui) { $("cablePanel").hidden = !oui; $("pill").setAttribute("aria-expanded", oui ? "true" : "false"); }
   function actionPanneau(action) {
-    var label = { chercher: "Chercher sur le Wi-Fi", relier: "Relier le câble", reessayer: "Réessayer" }[action];
+    var label = { chercher: rechercheEchouee ? "Chercher à nouveau" : "Chercher sur le Wi-Fi", relier: "Relier le câble", reessayer: "Réessayer" }[action];
     var act = $("cableAction");
     act.hidden = !label; act.textContent = label || ""; act.setAttribute("data-action", action || "");
   }
@@ -709,10 +715,13 @@ import { confirmationValable, blocageCable, plageRelue, sousLigneBouton, socVali
     pastilleMontre("verification");
     return localPret().then(function (l) { return l.etatCable(l.deps); }).then(function (r) {
       journal({ action: "page-etat", etat: r.etat });
-      if (!cherche) pastilleMontre(r.etat);
+      if (cherche) return;
+      pastilleMontre(r.etat);
+      // Aucune adresse connue (première ouverture, nouvelle clé) : une seule recherche automatique par chargement.
+      if (rechercheAutomatique({ etat: r.etat, dejaFaite: rechercheAutoFaite, pont: pontOk })) { rechercheAutoFaite = true; lancerRecherche(true); }
     }).catch(function () { if (!cherche) pastilleMontre("erreur"); });
   }
-  function lancerRecherche() {
+  function lancerRecherche(auto) {
     if (cherche) return;
     cherche = true;
     var echeance = null;
@@ -726,8 +735,9 @@ import { confirmationValable, blocageCable, plageRelue, sousLigneBouton, socVali
     minuteurRecherche = setInterval(texte, 1000);
     var fin = function (r) {
       clearInterval(minuteurRecherche); cherche = false;
-      journal({ action: "page-chercher", ok: !!(r && r.ok), etat: r && r.ok ? "pret" : r && r.etat });
-      if (r && r.ok) { pastilleMontre("pret"); ouvrirPanneau(false); return; }
+      journal({ action: "page-chercher", auto: auto === true, ok: !!(r && r.ok), etat: r && r.ok ? "pret" : r && r.etat });
+      if (r && r.ok) { rechercheEchouee = false; pastilleMontre("pret"); ouvrirPanneau(false); return; }
+      rechercheEchouee = true;
       var e = r && r.etat;
       pastilleMontre(e === "a_relier" ? "a_relier" : e === "hors_wifi" ? "hors_wifi" : e === "introuvable" ? "muet" : "erreur");
       if (e === "introuvable") $("cableMsg").textContent = "Aucun câble trouvé sur le Wi-Fi. Vérifiez qu'il est branché, fermez Smart Life s'il est ouvert, puis réessayez.";
