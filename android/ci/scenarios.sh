@@ -313,6 +313,46 @@ demarrer lire 10.0.2.2
 L="$(attendre_essai lire 60)"
 verifier "S12 relecture" "$L" "l.ok === true && l.debut === \"${DEBUT_PAGE}\" && l.fin === \"06:00\""
 
+etape "S15 Programmer avant d'être sur le Wi-Fi : attente, puis envoi automatique à la connexion"
+demarrer_page
+L="$(attendre_essai page-etat 60)"
+verifier "S15 état initial" "$L" 'l.etat === "pret"'
+adb shell svc wifi disable
+sleep 5
+adb logcat -c
+toucher_web "Ajouter 1 %"
+toucher_web "Programmer la charge"
+L="$(attendre_essai page-attente-wifi 30)"
+verifier "S15 attente du Wi-Fi" "$L" 'l.etat === "debut"'
+sleep 1
+capturer "clair-9-attente-wifi"
+ligne_vue page-programmer && echec "S15 : envoi parti sans Wi-Fi"
+adb shell svc wifi enable
+L="$(attendre_essai page-programmer 120)"
+verifier "S15 envoi automatique à la connexion" "$L" 'l.ok === true && l.fin === "06:00"'
+
+etape "S16 Attente du Wi-Fi annulée : rien n'est envoyé, heure manuelle affichée"
+adb shell svc wifi disable
+sleep 5
+adb logcat -c
+toucher_web "Retirer 1 %"
+toucher_web "Programmer la charge"
+L="$(attendre_essai page-attente-wifi 30)"
+verifier "S16 attente du Wi-Fi" "$L" 'l.etat === "debut"'
+toucher_web "Annuler"
+ANNULEE=""
+for _ in $(seq 1 20); do
+  J="$(adb logcat -d -v raw -s "$TAG:I" | tr -d '\015' || true)"
+  if printf '%s\n' "$J" | grep '^ESSAI ' | grep -c '"etat":"annulee"' > /dev/null; then ANNULEE=1; break; fi
+  sleep 1
+done
+[ -n "$ANNULEE" ] || echec "S16 : pas de ligne « annulee » après « Annuler »"
+adb shell svc wifi enable
+sleep 10
+ligne_vue page-programmer && echec "S16 : envoi parti après « Annuler »"
+capturer "clair-10-attente-annulee"
+echo "OK  S16 annulation"
+
 etape "S13 Vraie page, nouvelle clé (données effacées, adresse inconnue) : « Câble à localiser », « Programmer » n'envoie rien"
 demarrer_page "$CLE_KO"
 L="$(attendre_essai page-etat 60)"

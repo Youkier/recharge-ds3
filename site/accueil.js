@@ -84,7 +84,8 @@ export function plageRelue(res) {
 }
 
 // Sous-ligne du bouton Programmer, par ordre de priorité.
-export function sousLigneBouton({ occupe, delaiS, demande, confirme, reussi, blocage, secondaire }) {
+export function sousLigneBouton({ occupe, delaiS, demande, confirme, reussi, blocage, secondaire, attente }) {
+  if (attente) return LIBELLES_ATTENTE.sousLigne;
   if (occupe) return "patientez, jusqu'à " + delaiS + " secondes";
   if (!demande) return 'saisie à corriger';
   if (!confirme) return "confirmez la batterie ci-dessus";
@@ -97,4 +98,38 @@ export function sousLigneBouton({ occupe, delaiS, demande, confirme, reussi, blo
 export function secondesRestantes(echeance, maintenant) {
   if (!Number.isFinite(echeance)) return null;
   return Math.max(0, Math.ceil((echeance - maintenant) / 1000));
+}
+
+// ---------- Attente du Wi-Fi de la maison (appli seulement) ----------
+// « Programmer » touché alors que le téléphone n'a pas encore rejoint le Wi-Fi de la maison : la demande est figée,
+// puis envoyée dès que le réseau est bon, pendant 5 minutes au plus, page au premier plan seulement.
+export const ATTENTE_MAX_MS = 5 * 60 * 1000;
+export const ATTENTE_SONDE_MS = 2000; // contrôle du Wi-Fi pendant l'attente
+export const SUIVI_PASTILLE_MS = 5000; // contrôle du Wi-Fi quand la pastille dit « Hors Wi-Fi maison »
+
+export const LIBELLES_ATTENTE = {
+  principal: 'En attente du Wi-Fi de la maison…',
+  sousLigne: 'envoi automatique dès la connexion · au plus 5 min',
+  annuler: 'Annuler',
+  annonce: 'En attente du Wi-Fi de la maison. Envoi automatique dès la connexion, au plus 5 minutes.',
+};
+
+export function attenteExpiree(debut, maintenant) {
+  if (!Number.isFinite(debut) || !Number.isFinite(maintenant)) return true; // doute : on n'attend pas indéfiniment
+  return maintenant - debut >= ATTENTE_MAX_MS || maintenant < debut;
+}
+
+// Que fait le bouton « Programmer » dans l'appli ? etat : état de la pastille ; surReseau : 'oui' | 'non' | 'pas_wifi' | 'inconnu'.
+//   'panneau'  : câble à relier ou à localiser (pas d'adresse retenue : aucun réseau de référence), le bouton ouvre le panneau ;
+//   'attendre' : le téléphone n'est pas sur le réseau de l'adresse retenue ;
+//   'envoyer'  : envoi normal (ses échecs restent affichés avec l'heure manuelle).
+export function decisionEnvoi({ etat, surReseau }) {
+  if (blocageCable(etat)) return 'panneau';
+  if (surReseau === 'non' || surReseau === 'pas_wifi') return 'attendre';
+  return 'envoyer';
+}
+
+// Suivi du Wi-Fi quand la pastille est « hors_wifi » : seulement page visible, rien en cours, pas de recherche.
+export function suiviWifiActif({ etat, visible, occupe }) {
+  return etat === 'hors_wifi' && !!visible && !occupe;
 }

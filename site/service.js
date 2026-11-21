@@ -86,6 +86,11 @@ const CAUSES = {
   local_delai: { message: 'Le câble n\'a pas répondu à temps.', incertain: true },
   local_cle: { message: 'Le câble refuse la clé : elle a peut-être changé dans Smart Life. Rien n\'a été modifié.', incertain: false },
   local_hors_wifi: { message: 'Le téléphone n\'est pas sur le Wi-Fi de la maison : rien n\'a été envoyé.', incertain: false },
+  // Attente du Wi-Fi (site/app.js) : rien n'a été envoyé.
+  local_attente_expiree: { message: "Le téléphone n'a pas rejoint le Wi-Fi de la maison : rien n'a été envoyé.", incertain: false },
+  local_attente_annulee: { message: "Vous avez annulé l'attente : rien n'a été envoyé.", incertain: false },
+  local_attente_quittee: { message: "L'application a été quittée pendant l'attente du Wi-Fi : rien n'a été envoyé.", incertain: false },
+  local_attente_confirmation: { message: "La batterie saisie n'est plus confirmée : rien n'a été envoyé.", incertain: false },
   local_pas_de_cle: { message: 'Le câble n\'est pas encore relié à l\'application.', incertain: false },
   local_format: { message: 'Le câble a donné une réponse inattendue : le réglage n\'est pas confirmé.', incertain: true },
 };

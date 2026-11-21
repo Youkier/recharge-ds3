@@ -52,6 +52,20 @@ async function surLeReseau(client, adresse) {
 }
 
 /**
+ * Le téléphone est-il, à cet instant, sur le réseau de l'adresse retenue du câble ? Une lecture, aucun contact avec le câble.
+ * -> 'oui' | 'non' | 'pas_wifi' | 'inconnu' (rien d'enregistré, pas d'adresse retenue, ou pont en erreur : pas de réseau de référence).
+ */
+export async function surLeReseauDeLaMaison(deps) {
+  try {
+    const conf = await configuration(deps.client);
+    if (conf.erreur || !conf.adresse) return 'inconnu';
+    return await surLeReseau(deps.client, conf.adresse);
+  } catch (e) {
+    return 'inconnu';
+  }
+}
+
+/**
  * État du câble à l'ouverture (une seule lecture, jamais de recherche).
  * -> { etat: 'pret', plage:{debut,fin,plage_active} } | { etat: 'a_relier' } | { etat: 'sans_adresse' }
  *    | { etat: 'hors_wifi' } | { etat: 'muet' } | { etat: 'cle' } | { etat: 'erreur' }

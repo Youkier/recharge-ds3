@@ -1,7 +1,7 @@
 import { plan, hm, fmt, fdur, fr, eur } from "./calc.js";
 import { lignesValides, marques, modeles, versions, trouver } from "./vehicules.js";
 import { validerAdresse, validerJeton, choisirDemande, libelleBouton, envoyer, resultatKo } from "./service.js";
-import { confirmationValable, blocageCable, plageRelue, sousLigneBouton, socValide, moyenEnvoi, boutonActif, programmerSelonMoyen, pastille, secondesRestantes, rechercheAutomatique } from "./accueil.js";
+import { confirmationValable, blocageCable, plageRelue, sousLigneBouton, socValide, moyenEnvoi, boutonActif, programmerSelonMoyen, pastille, secondesRestantes, rechercheAutomatique, decisionEnvoi, attenteExpiree, suiviWifiActif, LIBELLES_ATTENTE, ATTENTE_SONDE_MS, SUIVI_PASTILLE_MS } from "./accueil.js";
 
 (function () {
   var DEFAULTS = { cap: 46, soh: 95, target: 80, dep: "07:30", hcStart: "22:00", hcEnd: "06:00", amp: 16, volt: 230, eff: 90, pHC: 0.146688, pHP: 0.196476, mode: "end", soc: 38 };
@@ -472,6 +472,7 @@ import { confirmationValable, blocageCable, plageRelue, sousLigneBouton, socVali
   var KEY_URL = "recharge-ds3-service-url";
   var KEY_TOK = "recharge-ds3-service-jeton";
   var svc = { adresse: null, jeton: null };
+  var att = null, controle = false; // att : attente du Wi-Fi en cours ; controle : contrôle du réseau au toucher
   var demande = null, busy = false, alertKey = null, moyen = null, reussi = null, etatCable = null, debugPont = false;
   var pontOk = !!(globalThis.PontLocal && typeof globalThis.PontLocal.postMessage === "function");
 
@@ -545,6 +546,8 @@ import { confirmationValable, blocageCable, plageRelue, sousLigneBouton, socVali
 
   function setDemande(d) {
     demande = d;
+    // Attente du Wi-Fi : la demande est figée au toucher ; si elle change (% ou réglages), l'attente est annulée.
+    if (att && JSON.stringify(d) !== att.cle) { sortirAttente(); journal({ action: "page-attente-wifi", etat: "annulee" }); }
     // Une alerte qui concerne une autre demande que l'actuelle est périmée.
     if (!busy && alertKey !== null && alertKey !== JSON.stringify(d)) hideAlert();
     updateSend();
@@ -553,13 +556,13 @@ import { confirmationValable, blocageCable, plageRelue, sousLigneBouton, socVali
   function updateSend() {
     svcSummary();
     var b = $("sendBtn"), help = $("sendHelp");
-    var occ = busy || !!localEnVol; // un envoi local dont le plafond est tombé tourne encore : pas de second envoi
+    var occ = busy || !!localEnVol || !!att; // un envoi local dont le plafond est tombé tourne encore : pas de second envoi
     var lab = libelleBouton(demande);
     moyen = moyenEnvoi({ pont: pontOk, adresse: svc.adresse, jeton: svc.jeton });
-    $("sendMain").textContent = occ ? "Envoi en cours…" : (lab ? lab.principal : "Programmer la charge");
+    $("sendMain").textContent = att ? LIBELLES_ATTENTE.principal : occ ? "Envoi en cours…" : (lab ? lab.principal : "Programmer la charge");
     var cle = demande ? JSON.stringify(demande) : null;
     $("sendSub").textContent = sousLigneBouton({
-      occupe: occ, delaiS: moyen === "local" ? 30 : 25, demande: demande, confirme: confirme,
+      attente: !!att, occupe: occ, delaiS: moyen === "local" ? 30 : 25, demande: demande, confirme: confirme,
       reussi: reussi && reussi.cle === cle ? "programmé à " + reussi.heure + " · relu sur le câble" : null,
       blocage: moyen === "local" ? blocageCable(etatCable) : null,
       secondaire: lab ? lab.secondaire : "",
@@ -569,6 +572,8 @@ import { confirmationValable, blocageCable, plageRelue, sousLigneBouton, socVali
     // Sans moyen d'envoi, la barre est masquée : réglage manuel avec l'heure affichée (voir Aide).
     $("sendBar").hidden = !moyen;
     document.body.classList.toggle("has-sendbar", !!moyen);
+    $("attenteBox").hidden = !att;
+    document.body.classList.toggle("en-attente", !!att);
     help.hidden = !(moyen && !demande && !occ);
     if (!help.hidden) help.textContent = "Corrigez la saisie pour pouvoir programmer la charge.";
     b.setAttribute("aria-busy", occ ? "true" : "false");
@@ -585,7 +590,7 @@ import { confirmationValable, blocageCable, plageRelue, sousLigneBouton, socVali
       if (res.detail) a.appendChild(el("p", null, res.detail));
       if (res.avertissement) a.appendChild(el("p", "manual", res.avertissement));
     } else {
-      a.appendChild(el("p", "alert-title", "Programmation non confirmée"));
+      a.appendChild(el("p", "alert-title", res.titre || "Programmation non confirmée"));
       a.appendChild(el("p", null, res.message));
       a.appendChild(el("p", "manual", res.manuel));
       if (res.verifier) a.appendChild(el("p", null, res.verifier));
@@ -601,10 +606,84 @@ import { confirmationValable, blocageCable, plageRelue, sousLigneBouton, socVali
   var DELAI_LOCAL_MAX_MS = 30000;
   var localEnVol = null; // envoi local réel en cours (il peut survivre au plafond de 30 s)
   $("sendBtn").addEventListener("click", function () {
-    if (busy || localEnVol || !demande || !confirme || !moyen) return;
+    if (busy || localEnVol || controle || att || !demande || !confirme || !moyen) return;
     // Page restée affichée d'un soir à l'autre sans changer de visibilité : la confirmation est revérifiée au clic.
     if (!confirmationValable(confirmeLe, Date.now())) { verifierConfirmation(); return; }
-    if (moyen === "local" && blocageCable(etatCable)) { ouvrirPanneau(true); return; } // câble pas prêt à recevoir : on l'explique, rien n'est envoyé
+    if (moyen !== "local") { lancerEnvoi(); return; }
+    if (decisionEnvoi({ etat: etatCable, surReseau: "inconnu" }) === "panneau") { ouvrirPanneau(true); return; } // câble pas prêt à recevoir : on l'explique, rien n'est envoyé
+    // Appli : le téléphone est-il déjà sur le Wi-Fi de la maison ? Sinon, attente (jamais d'échec immédiat pour cette seule raison).
+    controle = true;
+    reseauMaison().then(function (sr) {
+      controle = false;
+      if (busy || localEnVol || att || !demande || !confirme) return; // l'état a changé pendant le contrôle (une seule lecture, quasi instantanée)
+      if (decisionEnvoi({ etat: etatCable, surReseau: sr }) === "attendre") demarrerAttente(); else lancerEnvoi();
+    });
+  });
+
+  function reseauMaison() {
+    return localPret().then(function (l) { return l.surLeReseauDeLaMaison(l.deps); }).catch(function () { return "inconnu"; });
+  }
+  function sortirAttente() {
+    var a = att;
+    if (!a) return null;
+    clearInterval(a.timer); att = null;
+    $("attenteLive").textContent = "";
+    updateSend();
+    return a;
+  }
+  // Fin d'attente sans envoi : carte KO avec l'heure à régler à la main (règle 2).
+  function koAttente(a, code, titre) {
+    var r = resultatKo(a.d, code, a.finHC);
+    r.titre = titre;
+    try { showAlert(r, a.d); } catch (e) { /* l'état du bouton est déjà rendu */ }
+  }
+  function demarrerAttente() {
+    var d = demande;
+    att = { d: d, cle: JSON.stringify(d), debut: Date.now(), finHC: fmt(hm(cur.hcEnd)), verif: false, timer: null };
+    hideAlert();
+    att.timer = setInterval(tickAttente, ATTENTE_SONDE_MS);
+    $("attenteLive").textContent = LIBELLES_ATTENTE.annonce;
+    journal({ action: "page-attente-wifi", etat: "debut" });
+    updateSend();
+  }
+  function quitterAttente() {
+    var a = sortirAttente();
+    if (!a) return;
+    journal({ action: "page-attente-wifi", etat: "quittee" });
+    koAttente(a, "local_attente_quittee", "Programmation non envoyée");
+  }
+  function tickAttente() {
+    var a = att;
+    if (!a || a.verif) return;
+    if (document.hidden) { quitterAttente(); return; } // l'événement de visibilité a pu manquer
+    if (attenteExpiree(a.debut, Date.now())) {
+      sortirAttente(); journal({ action: "page-attente-wifi", etat: "expiree" });
+      koAttente(a, "local_attente_expiree", "Programmation non envoyée");
+      return;
+    }
+    a.verif = true;
+    reseauMaison().then(function (sr) {
+      if (att !== a) return;
+      a.verif = false;
+      if (sr !== "oui") return;
+      sortirAttente(); journal({ action: "page-attente-wifi", etat: "envoi" });
+      // La confirmation du % est revérifiée au moment de l'envoi (6 h, même jour).
+      if (!confirme || !confirmationValable(confirmeLe, Date.now())) {
+        hideAlert(); setConfirme(false);
+        koAttente(a, "local_attente_confirmation", "Programmation non envoyée");
+        return;
+      }
+      lancerEnvoi();
+    });
+  }
+  $("attenteAnnuler").addEventListener("click", function () {
+    var a = sortirAttente();
+    if (!a) return;
+    journal({ action: "page-attente-wifi", etat: "annulee" });
+    koAttente(a, "local_attente_annulee", "Programmation annulée");
+  });
+
+  function lancerEnvoi() {
     var d = demande, m = moyen, finHC = fmt(hm(cur.hcEnd));
     busy = true;
     try { hideAlert(); updateSend(); } catch (e) { /* l'envoi et son alerte restent garantis ci-dessous */ }
@@ -634,7 +713,7 @@ import { confirmationValable, blocageCable, plageRelue, sousLigneBouton, socVali
         if (res && res.etat === "ok") majEtatCable();
       }
     });
-  });
+  }
 
   // ---------- Appli Android : pont natif, état du câble, recherche (mode Local) ----------
   // Chargé seulement si le pont est présent : sur GitHub Pages, ces chemins n'existent pas et ne sont jamais demandés.
@@ -651,7 +730,7 @@ import { confirmationValable, blocageCable, plageRelue, sousLigneBouton, socVali
         return client.demarrage().then(function (dem) {
           debugPont = !!(dem && dem.ok && dem.variante === "debug");
           return {
-            programmerLocal: mods[0].programmerLocal, etatCable: mods[0].etatCable, chercherCable: mods[0].chercherCable,
+            programmerLocal: mods[0].programmerLocal, surLeReseauDeLaMaison: mods[0].surLeReseauDeLaMaison, etatCable: mods[0].etatCable, chercherCable: mods[0].chercherCable,
             client: client,
             deps: { client: client, lireEtat: mods[1].lireEtat, programmer: mods[1].programmer, localiserCable: mods[2].localiserCable },
           };
@@ -732,10 +811,21 @@ import { confirmationValable, blocageCable, plageRelue, sousLigneBouton, socVali
   });
   // Retour de l'écran de saisie de la clé, ou du réglage du Wi-Fi : on relit l'état (une lecture, jamais de recherche).
   document.addEventListener("visibilitychange", function () {
-    if (document.hidden) return;
+    if (document.hidden) { quitterAttente(); return; } // rien ne doit partir en arrière-plan
     verifierConfirmation();
     if (pontOk && !busy) majEtatCable();
   });
+  // Pastille « Hors Wi-Fi maison » : le Wi-Fi est relu toutes les 5 s (page visible seulement, rien en cours) ;
+  // dès que le téléphone est sur le bon réseau, une lecture de l'état (jamais de recherche) passe la pastille à « Câble prêt ».
+  var suiviEnCours = false;
+  function suivreWifiPastille() {
+    if (!pontOk || suiviEnCours || cherche || controle || !suiviWifiActif({ etat: etatCable, visible: !document.hidden, occupe: busy || !!localEnVol || !!att })) return;
+    suiviEnCours = true;
+    reseauMaison().then(function (sr) {
+      if (sr === "oui" && etatCable === "hors_wifi" && !document.hidden && !att && !busy && !localEnVol) return majEtatCable();
+    }).then(function () { suiviEnCours = false; }, function () { suiviEnCours = false; });
+  }
+  if (pontOk) setInterval(suivreWifiPastille, SUIVI_PASTILLE_MS);
   // Confirmation du % périmée (nouveau jour, ou plus de 6 h) : on redemande, et les anciens résultats disparaissent.
   function verifierConfirmation() {
     if (busy || !confirme || confirmationValable(confirmeLe, Date.now())) return;

@@ -6,6 +6,7 @@ import {
   socValide, moyenEnvoi, boutonActif,
   programmerSelonMoyen, pastille, secondesRestantes,
   confirmationValable, blocageCable, plageRelue, sousLigneBouton, rechercheAutomatique,
+  decisionEnvoi, attenteExpiree, suiviWifiActif, LIBELLES_ATTENTE, ATTENTE_MAX_MS,
 } from '../site/accueil.js';
 import { resultatKo } from '../site/service.js';
 
@@ -163,5 +164,51 @@ describe('Le curseur est un geste de confirmation', () => {
     const m = src.match(/\$\("socRange"\)\.addEventListener\("input",[\s\S]{0,400}?\}\);/);
     assert.ok(m, 'gestionnaire input du curseur trouvé');
     assert.match(m[0], /setConfirme\(true\)/);
+  });
+});
+
+describe('Attente du Wi-Fi de la maison', () => {
+  test('décision au toucher : panneau, attendre ou envoyer', () => {
+    for (const etat of ['a_relier', 'cle', 'sans_adresse']) {
+      assert.equal(decisionEnvoi({ etat, surReseau: 'non' }), 'panneau', etat);
+      assert.equal(decisionEnvoi({ etat, surReseau: 'inconnu' }), 'panneau', etat);
+    }
+    for (const etat of ['pret', 'hors_wifi', 'muet', 'erreur']) {
+      assert.equal(decisionEnvoi({ etat, surReseau: 'non' }), 'attendre', etat);
+      assert.equal(decisionEnvoi({ etat, surReseau: 'pas_wifi' }), 'attendre', etat);
+      assert.equal(decisionEnvoi({ etat, surReseau: 'oui' }), 'envoyer', etat);
+      assert.equal(decisionEnvoi({ etat, surReseau: 'inconnu' }), 'envoyer', etat); // l'échec propre reste affiché, avec l'heure manuelle
+    }
+  });
+  test('attente expirée à 5 min pile ; horloge incohérente : pas d attente', () => {
+    assert.equal(ATTENTE_MAX_MS, 300000);
+    assert.equal(attenteExpiree(1000, 1000 + 299999), false);
+    assert.equal(attenteExpiree(1000, 1000 + 300000), true);
+    assert.equal(attenteExpiree(1000, 500), true);
+    assert.equal(attenteExpiree(NaN, 1000), true);
+  });
+  test('suivi de la pastille : hors Wi-Fi, page visible, rien en cours', () => {
+    assert.equal(suiviWifiActif({ etat: 'hors_wifi', visible: true, occupe: false }), true);
+    assert.equal(suiviWifiActif({ etat: 'hors_wifi', visible: false, occupe: false }), false);
+    assert.equal(suiviWifiActif({ etat: 'hors_wifi', visible: true, occupe: true }), false);
+    assert.equal(suiviWifiActif({ etat: 'pret', visible: true, occupe: false }), false);
+  });
+  test('libellés et sous-ligne du bouton pendant attente', () => {
+    assert.equal(LIBELLES_ATTENTE.principal, 'En attente du Wi-Fi de la maison…');
+    assert.equal(sousLigneBouton({ attente: true, occupe: true, delaiS: 30, demande: { allumage: '23:00' }, confirme: true }), 'envoi automatique dès la connexion · au plus 5 min');
+  });
+  test('fins d attente sans envoi : carte KO avec heure manuelle', () => {
+    for (const code of ['local_attente_expiree', 'local_attente_annulee', 'local_attente_quittee', 'local_attente_confirmation']) {
+      const r = resultatKo({ allumage: '23:15' }, code, '06:00');
+      assert.equal(r.code, code);
+      assert.match(r.message, /rien n.a été envoyé/);
+      assert.match(r.manuel, /23:15/);
+      assert.equal(r.incertain, false);
+    }
+  });
+  test('source de la page : arrière-plan annule attente, envois comptés', () => {
+    const src = readFileSync(new URL('../site/app.js', import.meta.url), 'utf8');
+    assert.match(src, /if \(document\.hidden\) \{ quitterAttente\(\); return; \}/);
+    assert.equal((src.match(/lancerEnvoi\(\)/g) || []).length, 4); // définition + trois appels (service, après contrôle, après attente)
   });
 });

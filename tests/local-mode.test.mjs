@@ -3,7 +3,7 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { pontPresent, etatCable, chercherCable, programmerLocal } from '../site/local.js';
+import { pontPresent, etatCable, chercherCable, programmerLocal, surLeReseauDeLaMaison } from '../site/local.js';
 import { lireEtat, programmer } from '../local/tuya-local.js';
 import { fauxCable } from './tuya-local-faux-cable.mjs';
 
@@ -61,6 +61,22 @@ describe('État du câble à l\'ouverture (une lecture, jamais de recherche)', (
     const k = client({ cle: 'AUTRE-CLE-000001' });
     assert.equal((await etatCable({ client: k, lireEtat })).etat, 'cle');
     assert.deepEqual(k.journal.retenues, []);
+  });
+});
+
+describe('Le téléphone est-il sur le réseau de la maison ? (une lecture, aucun contact avec le câble)', () => {
+  test('oui, non, pas de Wi-Fi, inconnu', async () => {
+    assert.equal(await surLeReseauDeLaMaison({ client: client() }), 'oui');
+    assert.equal(await surLeReseauDeLaMaison({ client: client({ prefixe: '10.0.0' }) }), 'non');
+    assert.equal(await surLeReseauDeLaMaison({ client: client({ wifi: false }) }), 'pas_wifi');
+    assert.equal(await surLeReseauDeLaMaison({ client: client({ adresse: null }) }), 'inconnu');
+    assert.equal(await surLeReseauDeLaMaison({ client: client({ configure: false }) }), 'inconnu');
+    assert.equal(await surLeReseauDeLaMaison({ client: { cable() { throw new Error('x'); } } }), 'inconnu');
+  });
+  test('aucun transport ouvert', async () => {
+    const c = client({ prefixe: '10.0.0' });
+    await surLeReseauDeLaMaison({ client: c });
+    assert.equal(c.journal.transports, 0);
   });
 });
 
