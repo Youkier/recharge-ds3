@@ -26,6 +26,7 @@ function empreintes(d) {
   return out;
 }
 const lire = (d, f) => readFileSync(join(d, f), "utf8");
+const SITE_AVANT = empreintes(join(RACINE, "site")); // avant toute construction (voir le test sur site/)
 
 import { cpSync } from "node:fs";
 // Copie de public/ dont les marqueurs « [À SOURCER … ] » et « [À COMPLÉTER … ] » sont remplacés par un texte neutre.
@@ -83,13 +84,11 @@ test("calc.js, vehicules.js et vehicules.json sont identiques à ceux de site/",
   }
 });
 
-test("aucun fichier de site/ n'est modifié", (t) => {
-  // Indexé, non indexé ou nouveau : git status voit les trois (git diff seul ne voit pas l'index).
-  // Contrôle de développement : sans git utilisable (machine de construction), il est ignoré au lieu de bloquer la publication.
-  let sortie;
-  try { sortie = execFileSync("git", ["status", "--porcelain", "--untracked-files=all", "--", "site/"], { cwd: RACINE, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }); }
-  catch (e) { t.skip(`git status indisponible ici (${String(e.message).split("\n")[0]})`); return; }
-  assert.equal(sortie.trim(), "");
+test("aucun fichier de site/ n'est modifié par la construction", () => {
+  // Empreintes de site/ relevées au chargement de ce fichier, avant toute construction, comparées après les
+  // constructions des tests précédents (fichier et ligne de commande). Ne dépend pas de l'état git : une
+  // modification de site/ en cours et non commitée ne fait plus échouer ce test (faux échec du 2026-11-22).
+  assert.deepEqual(empreintes(join(RACINE, "site")), SITE_AVANT);
 });
 
 test("les cas de golden-cases.json sont reproduits par le calc.js copié", async () => {
