@@ -15,16 +15,17 @@ import android.os.Looper
 import android.os.PowerManager
 
 /**
- * Attente en arrière-plan (décisions du 2026-11-21 ; faisabilité vérifiée par l'essai E0 en CI, 10/10 sur API 35 et 36,
- * écran éteint et verrouillé, Doze forcé compris). Service de premier plan `connectedDevice` lancé SEULEMENT par
- * « Programmer » (page visible) : il garde le processus, donc la WebView et le pont, pendant que la page attend le Wi-Fi
- * et le câble. Il ne fait AUCUNE opération réseau ni lecture du coffre : l'envoi reste fait par le JavaScript existant.
+ * Hôte de l'attente en arrière-plan (lot E3, décisions des 2026-11-21 et 2026-11-22). Service de premier plan
+ * `connectedDevice`, lancé SEULEMENT par « Programmer » (opération attenteDebut de la page visible, après que le [PiloteAttente]
+ * a démarré). Il prête au pilote un fil, un verrou de réveil et le suivi du Wi-Fi ; c'est le pilote qui attend, lit,
+ * cherche et envoie. La page n'est plus qu'une vue : balayer l'appli, recharger la page ou éteindre l'écran n'annule rien.
  *
- * Notifications (textes fixes de strings.xml, seule l'heure HH:MM validée vient de la page) :
- *  - continue pendant l'attente, avec « Annuler » (PendingIntent explicite et immuable vers ce service) ;
- *  - de résultat, non continue, touchée = l'appli se rouvre : envoyée par terminer() (attenteFin de la page) ou par les
- *    filets de la règle 2 : 15 min sans résultat (« Résultat inconnu »), appli fermée pendant l'attente (« Programmation
- *    non envoyée »), 60 s après « Annuler » sans réponse de la page (« Résultat inconnu »). Jamais d'échec silencieux.
+ * Notifications (textes fixes de strings.xml, seules les heures HH:MM validées viennent de la page) :
+ *  - continue pendant l'attente, avec « Annuler » (PendingIntent explicite et immuable vers ce service) ; elle perd « Annuler »
+ *    quand l'envoi commence ;
+ *  - de résultat, non continue, touchée = l'appli se rouvre : publiée à la fin de l'attente, sauf si l'appli est visible (la
+ *    page montre alors le résultat elle-même) ; retirée quand la page a vu le résultat. Notifications refusées : même service,
+ *    le résultat est montré à la réouverture de l'appli. Le filet de 15 min clôt toute attente restée sans résultat.
  *
  * Sources (developer.android.com, relevées le 2026-11-21) :
  *   develop/background-work/services/fgs/service-types, « Connected device » : type `connectedDevice`, permission
@@ -33,72 +34,60 @@ import android.os.PowerManager
  *   CHANGE_WIFI_MULTICAST_STATE, NFC, TRANSMIT_IR (ici CHANGE_NETWORK_STATE, permission normale). Pas de durée maximale
  *   imposée à ce type (seuls dataSync et mediaProcessing en ont) : la borne de 15 min est la nôtre.
  *   Service.startForeground(int, Notification, int) (API 29) ; Service.onTimeout(int, int) (API 35) ;
- *   Service.onTaskRemoved(Intent) ; PowerManager.WakeLock.acquire(long) : verrou relâché de lui-même après le délai.
+ *   PowerManager.WakeLock.acquire(long) : verrou relâché de lui-même après le délai.
  *
  * Bornes : 15 min au plus, verrou de réveil partiel de 16 min au plus, START_NOT_STICKY (jamais relancé par le système),
- * non exporté. Toutes les méthodes s'exécutent sur le fil principal.
+ * non exporté, jamais démarré au boot ni par une alarme.
  */
-class AttenteWifi : Service() {
+class AttenteWifi : Service(), EcouteurAttente {
 
     private val principal = Handler(Looper.getMainLooper())
     private var verrou: PowerManager.WakeLock? = null
-    private var heure: String? = null // HH:MM validée, null si inconnue
-    private var enAttente = false
-    private val filet = Runnable { terminer(Attente.Issue.INCONNUE) }
+    private var fil: Thread? = null
+    private var suiviWifi = false
+    private lateinit var pilote: PiloteAttente
+    private val filet = Runnable { Thread { pilote.finaliserInconnu() }.start() }
 
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        val proprietaire = ProprietaireCable.obtenir(this)
+        pilote = proprietaire.pilote
         if (intent?.action == ACTION_ANNULER) {
-            // Venu de la notification : seulement si une attente tourne (sinon, service lancé pour rien : on s'arrête).
-            if (!enAttente) { stopSelf(startId); return START_NOT_STICKY }
-            annulee = true
-            notifier(ID_ATTENTE, notificationAttente(annulable = false))
-            // La page lit « annulee » et appelle attenteFin ; si elle ne répond pas, résultat inconnu au bout de 60 s.
-            principal.removeCallbacks(filet)
-            principal.postDelayed(filet, DELAI_APRES_ANNULER_MS)
+            // Venu de la notification : seulement avant l'envoi (le pilote refuse ensuite) ; hors du fil principal (connexions).
+            Thread { pilote.annuler(); if (!pilote.enCours() && fil == null) principal.post { stopSelf() } }.start()
             return START_NOT_STICKY
         }
         // ACTION_DEBUT (startForegroundService) : startForeground() obligatoire, tout de suite.
-        intent?.getStringExtra(EXTRA_HEURE)?.takeIf { Attente.heureValide(it) }?.let { heure = it }
         startForeground(ID_ATTENTE, notificationAttente(annulable = true), ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE)
-        instance = this
-        actif = true
-        enAttente = true
-        if (verrou == null) {
-            verrou = getSystemService(PowerManager::class.java)
-                .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, ETIQUETTE_VERROU)
-                .apply { setReferenceCounted(false); acquire(VERROU_MAX_MS) }
-        }
-        principal.removeCallbacks(filet)
+        if (pilote.phaseActuelle() != Phase.ATTENTE) { stopSelf(); return START_NOT_STICKY } // lancé pour rien
+        if (fil != null) return START_NOT_STICKY // second démarrage : la boucle tourne déjà
+        proprietaire.wifi.demarrer() // le service suit le Wi-Fi lui-même (l'activité peut être arrêtée)
+        suiviWifi = true
+        verrou = getSystemService(PowerManager::class.java)
+            .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, ETIQUETTE_VERROU)
+            .apply { setReferenceCounted(false); acquire(VERROU_MAX_MS) }
+        pilote.ecouteur = this
         principal.postDelayed(filet, DUREE_MAX_MS)
-        // Résultat arrivé avant le démarrage effectif du service (course rare) : on le publie et on s'arrête.
-        finDemandee?.let { (issue, h) -> finDemandee = null; terminer(issue, h) }
+        fil = Thread({ pilote.lancer() }, "attente-cable").apply { isDaemon = true; start() }
         return START_NOT_STICKY
     }
 
-    /**
-     * Fin de l'attente : notification de résultat (si issue non nulle), puis arrêt. h : heure à annoncer (par défaut celle
-     * de l'attente ; null : texte sans heure, la page n'a pas pu la calculer).
-     */
-    /** Vrai tant que l'attente n'est pas terminée (aucun résultat publié). */
-    val attendEncore: Boolean get() = enAttente
+    // --- EcouteurAttente (appelé depuis les fils du pilote) ---
 
-    fun terminer(issue: Attente.Issue?, h: String? = heure) {
-        if (issue != null) publierResultat(this, issue, h?.takeIf { Attente.heureValide(it) })
-        enAttente = false
-        stopSelf()
+    override fun envoiCommence() {
+        principal.post { notifier(ID_ATTENTE, notificationAttente(annulable = false)) }
     }
 
-    // Appli balayée des applications récentes pendant l'attente : la page n'existe plus, rien ne sera envoyé.
-    override fun onTaskRemoved(rootIntent: Intent?) {
-        if (enAttente) terminer(Attente.Issue.APPLI_FERMEE)
-        super.onTaskRemoved(rootIntent)
+    override fun termine(issue: Attente.Issue, debut: String?, fin: String?) {
+        pilote.ecouteur = null
+        if (!activiteVisible) publierResultat(applicationContext, issue, debut, fin)
+        principal.post { stopSelf() }
     }
 
     // Filet : connectedDevice n'a pas d'échéance système connue ; si elle venait à exister, on le dit et on s'arrête.
     override fun onTimeout(startId: Int, fgsType: Int) {
-        terminer(Attente.Issue.INCONNUE)
+        Thread { pilote.finaliserInconnu() }.start()
     }
 
     override fun onDestroy() {
@@ -106,13 +95,9 @@ class AttenteWifi : Service() {
         try { verrou?.takeIf { it.isHeld }?.release() } catch (e: RuntimeException) { /* déjà relâché par le délai */ }
         verrou = null
         stopForeground(STOP_FOREGROUND_REMOVE)
-        enAttente = false
-        if (instance === this) instance = null
-        actif = false
-        // Fin de l'attente : la configuration gardée en mémoire est effacée, quelle que soit l'activité.
-        try { ProprietaireCable.obtenir(this).operations.oublierMemoire() } catch (e: RuntimeException) { /* sans effet */ }
-        // L'activité ferme ce que son onStop a laissé ouvert si elle n'est plus visible.
-        try { surFin?.invoke() } catch (e: RuntimeException) { /* activité déjà détruite */ }
+        if (suiviWifi) { suiviWifi = false; ProprietaireCable.obtenir(this).wifi.arreter() }
+        // Service détruit alors que l'attente n'est pas finie (arrêt du système) : jamais de silence, résultat « inconnu ».
+        if (::pilote.isInitialized && pilote.enCours()) Thread { pilote.finaliserInconnu() }.start()
         super.onDestroy()
     }
 
@@ -122,10 +107,11 @@ class AttenteWifi : Service() {
 
     private fun notificationAttente(annulable: Boolean): Notification {
         creerCanaux(this)
+        val debut = if (::pilote.isInitialized) pilote.debutManuel() else null
         val b = Notification.Builder(this, CANAL_ATTENTE)
             .setSmallIcon(R.drawable.ic_lanceur_mono)
-            .setContentTitle(getString(R.string.attente_titre))
-            .setContentText(getString(R.string.attente_texte, heure ?: HEURE_INCONNUE))
+            .setContentTitle(getString(if (annulable) R.string.attente_titre else R.string.attente_envoi_titre))
+            .setContentText(getString(if (annulable) R.string.attente_texte else R.string.attente_envoi_texte, debut ?: HEURE_INCONNUE))
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .setContentIntent(ouvrirAppli(this))
@@ -143,7 +129,6 @@ class AttenteWifi : Service() {
     companion object {
         const val ACTION_DEBUT = "fr.rechargeds3.coque.attente.DEBUT"
         private const val ACTION_ANNULER = "fr.rechargeds3.coque.attente.ANNULER"
-        const val EXTRA_HEURE = "heure"
         private const val CANAL_ATTENTE = "attente"
         private const val CANAL_RESULTAT = "resultat"
         private const val ID_ATTENTE = 1
@@ -152,29 +137,18 @@ class AttenteWifi : Service() {
         private const val HEURE_INCONNUE = "--:--"
         const val DUREE_MAX_MS = 15L * 60 * 1000
         private const val VERROU_MAX_MS = 16L * 60 * 1000
-        private const val DELAI_APRES_ANNULER_MS = 60L * 1000
 
-        /** Vrai de la demande de démarrage (posé par MainActivity) jusqu'à la destruction du service. */
+        /** Posé par MainActivity : l'appli est visible, la page montre elle-même le résultat (pas de notification de résultat). */
         @Volatile
-        var actif = false
+        var activiteVisible = false
 
-        /** « Annuler » touché dans la notification ; remis à faux au prochain démarrage (lu par attenteEtat). */
-        @Volatile
-        var annulee = false
-
-        /** Une attente attend encore un résultat (fil principal) : service en cours non terminé, ou démarrage demandé sans
-         *  fin déjà demandée. */
-        fun attenteEnCours(): Boolean = instance?.attendEncore ?: (actif && finDemandee == null)
-
-        /** Service en cours (fil principal seulement). */
-        var instance: AttenteWifi? = null
-
-        /** Résultat donné par la page avant que le service ait démarré (fil principal seulement). */
-        var finDemandee: Pair<Attente.Issue, String?>? = null
-
-        /** Posé par MainActivity (fil principal) : fermeture du pont et du suivi du Wi-Fi si l'activité est cachée. */
-        @Volatile
-        var surFin: (() -> Unit)? = null
+        /** Lance le service de premier plan (la page est visible : démarrage permis). Vrai si la demande est partie. */
+        fun lancer(ctx: Context): Boolean = try {
+            ctx.startForegroundService(Intent(ctx, AttenteWifi::class.java).setAction(ACTION_DEBUT))
+            true
+        } catch (e: Exception) { // ForegroundServiceStartNotAllowedException, SecurityException…
+            false
+        }
 
         private fun creerCanaux(ctx: Context) {
             val nm = ctx.getSystemService(NotificationManager::class.java)
@@ -190,20 +164,27 @@ class AttenteWifi : Service() {
             return PendingIntent.getActivity(ctx, 0, i, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
         }
 
-        /** Notification de résultat, non continue ; utilisable aussi quand le service est déjà arrêté. */
-        fun publierResultat(ctx: Context, issue: Attente.Issue, heure: String?) {
+        /** Notification de résultat, non continue ; texte fixe, heures (début %1$s, fin %2$s) validées par le pilote. */
+        fun publierResultat(ctx: Context, issue: Attente.Issue, debut: String?, fin: String?) {
             creerCanaux(ctx)
-            val (titre, texte) = Attente.textes(issue, avecHeure = heure != null)
-            val corps = ctx.getString(texte, heure)
+            val (titre, texte) = Attente.textes(issue)
+            val d = debut ?: HEURE_INCONNUE
+            val f = fin ?: HEURE_INCONNUE
+            val corps = ctx.getString(texte, d, f)
             val n = Notification.Builder(ctx, CANAL_RESULTAT)
                 .setSmallIcon(R.drawable.ic_lanceur_mono)
-                .setContentTitle(ctx.getString(titre, heure))
+                .setContentTitle(ctx.getString(titre, d, f))
                 .setContentText(corps)
                 .setStyle(Notification.BigTextStyle().bigText(corps))
                 .setAutoCancel(true)
                 .setContentIntent(ouvrirAppli(ctx))
                 .build()
             try { ctx.getSystemService(NotificationManager::class.java).notify(ID_RESULTAT, n) } catch (e: RuntimeException) { /* refusé */ }
+        }
+
+        /** La page a vu le résultat : la notification de résultat est retirée. */
+        fun retirerResultat(ctx: Context) {
+            try { ctx.getSystemService(NotificationManager::class.java).cancel(ID_RESULTAT) } catch (e: RuntimeException) { /* sans effet */ }
         }
     }
 }

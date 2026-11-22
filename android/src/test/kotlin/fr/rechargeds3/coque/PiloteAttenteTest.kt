@@ -377,6 +377,15 @@ class PiloteAttenteTest {
         memoireEffacee(b)
     }
 
+    @Test fun unServiceQuiNeDemarrePasRetireLAttenteSansRien() {
+        val b = banc({ muet() })
+        assertEquals(true, b.pilote.demarrer(demande, manuelle)["ok"])
+        b.pilote.abandonnerDemarrage()
+        assertEquals("inactive", b.pilote.etat()["phase"]); assertNull(b.stock.contenu); assertTrue(b.ecoute.fins.isEmpty())
+        memoireEffacee(b)
+        b.pilote.abandonnerDemarrage() // sans effet
+    }
+
     // --- Une nouvelle attente remplace un résultat non vu ---
 
     @Test fun uneNouvelleAttenteRemplaceUnResultatNonVu() {

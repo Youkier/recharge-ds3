@@ -3,7 +3,6 @@ package fr.rechargeds3.coque
 import android.Manifest
 import android.app.Activity
 import android.app.AlertDialog
-import android.app.KeyguardManager
 import android.app.NotificationManager
 import android.content.ClipboardManager
 import android.content.Intent
@@ -11,7 +10,6 @@ import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import android.content.res.Configuration
 import android.os.Bundle
-import android.os.PowerManager
 import android.text.Editable
 import android.text.InputType
 import android.text.TextWatcher
@@ -55,6 +53,7 @@ class MainActivity : Activity() {
     private lateinit var racine: FrameLayout
     private lateinit var wifi: ReseauWifi
     private lateinit var coffre: CoffreCable
+    private lateinit var pilote: PiloteAttente
     private lateinit var pont: PontLocal
     private var formulaire: View? = null
     private var webView: WebView? = null
@@ -67,12 +66,14 @@ class MainActivity : Activity() {
         val proprietaire = ProprietaireCable.obtenir(this)
         wifi = proprietaire.wifi
         coffre = proprietaire.coffre
+        pilote = proprietaire.pilote
         pont = PontLocal(
-            wifi, proprietaire.operations, estDebug,
+            wifi, proprietaire.operations, pilote, estDebug,
             surSaisirCle = { afficherFormulaire() },
             prendreActionAuto = { actionAuto() },
-            essaiArrierePlan = { quoi -> essaiArrierePlan(quoi) },
-            attente = { op, q, rep -> attente(op, q, rep) },
+            notifications = { op, rep -> notifications(op, rep) },
+            lancerService = { AttenteWifi.lancer(this) },
+            surResultatVu = { AttenteWifi.retirerResultat(this) },
         )
 
         racine = FrameLayout(this)
@@ -94,13 +95,16 @@ class MainActivity : Activity() {
     override fun onStart() {
         super.onStart()
         visible = true
-        AttenteWifi.surFin = {
-            pont.oublierMemoire() // fin du service : la configuration gardée pour l'attente est effacée
-            if (!visible && !AttenteWifi.actif) { pont.fermerToutAsync(); wifi.arreter() }
-        }
-        wifi.demarrer()
-        // Appli rouverte : plus aucun envoi en cours (une attente en arrière-plan garde sa page : pas de recréation).
-        if (themeAChanger && !AttenteWifi.actif) { themeAChanger = false; recreate() }
+        AttenteWifi.activiteVisible = true // la page montre elle-même le résultat d'une attente
+        wifi.demarrer() // suivi compté : le service d'attente a le sien
+        // Appli rouverte : plus aucun envoi de la page en cours.
+        if (themeAChanger && !pont.connexionOuverte()) { themeAChanger = false; recreate() }
+    }
+
+    // Appli rouverte par une notification (activité unique, singleTask) : la page est déjà là, elle relit l'attente à la reprise.
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
     }
 
     // configChanges inclut uiMode (pas de recréation pendant un envoi). Pour que la page suive le thème clair ou sombre,
@@ -113,43 +117,34 @@ class MainActivity : Activity() {
         val maintenant = nouvelle.uiMode and Configuration.UI_MODE_NIGHT_MASK
         if (maintenant == nuit) return
         nuit = maintenant
-        if (pont.connexionOuverte() || AttenteWifi.actif) themeAChanger = true else recreate()
+        if (pont.connexionOuverte()) themeAChanger = true else recreate()
     }
 
-    // Sortie de l'activité (autre appli, écran éteint, retour) : plus aucune connexion ouverte. Seule exception : un
-    // service d'attente tourne (« Programmer » en attente du Wi-Fi et du câble) ; le pont et le suivi du Wi-Fi restent
-    // alors en place pour l'envoi différé de la page, et sont fermés à la destruction du service (AttenteWifi.surFin) ou
-    // au prochain onStop. Pas de pauseTimers : les minuteurs de la page doivent continuer.
+    // Sortie de l'activité (autre appli, écran éteint, retour) : les connexions ouvertes PAR LA PAGE sont coupées. Une attente en
+    // cours appartient au service (PiloteAttente) : elle continue, avec son propre suivi du Wi-Fi.
     override fun onStop() {
         visible = false
-        if (!AttenteWifi.actif) {
-            pont.fermerToutAsync()
-            wifi.arreter()
-        }
+        AttenteWifi.activiteVisible = false
+        pont.fermerToutAsync()
+        wifi.arreter()
         super.onStop()
     }
 
     override fun onDestroy() {
-        // Activité détruite pendant une attente (appli fermée, hors changement de configuration) : la page disparaît,
-        // rien ne sera envoyé ; on le dit par la notification (règle 2) et le service s'arrête.
-        // Toujours : la page est détruite avec l'activité, même pour un changement de configuration non couvert par
-        // configChanges (police, langue) ; l'attente ne peut plus aboutir.
-        if (AttenteWifi.actif) abandonnerAttente()
+        // Balayer l'appli ou détruire l'activité n'annule plus l'attente (décision du 2026-11-21) : le service l'a en main, et
+        // la page, rechargée, relira son état.
         demandeNotifications = null
-        AttenteWifi.surFin = null
-        // La mémoire de la clé n'est effacée que si aucune attente n'est active (le service l'efface à sa fin).
-        pont.arreter(garderMemoire = AttenteWifi.attenteEnCours())
+        pont.arreter()
         webView?.let { (it.parent as? ViewGroup)?.removeView(it); it.destroy() }
         webView = null
         super.onDestroy()
     }
 
-    // --- Attente en arrière-plan (« Programmer » avant le Wi-Fi ou le câble) : opérations du pont, version publiée ---
-    // Contrat (site/pont.js) : notifications, demanderNotifications, attenteDebut {heure},
-    // attenteEtat, attenteFin {resultat, heure?, incertain?}. Aucune chaîne libre de la page n'est affichée.
+    // --- Permission de notification (l'attente elle-même est tenue par le service, voir PiloteAttente) ---
+    // Contrat (site/pont.js) : notifications -> { autorise }, demanderNotifications -> { autorise }. Sans notifications, l'attente
+    // fonctionne quand même : le résultat est montré à la réouverture de l'appli.
 
     private var demandeNotifications: ((JSONObject) -> Unit)? = null
-    private var heureAttente: String? = null // heure de la dernière attente démarrée (texte « appli fermée »)
 
     private fun notificationsAutorisees(): Boolean =
         checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED &&
@@ -159,7 +154,7 @@ class MainActivity : Activity() {
     private fun erreur(code: String): JSONObject = JSONObject().put("ok", false).put("erreur", code)
 
     // Appelé sur le fil principal (PontLocal.onPostMessage).
-    private fun attente(op: String, q: JSONObject, repondre: (JSONObject) -> Unit) {
+    private fun notifications(op: String, repondre: (JSONObject) -> Unit) {
         when (op) {
             "notifications" -> repondre(ok().put("autorise", notificationsAutorisees()))
             "demanderNotifications" -> when {
@@ -174,56 +169,8 @@ class MainActivity : Activity() {
                     requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), CODE_NOTIFICATIONS)
                 }
             }
-            "attenteDebut" -> {
-                val h = q.optString("heure", "")
-                when {
-                    !Attente.heureValide(h) -> repondre(erreur("requete_invalide"))
-                    !notificationsAutorisees() -> repondre(erreur("notifications"))
-                    AttenteWifi.actif -> repondre(erreur("occupe"))
-                    else -> repondre(demarrerAttente(h))
-                }
-            }
-            "attenteEtat" -> repondre(ok().put("active", AttenteWifi.actif).put("annulee", AttenteWifi.annulee))
-            "attenteFin" -> {
-                // Heure facultative : absente si la page n'a pas pu la calculer (texte sans heure).
-                val h = Attente.heureRecue(if (q.has("heure")) q.optString("heure", "") else null)
-                val issue = Attente.issue(q.optString("resultat", ""), q.optBoolean("incertain", false))
-                if (h == Attente.INVALIDE || issue == null) {
-                    repondre(erreur("requete_invalide"))
-                    return
-                }
-                val service = AttenteWifi.instance
-                when {
-                    service != null -> service.terminer(issue, h)
-                    AttenteWifi.actif -> AttenteWifi.finDemandee = issue to h // service pas encore démarré : il s'arrêtera aussitôt
-                    else -> AttenteWifi.publierResultat(this, issue, h) // service déjà arrêté (filet passé) : on corrige
-                }
-                repondre(ok())
-            }
             else -> repondre(erreur("operation_inconnue"))
         }
-    }
-
-    // La page est visible (geste « Programmer ») : démarrage d'un service de premier plan permis.
-    private fun demarrerAttente(heure: String): JSONObject {
-        AttenteWifi.actif = true // avant onStop, qui peut arriver avant le démarrage effectif du service
-        AttenteWifi.annulee = false
-        AttenteWifi.finDemandee = null
-        heureAttente = heure
-        return try {
-            startForegroundService(Intent(this, AttenteWifi::class.java).setAction(AttenteWifi.ACTION_DEBUT).putExtra(AttenteWifi.EXTRA_HEURE, heure))
-            ok()
-        } catch (e: Exception) { // ForegroundServiceStartNotAllowedException, SecurityException…
-            AttenteWifi.actif = false
-            erreur("service")
-        }
-    }
-
-    private fun abandonnerAttente() {
-        val service = AttenteWifi.instance
-        // Un résultat déjà publié (attenteFin reçu, service en cours d'arrêt) n'est jamais écrasé par « non envoyée ».
-        if (service != null) { if (service.attendEncore) service.terminer(Attente.Issue.APPLI_FERMEE) }
-        else if (AttenteWifi.finDemandee == null) AttenteWifi.finDemandee = Attente.Issue.APPLI_FERMEE to heureAttente
     }
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
@@ -232,34 +179,6 @@ class MainActivity : Activity() {
         val r = demandeNotifications ?: return
         demandeNotifications = null
         r(ok().put("autorise", notificationsAutorisees()))
-    }
-
-    // --- Essai E0 : attente en arrière-plan (version de mise au point seulement, filtrée aussi par le pont) ---
-
-    // « debut » : démarre le service de premier plan (la page est visible : démarrage permis). « fin » : l'arrête et, si
-    // l'activité n'est plus visible, fait la fermeture que onStop a sautée. Toujours : état de l'écran pour la ligne ESSAI.
-    private fun essaiArrierePlan(quoi: String): JSONObject {
-        val r = JSONObject().put("ok", true)
-        if (!estDebug) return JSONObject().put("ok", false).put("erreur", "operation_inconnue")
-        val intention = Intent(this, AttenteWifi::class.java)
-        when (quoi) {
-            "debut" -> {
-                // Même service que la version publiée ; heure de l'action adb pour le texte de la notification.
-                val h = intent?.getStringExtra("heure")?.takeIf { Attente.heureValide(it) } ?: "00:00"
-                if (!demarrerAttente(h).optBoolean("ok")) r.put("ok", false).put("erreur", "service")
-            }
-            "fin" -> {
-                stopService(intention)
-                AttenteWifi.actif = false
-                if (!visible) { pont.fermerToutAsync(); wifi.arreter() }
-            }
-            "etat" -> {}
-            else -> return JSONObject().put("ok", false).put("erreur", "requete_invalide")
-        }
-        r.put("interactif", getSystemService(PowerManager::class.java).isInteractive)
-        r.put("verrouille", getSystemService(KeyguardManager::class.java).isDeviceLocked)
-        r.put("service", AttenteWifi.actif)
-        return r
     }
 
     // --- Écran natif de saisie ---
@@ -349,7 +268,7 @@ class MainActivity : Activity() {
                     // Magasin de clés hors du fil principal.
                     Thread {
                         val reussi = try { coffre.enregistrer(id, cle); true } catch (e: Exception) { false }
-                        if (reussi) pont.oublierMemoire() // une nouvelle clé : l'ancienne copie gardée pour l'attente est périmée
+                        if (reussi) pilote.arreterPourCle() // une nouvelle clé : l'attente en cours s'arrête, l'ancienne copie gardée est effacée
                         runOnUiThread {
                             enregistrer.setText(R.string.enregistrer)
                             if (reussi) { viderChamps(); majEtat(); afficherPage(nouvelleConfiguration = true) }
@@ -372,7 +291,7 @@ class MainActivity : Activity() {
                 .setPositiveButton(R.string.oublier_confirmer) { _, _ ->
                     Thread {
                         coffre.oublier()
-                        pont.oublierMemoire() // « Oublier le câble » efface aussi la copie gardée en mémoire
+                        pilote.arreterPourCle() // « Oublier le câble » arrête l'attente en cours et efface la copie gardée en mémoire
                         runOnUiThread { viderChamps(); afficherFormulaire() }
                     }.start()
                 }
@@ -440,8 +359,7 @@ class MainActivity : Activity() {
 
             // Processus de rendu perdu : on reconstruit l'activité plutôt que de planter.
             override fun onRenderProcessGone(view: WebView, detail: RenderProcessGoneDetail): Boolean {
-                // Page perdue pendant une attente : elle n'enverra rien, on le dit (règle 2) avant de reconstruire.
-                if (AttenteWifi.actif) abandonnerAttente()
+                // Page perdue : l'attente éventuelle continue dans le service, la page reconstruite relira son état.
                 runOnUiThread { recreate() }
                 return true
             }
@@ -467,8 +385,7 @@ class MainActivity : Activity() {
         if (estDebug && intent?.getStringExtra("action") in ACTIONS_AUTO) URL_ESSAI else URL_SITE
 
     // Action demandée par adb (version de mise au point seulement), rendue une seule fois à la page :
-    //   am start -n ... --es action lire|chercher|programmer|filtre|cle|arriere-plan [--es ip 10.0.2.2] [--es heure 05:00]
-    //                   [--es delai 20]   (arriere-plan : attente en secondes avant l'envoi, 900 au plus)
+    //   am start -n ... --es action lire|chercher|programmer|filtre|cle [--es ip 10.0.2.2] [--es heure 05:00] [--es delai 20]
     private fun actionAuto(): JSONObject? {
         if (!estDebug || actionAutoPrise) return null
         val action = intent?.getStringExtra("action") ?: return null
@@ -486,7 +403,7 @@ class MainActivity : Activity() {
         const val URL_SITE = "${FiltreReseau.ORIGINE}/assets/site/index.html"
         const val URL_ESSAI = "${FiltreReseau.ORIGINE}/assets/android/essai/index.html"
         private const val CODE_NOTIFICATIONS = 1
-        private val ACTIONS_AUTO = setOf("lire", "chercher", "programmer", "filtre", "cle", "arriere-plan")
+        private val ACTIONS_AUTO = setOf("lire", "chercher", "programmer", "filtre", "cle")
 
         @Volatile
         private var actionAutoPrise = false

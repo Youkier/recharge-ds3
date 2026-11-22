@@ -34,15 +34,17 @@ import java.util.concurrent.TimeUnit
 class PontLocal(
     private val wifi: ReseauWifi,
     private val operations: OperationsCable,
+    private val pilote: PiloteAttente,
     private val estDebug: Boolean,
     private val surSaisirCle: () -> Unit,
     private val prendreActionAuto: () -> JSONObject?,
-    // Essai E0 (version de mise au point seulement) : démarre (« debut ») ou arrête (« fin ») le service d'attente,
-    // ou rend seulement l'état de l'écran (« etat »). Appelé sur le fil principal.
-    private val essaiArrierePlan: (String) -> JSONObject,
-    // Attente en arrière-plan (version publiée) : notifications, demanderNotifications, attenteDebut, attenteEtat,
-    // attenteFin. Traitées par l'activité, sur le fil principal ; aucune ne touche le réseau ni le coffre.
-    private val attente: (op: String, q: JSONObject, repondre: (JSONObject) -> Unit) -> Unit,
+    // Permission de notification (« notifications », « demanderNotifications ») : traitée par l'activité, sur le fil principal ;
+    // ne touche ni le réseau ni le coffre.
+    private val notifications: (op: String, repondre: (JSONObject) -> Unit) -> Unit,
+    // Démarre le service de premier plan de l'attente (page visible) ; faux si le système le refuse. Appelé hors du fil principal.
+    private val lancerService: () -> Boolean,
+    // La page a vu le résultat de l'attente : la notification de résultat est retirée.
+    private val surResultatVu: () -> Unit,
 ) : WebViewCompat.WebMessageListener {
 
     private val principal = Handler(Looper.getMainLooper())
@@ -68,21 +70,19 @@ class PontLocal(
                 "demarrage" -> demarrage(rep)
                 "variante" -> rep(JSONObject().put("ok", true).put("variante", variante()))
                 "prefixeWifi" -> prefixeWifi(rep)
-                "saisirCle" -> { operations.oublierMemoire(); surSaisirCle(); rep(ok()) }
+                // Nouvelle clé : l'attente en cours est arrêtée et la configuration gardée effacée (hors du fil principal : connexions).
+                "saisirCle" -> { Thread { pilote.arreterPourCle() }.start(); surSaisirCle(); rep(ok()) }
                 "cable" -> enArrierePlan(rep) { enJson(operations.cable()) }
                 "lire" -> enArrierePlan(rep) { enJson(operations.lire(adresse(q), delai(q), reessayer(q))) }
                 "programmer" -> programmer(q, rep)
                 "chercher" -> chercher(q, rep)
-                "memoriser" -> enArrierePlan(rep) { enJson(operations.memoriser()) }
-                "oublierMemoire" -> enArrierePlan(rep) { operations.oublierMemoire(); ok() }
-                // Réservées à la version de mise au point, comme les actions adb : refusées dans la version publiée.
-                "essaiArrierePlan" -> rep(if (estDebug) essaiArrierePlan(q.optString("quoi", "")) else erreur("operation_inconnue"))
+                // Réservée à la version de mise au point, comme les actions adb : refusée dans la version publiée.
                 "essaiFiltre" -> if (estDebug) enArrierePlan(rep) { essaiFiltre() } else rep(erreur("operation_inconnue"))
-                "attenteFin" -> {
-                    operations.oublierMemoire() // la configuration gardée pour l'attente n'a plus d'usage
-                    attente(op, q, rep)
-                }
-                "notifications", "demanderNotifications", "attenteDebut", "attenteEtat" -> attente(op, q, rep)
+                "notifications", "demanderNotifications" -> notifications(op, rep)
+                "attenteDebut" -> attenteDebut(q, rep)
+                "attenteEtat" -> rep(JSONObject(pilote.etat())) // lecture en mémoire : fil principal
+                "attenteAnnuler" -> enArrierePlan(rep) { ok().put("annulee", pilote.annuler()) }
+                "attenteAcquitter" -> enArrierePlan(rep) { pilote.acquitter(); surResultatVu(); ok() }
                 // Toute autre opération, dont les anciennes routes génériques (ouvrir, envoyer, recevoir, sonder…) : refusée.
                 else -> rep(erreur("operation_inconnue"))
             }
@@ -129,23 +129,42 @@ class PontLocal(
 
     // Exactement une des deux actions du projet : { allumage: "HH:MM", fin: "HH:MM", duree_min: entier, depart: "HH:MM" }
     // ou { desactiver: true, fin: "HH:MM" }. Tout est revalidé ici : types exacts (chaînes, entier), formats, durée 1..1439, fin dans la nuit.
-    private fun programmer(q: JSONObject, repondre: (JSONObject) -> Unit) {
-        val action: Action? = when {
-            q.has("allumage") && !q.has("desactiver") -> {
-                val a = q.opt("allumage") as? String
-                val f = q.opt("fin") as? String
-                val d = q.opt("depart") as? String
-                val duree = q.opt("duree_min") as? Int // un décimal (Double) ou un grand entier (Long) est refusé
-                if (a != null && f != null && d != null && duree != null && Plage.demandeValide(a, f, duree, d)) Action.Allumage(a, f, duree, d) else null
-            }
-            q.has("desactiver") && !q.has("allumage") -> {
-                val f = q.opt("fin") as? String
-                if (q.opt("desactiver") == true && f != null && Plage.heureValide(f)) Action.Desactiver(f) else null
-            }
-            else -> null
+    private fun lireAction(q: JSONObject?): Action? = when {
+        q == null -> null
+        q.has("allumage") && !q.has("desactiver") -> {
+            val a = q.opt("allumage") as? String
+            val f = q.opt("fin") as? String
+            val d = q.opt("depart") as? String
+            val duree = q.opt("duree_min") as? Int // un décimal (Double) ou un grand entier (Long) est refusé
+            if (a != null && f != null && d != null && duree != null && Plage.demandeValide(a, f, duree, d)) Action.Allumage(a, f, duree, d) else null
         }
-        if (action == null) return repondre(erreur("requete_invalide"))
+        q.has("desactiver") && !q.has("allumage") -> {
+            val f = q.opt("fin") as? String
+            if (q.opt("desactiver") == true && f != null && Plage.heureValide(f)) Action.Desactiver(f) else null
+        }
+        else -> null
+    }
+
+    private fun programmer(q: JSONObject, repondre: (JSONObject) -> Unit) {
+        val action = lireAction(q) ?: return repondre(erreur("requete_invalide"))
         enArrierePlan(repondre) { enJson(operations.programmer(adresse(q), action, delai(q), reessayer(q))) }
+    }
+
+    // Attente en arrière-plan : { demande: <action ci-dessus>, heureManuelle: { debut, fin } } ; le pilote revalide tout. La clé
+    // du coffre est lue ici (hors du fil principal) et gardée en octets par le natif, jamais rendue. Le service démarre ensuite ;
+    // s'il est refusé, l'attente est retirée sans trace (erreur « service »). Des notifications refusées n'empêchent rien.
+    private fun attenteDebut(q: JSONObject, repondre: (JSONObject) -> Unit) {
+        val action = lireAction(q.optJSONObject("demande")) ?: return repondre(erreur("requete_invalide"))
+        val h = q.optJSONObject("heureManuelle") ?: return repondre(erreur("requete_invalide"))
+        val debut = h.opt("debut") as? String
+        val fin = h.opt("fin") as? String
+        if (debut == null || fin == null || !Attente.heureValide(debut) || !Attente.heureValide(fin)) return repondre(erreur("requete_invalide"))
+        enArrierePlan(repondre) {
+            val r = pilote.demarrer(action, HeuresManuelles(debut, fin))
+            if (r["ok"] != true) return@enArrierePlan enJson(r)
+            if (!lancerService()) { pilote.abandonnerDemarrage(); return@enArrierePlan erreur("service") }
+            ok()
+        }
     }
 
     // Réponses de progression { n, progres: true, etape, appareils, lectures, echeance } puis la réponse finale.
@@ -190,19 +209,15 @@ class PontLocal(
     }
 
     /**
-     * Fin de l'activité : les opérations de la page sont coupées, plus aucune n'est acceptée. La configuration gardée en
-     * mémoire est effacée, sauf si une attente est active ([garderMemoire]) : elle en a encore besoin.
+     * Fin de l'activité : les opérations de la page sont coupées, plus aucune n'est acceptée. Une attente en cours n'est PAS
+     * touchée : elle appartient au service, qui efface la configuration gardée à sa fin.
      */
-    fun arreter(garderMemoire: Boolean = false) {
+    fun arreter() {
         travail.shutdownNow()
-        if (!garderMemoire) operations.oublierMemoire()
         Thread { operations.annulerPage() }.start()
     }
 
     fun connexionOuverte(): Boolean = operations.enCours()
-
-    /** Fin du service d'attente : la configuration gardée en mémoire est effacée. */
-    fun oublierMemoire() = operations.oublierMemoire()
 
     // --- Réponses ---
 

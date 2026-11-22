@@ -168,6 +168,18 @@ class PiloteAttente(
         if (terminer(s, Issue.INCONNUE, erreur("non_suivie"))) { operations.annuler(Origine.SERVICE); reveiller() }
     }
 
+    /** Le service n'a pas pu démarrer : l'attente qui venait d'être démarrée est retirée sans résultat ni notification. */
+    fun abandonnerDemarrage() {
+        synchronized(verrou) {
+            if (phase != Phase.ATTENTE) return
+            session++
+            phase = Phase.INACTIVE
+            action = null; manuel = null; resultat = null
+            persister()
+        }
+        operations.oublierMemoire()
+    }
+
     /** La page a vu le résultat : il ne sera plus rendu. */
     fun acquitter() {
         synchronized(verrou) {

@@ -17,13 +17,17 @@ class ReseauWifi(context: Context) {
     private val cm = context.getSystemService(ConnectivityManager::class.java)
     @Volatile private var reseau: Network? = null
     private var enregistre = false
+    private var usagers = 0
 
     private val rappel = object : ConnectivityManager.NetworkCallback() {
         override fun onAvailable(network: Network) { reseau = network }
         override fun onLost(network: Network) { if (reseau == network) reseau = null }
     }
 
+    /** Suivi du Wi-Fi à plusieurs usagers (l'activité visible, le service d'attente) : chaque demarrer() appelle un arreter(). */
+    @Synchronized
     fun demarrer() {
+        usagers++
         if (enregistre) return
         val demande = NetworkRequest.Builder().addTransportType(NetworkCapabilities.TRANSPORT_WIFI).build()
         cm.registerNetworkCallback(demande, rappel)
@@ -33,14 +37,16 @@ class ReseauWifi(context: Context) {
         if (actif != null && cm.getNetworkCapabilities(actif)?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) == true) reseau = actif
     }
 
+    @Synchronized
     fun arreter() {
-        if (!enregistre) return
+        if (usagers > 0) usagers--
+        if (usagers > 0 || !enregistre) return
         try { cm.unregisterNetworkCallback(rappel) } catch (e: IllegalArgumentException) { /* déjà retiré */ }
         enregistre = false
         reseau = null
     }
 
-    fun courant(): Network? = reseau
+    fun courant(): Network? = reseau // champ volatil : lisible sans verrou
 
     /** Réseau /24 du téléphone sur le Wi-Fi (« 10.0.2 »), rien de plus ; null sans Wi-Fi ou sans adresse IPv4 privée. */
     fun prefixe(): String? {

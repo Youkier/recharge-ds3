@@ -8,9 +8,9 @@ package fr.rechargeds3.coque
 object RoutesPont {
     val PUBLIQUES = setOf(
         "demarrage", "variante", "prefixeWifi", "saisirCle", "cable", "lire", "programmer", "chercher",
-        "memoriser", "oublierMemoire", "notifications", "demanderNotifications", "attenteDebut", "attenteEtat", "attenteFin",
+        "notifications", "demanderNotifications", "attenteDebut", "attenteEtat", "attenteAnnuler", "attenteAcquitter",
     )
-    val MISE_AU_POINT = setOf("essaiArrierePlan", "essaiFiltre")
+    val MISE_AU_POINT = setOf("essaiFiltre")
 
     fun autorisee(op: String, estDebug: Boolean): Boolean = op in PUBLIQUES || (estDebug && op in MISE_AU_POINT)
 }
