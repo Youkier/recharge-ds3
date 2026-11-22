@@ -38,11 +38,19 @@ export function choisirDemande(statut, heure) {
   return null;
 }
 
-export function libelleBouton(demande) {
+// Phrases communes au service et au mode Local (une seule source). Jamais en condition préalable : la programmation peut
+// précéder ou suivre le branchement de la voiture (décision de Mathieu du 2026-11-22).
+export const PENSE_BRANCHER = 'Pensez à brancher la voiture ce soir.';
+export const RAPPEL_REPROGRAMMER = 'Demain soir, reprogrammez : sinon la voiture ne chargera pas.';
+const FERMER_SMART_LIFE = " Fermez Smart Life s'il est ouvert, puis réessayez.";
+
+// contexte (facultatif) : 'immediat' (heure déjà passée dans la nuit) | 'cette_nuit' (programmé en journée), voir accueil.js.
+export function libelleBouton(demande, contexte) {
   if (!demande) return null;
-  return demande.desactiver
-    ? { principal: 'Pas de charge ce soir', secondaire: 'plage réduite à 1 min' }
-    : { principal: 'Programmer la charge', secondaire: 'démarrage ' + demande.allumage };
+  if (demande.desactiver) return { principal: 'Pas de charge ce soir', secondaire: 'le câble ne chargera pas cette nuit' };
+  const secondaire = contexte === 'immediat' ? 'démarre tout de suite'
+    : 'démarrage ' + demande.allumage + (contexte === 'cette_nuit' ? ' · pour cette nuit' : '');
+  return { principal: 'Programmer la charge', secondaire };
 }
 
 // "HH:MM" moins une minute (modulo 24 h), ou null si l'entrée n'est pas une heure valide.
@@ -82,8 +90,8 @@ const CAUSES = {
   illisible: { message: 'Réponse illisible du service.', incertain: true },
   inattendue: { message: 'Réponse inattendue du service : le réglage n\'est pas confirmé.', incertain: true },
   // Mode « Local » de l'appli Android (site/local.js) : le câble est joint directement sur le Wi-Fi de la maison.
-  local_muet: { message: 'Le câble ne répond pas. Est-il branché à la prise murale ? Rien n\'a été modifié.', incertain: false },
-  local_delai: { message: 'Le câble n\'a pas répondu à temps.', incertain: true },
+  local_muet: { message: 'Le câble ne répond pas. Est-il branché à la prise murale ? Rien n\'a été modifié.' + FERMER_SMART_LIFE, incertain: false },
+  local_delai: { message: 'Le câble n\'a pas répondu à temps.' + FERMER_SMART_LIFE, incertain: true },
   local_cle: { message: 'Le câble refuse la clé : elle a peut-être changé dans Smart Life. Rien n\'a été modifié.', incertain: false },
   local_hors_wifi: { message: 'Le téléphone n\'est pas sur le Wi-Fi de la maison : rien n\'a été envoyé.', incertain: false },
   // Attente du Wi-Fi (site/app.js) : rien n'a été envoyé.
@@ -107,8 +115,16 @@ export function resultatKo(demande, code, finHC) {
     message: c.message,
     manuel: consigneManuelle(demande, finHC),
     incertain: c.incertain,
-    verifier: c.incertain ? 'Vérifiez dans Smart Life.' : null,
+    verifier: c.incertain ? ouVerifier(demande, finHC) : null,
   };
+}
+
+// Où vérifier quand le résultat est incertain : l'écran et la valeur à comparer.
+function ouVerifier(demande, finHC) {
+  const h = demande && demande.desactiver ? moinsUneMinute(finHC) : demande && demande.allumage;
+  return typeof h === 'string' && HEURE_RE.test(h)
+    ? 'Vérifiez dans Smart Life > charge différée : début ' + h + ', activée.'
+    : 'Vérifiez dans Smart Life > charge différée.';
 }
 
 const estHeure = (x) => typeof x === 'string' && HEURE_RE.test(x);
@@ -138,7 +154,7 @@ function interpreterSansAvertissement(demande, status, json, ko) {
   if (demande && demande.desactiver) {
     // Plage courte : OK seulement si activée, marquée courte, et début = fin - 1 min (relus sur le câble).
     if (json.plage_active === true && json.courte === true && estHeure(json.debut) && estHeure(json.fin) && json.debut === moinsUneMinute(json.fin)) {
-      return { etat: 'ok', message: 'Pas de charge cette nuit : plage réduite à une minute (' + json.debut + '–' + json.fin + '), inutile de brancher.', detail: null, aucune: true };
+      return { etat: 'ok', message: 'Le câble ne chargera pas cette nuit (' + json.debut + '–' + json.fin + '), inutile de brancher.', detail: null, rappel: RAPPEL_REPROGRAMMER, aucune: true };
     }
     return ko('relecture_differente');
   }
@@ -148,10 +164,10 @@ function interpreterSansAvertissement(demande, status, json, ko) {
   }
   const fin = estHeure(json.fin) ? 'Fin de la plage : ' + json.fin + '.' : null;
   if (json.immediat === true) {
-    return { etat: 'ok', message: 'Démarrage immédiat : l\'heure calculée était passée.', detail: ['Début relu sur le câble : ' + json.debut + '.', fin].filter(Boolean).join(' '), immediat: true };
+    return { etat: 'ok', message: 'Démarrage immédiat : l\'heure calculée était passée.', detail: ['Début relu sur le câble : ' + json.debut + '.', fin].filter(Boolean).join(' '), rappel: PENSE_BRANCHER, immediat: true };
   }
   if (json.debut !== demande.allumage) return ko('relecture_differente');
-  return { etat: 'ok', message: 'Charge programmée : démarrage ' + json.debut, detail: fin };
+  return { etat: 'ok', message: 'Charge programmée : démarrage ' + json.debut, detail: fin, rappel: PENSE_BRANCHER };
 }
 
 // --- Envoi ---
@@ -187,6 +203,38 @@ export async function envoyer(adresse, jeton, demande, deps = {}) {
     return interpreterReponse(demande, rep.status, json, deps.finHC);
   } catch (e) {
     return resultatKo(demande, delaiAtteint ? 'delai_page' : 'injoignable', deps.finHC);
+  } finally {
+    clearTimeout(minuteur);
+  }
+}
+
+// Lecture de la plage du câble par le service (GET /api/etat), pour la ligne « Câble réglé » de l'accueil.
+// Purement informatif : au moindre doute (réseau, jeton, réponse inattendue) rend null, sans message ni attente
+// (décision de Mathieu du 2026-11-22). Rien n'est écrit. deps : fetch, onLine, delaiMs (tests).
+// -> { etat: 'pret', plage: { debut, fin, plage_active } } ou null.
+export async function lireEtatService(adresse, jeton, deps = {}) {
+  const f = deps.fetch || ((...a) => fetch(...a));
+  const enLigne = deps.onLine === undefined ? (typeof navigator !== 'undefined' ? navigator.onLine : true) : deps.onLine;
+  const a = validerAdresse(adresse), j = validerJeton(jeton);
+  if (enLigne === false || !a.ok || !j.ok) return null;
+  const ctrl = new AbortController();
+  const minuteur = setTimeout(() => ctrl.abort(), deps.delaiMs ?? 10000);
+  try {
+    const rep = await f(a.adresse + '/api/etat', {
+      method: 'GET',
+      headers: { Authorization: 'Bearer ' + j.jeton },
+      signal: ctrl.signal,
+      cache: 'no-store',
+      credentials: 'omit',
+      referrerPolicy: 'no-referrer',
+      redirect: 'error',
+    });
+    if (rep.status !== 200) return null;
+    const json = JSON.parse(await rep.text());
+    if (!json || json.ok !== true || !estHeure(json.debut) || typeof json.plage_active !== 'boolean') return null;
+    return { etat: 'pret', plage: { debut: json.debut, fin: estHeure(json.fin) ? json.fin : undefined, plage_active: json.plage_active } };
+  } catch (e) {
+    return null;
   } finally {
     clearTimeout(minuteur);
   }

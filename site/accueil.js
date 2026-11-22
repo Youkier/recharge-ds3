@@ -2,6 +2,9 @@
 // Module ES, aucune dépendance. Règles : jamais de programmation sur le % d'hier sans geste de l'utilisateur ;
 // jamais de bascule silencieuse d'un moyen d'envoi vers l'autre (règle n°2 : un échec reste un échec, avec l'heure manuelle).
 
+import { HEURE_RE, moinsUneMinute } from './service.js';
+import { hm } from './calc.js';
+
 // Entier 0..100 ou null.
 export function socValide(x) {
   if (x === null || x === undefined || String(x).trim() === '') return null;
@@ -18,8 +21,9 @@ export function moyenEnvoi({ pont, adresse, jeton }) {
 
 // Le bouton « Programmer » est actif seulement si un moyen existe, une demande est prête, la valeur de
 // batterie a été confirmée par un geste et aucun envoi n'est en cours.
-export function boutonActif({ moyen, demande, confirme, occupe }) {
-  return !!moyen && !!demande && !!confirme && !occupe;
+// dejaProgramme : le câble a déjà la plage demandée, rien à envoyer.
+export function boutonActif({ moyen, demande, confirme, occupe, dejaProgramme }) {
+  return !!moyen && !!demande && !!confirme && !occupe && !dejaProgramme;
 }
 
 // Lance l'envoi par le seul moyen choisi. Aucun repli : si ce moyen échoue, son résultat est rendu tel quel.
@@ -35,14 +39,14 @@ export async function programmerSelonMoyen(moyen, envoi) {
 export function pastille(etat) {
   switch (etat) {
     case 'pret': return { texte: 'Câble prêt', ton: 'ok', action: null, aide: null };
-    case 'a_relier': return { texte: 'Câble à relier', ton: 'warn', action: 'relier', aide: "L'application n'est pas encore reliée au câble. Il faut saisir sa clé une fois." };
-    case 'cle': return { texte: 'Clé du câble à saisir', ton: 'bad', action: 'relier', aide: 'Le câble refuse la clé : elle a peut-être changé dans Smart Life.' };
-    case 'sans_adresse': return { texte: 'Câble à localiser', ton: 'warn', action: 'chercher', aide: "L'application ne connaît pas encore l'emplacement du câble sur le Wi-Fi." };
-    case 'muet': return { texte: 'Câble introuvable', ton: 'bad', action: 'chercher', aide: 'Le câble ne répond pas. Est-il branché à la prise murale ?' };
-    case 'hors_wifi': return { texte: 'Hors Wi-Fi maison', ton: 'warn', action: 'reessayer', aide: 'Connectez le téléphone au Wi-Fi de la maison, puis réessayez.' };
+    case 'a_relier': return { texte: 'Câble non relié : relier', ton: 'warn', action: 'relier', aide: "L'application n'est pas encore reliée au câble. Il faut saisir sa clé une fois." };
+    case 'cle': return { texte: 'Clé refusée : saisir la clé', ton: 'bad', action: 'relier', aide: 'Le câble refuse la clé : elle a peut-être changé dans Smart Life.' };
+    case 'sans_adresse': return { texte: 'Câble non localisé : chercher', ton: 'warn', action: 'chercher', aide: "L'application ne connaît pas encore l'emplacement du câble sur le Wi-Fi." };
+    case 'muet': return { texte: 'Câble introuvable : chercher', ton: 'bad', action: 'chercher', aide: 'Le câble ne répond pas. Est-il branché à la prise murale ?' };
+    case 'hors_wifi': return { texte: 'Hors Wi-Fi maison : réessayer', ton: 'warn', action: 'reessayer', aide: 'Connectez le téléphone au Wi-Fi de la maison, puis réessayez.' };
     case 'verification': return { texte: 'Vérification du câble…', ton: 'neutre', action: null, aide: null };
     case 'recherche': return { texte: 'Recherche du câble…', ton: 'neutre', action: null, aide: null };
-    default: return { texte: 'Câble indisponible', ton: 'bad', action: 'reessayer', aide: "L'état du câble n'a pas pu être lu." };
+    default: return { texte: 'Câble indisponible : réessayer', ton: 'bad', action: 'reessayer', aide: "L'état du câble n'a pas pu être lu." };
   }
 }
 
@@ -83,15 +87,87 @@ export function plageRelue(res) {
   return { debut: d ? d[1] : undefined, fin: f ? f[1] : undefined };
 }
 
+// ---------- Plage lue sur le câble (à l'ouverture, après une recherche, après « Programmer ») ----------
+// Plage connue : { debut, fin, active } (fin peut manquer), ou null. Sources :
+//   - lecture de l'état (local.js etatCable, ou GET /api/etat du service) : { etat: 'pret', plage: { debut, fin, plage_active } } ;
+//   - résultat « ok » d'un envoi (service.js) : relu par plageRelue.
+// Aucun autre champ n'est lu : sans plage exploitable, la page n'affiche rien de plus que la pastille.
+export function plageDuCable(r) {
+  if (!r) return null;
+  let debut, fin, active = true;
+  if (r.etat === 'pret' && r.plage && typeof r.plage === 'object') {
+    debut = r.plage.debut; fin = r.plage.fin;
+    if (r.plage.plage_active === false) active = false;
+  } else if (r.etat === 'ok') {
+    ({ debut, fin } = plageRelue(r));
+  } else return null;
+  if (typeof debut !== 'string' || !HEURE_RE.test(debut)) return null;
+  return { debut, fin: typeof fin === 'string' && HEURE_RE.test(fin) ? fin : undefined, active };
+}
+
+// Plage « pas de charge » : début = fin - 1 minute (la charge de cette nuit ne peut pas démarrer).
+export function plageSansCharge(plage) {
+  return !!plage && !!plage.fin && plage.debut === moinsUneMinute(plage.fin);
+}
+
+// Ligne sous la pastille, ou null si la plage n'est pas connue.
+export function ligneCable(plage) {
+  if (!plage) return null;
+  if (plage.active === false) return 'Câble : plage désactivée (' + plage.debut + (plage.fin ? ' → ' + plage.fin : '') + ')';
+  if (plageSansCharge(plage)) return 'Câble réglé sur : pas de charge';
+  return 'Câble réglé : ' + plage.debut + (plage.fin ? ' → ' + plage.fin : '');
+}
+
+// Le câble a-t-il déjà ce qu'on s'apprête à lui envoyer ? Alors « Programmer » n'a rien à faire (aucun envoi inutile).
+export function dejaProgramme(plage, demande) {
+  if (!plage || !demande || plage.active === false) return false;
+  if (demande.desactiver) return plageSansCharge(plage);
+  return typeof demande.allumage === 'string' && plage.debut === demande.allumage;
+}
+
+// Texte principal du bouton quand le câble a déjà la plage demandée.
+export function libelleDejaProgramme(demande) {
+  return demande && demande.desactiver ? 'Déjà réglé : pas de charge' : 'Déjà programmé à ' + (demande ? demande.allumage : '--:--');
+}
+
+// ---------- Quand la programmation a lieu ----------
+// Contexte horaire de la demande, pour la sous-ligne du bouton :
+//   'immediat'      : l'heure de début calculée est déjà passée dans la nuit en cours (le câble démarre tout de suite) ;
+//   'cette_nuit'    : on programme en journée, pour la nuit qui vient (après la fin des heures creuses) ;
+//   null            : rien à dire (ou nuit de changement d'heure : pas de prévision).
+// startRel : début calculé en minutes depuis le début des heures creuses (négatif s'il précède les heures creuses).
+export function contexteHoraire({ maintenant, hcStart, hcEnd, startRel, nuitChangement }) {
+  if (!(maintenant instanceof Date) || isNaN(maintenant.getTime()) || nuitChangement || !Number.isFinite(startRel)) return null;
+  const s = hm(hcStart), e = hm(hcEnd);
+  const rel = (x) => ((x - s) % 1440 + 1440) % 1440;
+  const longueur = rel(e) || 1440;
+  const t = rel(maintenant.getHours() * 60 + maintenant.getMinutes());
+  if (t < longueur) return startRel <= t ? 'immediat' : null; // dans les heures creuses
+  // Hors heures creuses : un début avant les heures creuses (startRel < 0) peut déjà être passé ce soir.
+  return startRel < 0 && t >= startRel + 1440 ? 'immediat' : 'cette_nuit';
+}
+
 // Sous-ligne du bouton Programmer, par ordre de priorité.
-export function sousLigneBouton({ occupe, delaiS, demande, confirme, reussi, blocage, secondaire, attente }) {
+export function sousLigneBouton({ occupe, delaiS, demande, confirme, reussi, blocage, secondaire, attente, deja }) {
   if (attente) return sousLigneAttente(attente);
   if (occupe) return "patientez, jusqu'à " + delaiS + " secondes";
   if (!demande) return 'saisie à corriger';
   if (!confirme) return "confirmez la batterie ci-dessus";
   if (reussi) return reussi;
+  if (deja) return 'rien à envoyer';
   if (blocage) return blocage;
   return secondaire || '';
+}
+
+// Premier lancement ou données effacées : pas de « dernière valeur » à confirmer.
+export const LIBELLES_SOC = {
+  derniere: 'Dernière valeur, à confirmer',
+  aucune: 'Entrez votre batterie',
+};
+
+// Heure du bloc principal tant que la batterie n'est pas confirmée : « d'après 38 % ».
+export function mentionProvisoire(soc) {
+  return Number.isFinite(soc) ? "d'après " + Math.round(soc) + " %, à confirmer" : '';
 }
 
 // Compte à rebours de la recherche : secondes entières restantes (jamais négatif), ou null sans échéance.

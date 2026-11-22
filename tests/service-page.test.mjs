@@ -101,7 +101,8 @@ describe("Interprétation : OK seulement si tout est conforme", () => {
   test("plage courte : OK avec les heures relues", () => {
     const r = interpreterReponse(desact, 200, courteRep);
     assert.equal(r.etat, "ok");
-    assert.equal(r.message, "Pas de charge cette nuit : plage réduite à une minute (05:59–06:00), inutile de brancher.");
+    assert.equal(r.message, "Le câble ne chargera pas cette nuit (05:59–06:00), inutile de brancher.");
+    assert.equal(r.rappel, "Demain soir, reprogrammez : sinon la voiture ne chargera pas.");
     assert.equal(interpreterReponse(desact, 200, { ...courteRep, debut: "23:59", fin: "00:00" }).etat, "ok");
   });
   test("plage courte : KO si courte absent, plage inactive ou début incohérent", () => {

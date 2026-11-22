@@ -122,7 +122,8 @@ describe('Programmer en local (règle 2 : jamais d\'échec silencieux)', () => {
     const c = client();
     const r = await programmerLocal({ desactiver: true }, { client: c }, '06:00');
     assert.equal(r.etat, 'ok', JSON.stringify(r));
-    assert.match(r.message, /Pas de charge cette nuit : plage réduite à une minute \(05:59–06:00\)/);
+    assert.match(r.message, /Le câble ne chargera pas cette nuit \(05:59–06:00\)/);
+    assert.equal(r.rappel, 'Demain soir, reprogrammez : sinon la voiture ne chargera pas.');
     assert.deepEqual(c.journal.programmes.map((x) => x.action), [{ desactiver: true }]);
     assert.deepEqual(c.journal.programmes[0].params, { ip: '192.168.1.48' });
   });
@@ -130,6 +131,7 @@ describe('Programmer en local (règle 2 : jamais d\'échec silencieux)', () => {
     const c = client();
     const r = await programmerLocal({ allumage: '23:45', autre: 'x', courant: 10 }, { client: c }, '06:00');
     assert.equal(r.etat, 'ok', JSON.stringify(r));
+    assert.equal(r.rappel, 'Pensez à brancher la voiture ce soir.');
     assert.ok(/Charge programmée : démarrage 23:45|Démarrage immédiat/.test(r.message), r.message);
     assert.deepEqual(c.journal.programmes.map((x) => x.action), [{ allumage: '23:45' }], 'rien d\'autre que l\'heure n\'est transmis');
   });
@@ -155,7 +157,8 @@ describe('Programmer en local (règle 2 : jamais d\'échec silencieux)', () => {
   });
   test('délai : incertain, « Vérifiez dans Smart Life » ; exception : ko local_format ; relu différent : ko', async () => {
     const d = await programmerLocal({ allumage: '23:45' }, { client: client({ programmer: { ok: false, erreur: 'delai', ecrit: true } }) }, '06:00');
-    assert.deepEqual([d.code, d.incertain, d.verifier], ['local_delai', true, 'Vérifiez dans Smart Life.']);
+    assert.deepEqual([d.code, d.incertain, d.verifier], ['local_delai', true, 'Vérifiez dans Smart Life > charge différée : début 23:45, activée.']);
+    assert.match(d.message, /Fermez Smart Life s'il est ouvert, puis réessayez\.$/);
     const x = await programmerLocal({ allumage: '23:45' }, { client: client({ programmer: () => { throw new Error('boum'); } }) }, '06:00');
     assert.equal(x.code, 'local_format');
     const f = await programmerLocal({ allumage: '23:45' }, { client: client({ programmer: { ok: true, debut: '23:50', fin: '06:00', plage_active: true } }) }, '06:00');

@@ -125,7 +125,7 @@ describe("Nuits de changement d'heure : propriétés sur tous les % de départ",
     }
   }
   test("une nuit ordinaire donne exactement le même plan avec ou sans nuit nulle", () => {
-    for (let soc = 0; soc <= 100; soc += 3) assert.deepEqual({ ...plan({ ...DEFAUT, soc }), versMurale: 0 }, { ...plan({ ...DEFAUT, soc, nuit: null }), versMurale: 0 });
+    for (let soc = 0; soc <= 100; soc += 3) { const a = plan({ ...DEFAUT, soc }), b = plan({ ...DEFAUT, soc, nuit: null }); for (const k of ["vraie", "murale"]) { delete a[k]; delete b[k]; } assert.deepEqual(a, b); }
   });
   test("une valeur de décalage inconnue est ignorée", () => {
     assert.equal(plan({ ...DEFAUT, nuit: { decalage: 30, minute: 120 } }).start, plan(DEFAUT).start);

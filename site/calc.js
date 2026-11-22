@@ -101,7 +101,7 @@ export function plan(p) {
   var limit = preRel < hcLen ? preRel : hcLen;
   var need = p.target - p.soc - preGain;
   var r = { usable: usable, P: P, pctPerHour: pctPerHour, preGain: preGain, hcLen: hcLen, preRel: preRel, depRel: depRel, hcS: hcS, preS: preS, dep: dep };
-  r.versMurale = function (x) { return hcS + murale(x); }; // minutes réelles depuis le début des HC -> heure murale (minutes)
+  r.vraie = vraie; r.murale = murale; // conversions (relatives au début des HC) pour la frise ; identité hors nuit de changement d'heure
   // need non fini = cible, batterie ou préconditionnement vide : refusé plutôt que « ok » avec des heures NaN:NaN.
   if (!(usable > 0) || !(pctPerHour > 0) || !isFinite(need)) { r.status = "err"; return r; }
   if (need <= 0) {

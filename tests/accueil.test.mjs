@@ -75,10 +75,12 @@ describe('Pastille d\'état du câble', () => {
     assert.deepEqual(pastille('pret'), { texte: 'Câble prêt', ton: 'ok', action: null, aide: null });
   });
   test('états en échec : texte sans jargon et action', () => {
-    assert.equal(pastille('muet').texte, 'Câble introuvable');
+    assert.equal(pastille('muet').texte, 'Câble introuvable : chercher');
     assert.equal(pastille('muet').action, 'chercher');
-    assert.equal(pastille('hors_wifi').texte, 'Hors Wi-Fi maison');
-    assert.deepEqual(['a_relier', 'cle', 'sans_adresse'].map((e) => pastille(e).texte), ['Câble à relier', 'Clé du câble à saisir', 'Câble à localiser']);
+    assert.equal(pastille('hors_wifi').texte, 'Hors Wi-Fi maison : réessayer');
+    // Constat, deux-points, verbe : ce que le toucher fait.
+    assert.deepEqual(['a_relier', 'cle', 'sans_adresse'].map((e) => pastille(e).texte), ['Câble non relié : relier', 'Clé refusée : saisir la clé', 'Câble non localisé : chercher']);
+    assert.equal(pastille('erreur').texte, 'Câble indisponible : réessayer');
     assert.equal(pastille('a_relier').action, 'relier');
     assert.equal(pastille('cle').action, 'relier');
     assert.equal(pastille('sans_adresse').action, 'chercher');

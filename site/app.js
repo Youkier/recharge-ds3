@@ -1,12 +1,12 @@
 import { plan, hm, fmt, fdur, fr, eur, effAuto, nuitChangementHeure, soirDe, soirSimule, texteChangementHeure } from "./calc.js";
 import { lignesValides, marques, modeles, versions, trouver } from "./vehicules.js";
-import { validerAdresse, validerJeton, choisirDemande, libelleBouton, envoyer, resultatKo } from "./service.js";
-import { confirmationValable, blocageCable, plageRelue, sousLigneBouton, socValide, moyenEnvoi, boutonActif, programmerSelonMoyen, pastille, secondesRestantes, rechercheAutomatique, decisionEnvoi, attenteExpiree, suiviWifiActif, etapeAttente, lectureDue, quitterSiCache, confValable, plafondDepasse, PREPARATION_MAX_MS, ENVOI_PLAFOND_MS, resultatNotification, heureNotification, suiteLecture, codeEcheance, LIBELLES_ATTENTE, ATTENTE_SONDE_MS, SUIVI_PASTILLE_MS } from "./accueil.js";
+import { validerAdresse, validerJeton, choisirDemande, libelleBouton, envoyer, resultatKo, lireEtatService, RAPPEL_REPROGRAMMER } from "./service.js";
+import { confirmationValable, blocageCable, plageRelue, plageDuCable, ligneCable, dejaProgramme, libelleDejaProgramme, contexteHoraire, LIBELLES_SOC, mentionProvisoire, sousLigneBouton, socValide, moyenEnvoi, boutonActif, programmerSelonMoyen, pastille, secondesRestantes, rechercheAutomatique, decisionEnvoi, attenteExpiree, suiviWifiActif, etapeAttente, lectureDue, quitterSiCache, confValable, plafondDepasse, PREPARATION_MAX_MS, ENVOI_PLAFOND_MS, resultatNotification, heureNotification, suiteLecture, codeEcheance, LIBELLES_ATTENTE, ATTENTE_SONDE_MS, SUIVI_PASTILLE_MS } from "./accueil.js";
 
 (function () {
   var DEFAULTS = { cap: 46, soh: 95, target: 80, dep: "07:30", hcStart: "22:00", hcEnd: "06:00", amp: 16, volt: 230, eff: 90, pHC: 0.146688, pHP: 0.196476, mode: "end", soc: 38 };
   var AMPS = [6, 8, 10, 13, 16, 32]; // câble : 6 à 16 A (x_adjust_current, docs/tuya-findings.md) ; 32 A = borne 7,4 kW
-  var KEY = "recharge-ds3-v1"; // clé inchangée depuis la phase 1 : aucun paramètre perdu
+  var KEY = "recharge-ds3-v1"; // clé identique depuis la phase 1 : aucun paramètre perdu
   var ids = ["cap", "soh", "target", "dep", "hcStart", "hcEnd", "amp", "volt", "eff", "pHC", "pHP", "mode"];
   var NUMS = ["cap", "soh", "target", "amp", "volt", "eff", "pHC", "pHP"];
   var CAR = ["cap", "soh"], CABLE = ["amp", "volt", "eff"];
@@ -26,10 +26,15 @@ import { confirmationValable, blocageCable, plageRelue, sousLigneBouton, socVali
 
   // Dernières valeurs valides de chaque champ : sert à l'enregistrement et à l'aide.
   var cur = Object.assign({}, DEFAULTS);
+  // Premier lancement ou données effacées : aucun réglage enregistré (réglages par défaut), ou aucune dernière batterie.
+  var KEY_DEFAUTS = "recharge-ds3-defauts-vus";
+  var reglagesParDefaut = false, socEnregistre = false;
 
   function load() {
     var s = null;
     try { s = JSON.parse(localStorage.getItem(KEY) || "null"); } catch (e) { s = null; }
+    reglagesParDefaut = !(s && typeof s === "object");
+    socEnregistre = !!(s && typeof s === "object" && socValide(s.soc) !== null);
     var p = Object.assign({}, DEFAULTS);
     if (s && typeof s === "object") Object.keys(DEFAULTS).forEach(function (k) { if (s[k] !== null && s[k] !== undefined) p[k] = s[k]; });
     if (AMPS.indexOf(Number(p.amp)) < 0) { // ancienne valeur saisie à la main, absente de la liste
@@ -38,9 +43,14 @@ import { confirmationValable, blocageCable, plageRelue, sousLigneBouton, socVali
       if (isFinite(e)) p.eff = e;
     }
     ids.forEach(function (k) { setVal(k, p[k]); });
-    $("soc").value = p.soc;
+    $("soc").value = socEnregistre ? p.soc : ""; // sans dernière valeur : le champ reste vide (« Entrez votre batterie »)
   }
-  function save(p) { try { localStorage.setItem(KEY, JSON.stringify(p)); } catch (e) {} }
+  // La batterie par défaut n'est jamais enregistrée comme si elle avait été saisie.
+  function save(p) {
+    var c = Object.assign({}, p);
+    if (!socEnregistre) delete c.soc;
+    try { localStorage.setItem(KEY, JSON.stringify(c)); } catch (e) {}
+  }
 
   var LABELS = { cap: "Capacité utile", soh: "SOH", target: "Batterie visée", dep: "Heure de départ", hcStart: "Début heures creuses", hcEnd: "Fin heures creuses", amp: "Courant de charge", volt: "Tension", eff: "Rendement de charge", pHC: "Prix heures creuses", pHP: "Prix heures pleines", soc: "Batterie à l'arrivée" };
   var TIME_RE = /^\d{1,2}:\d{2}$/;
@@ -128,19 +138,39 @@ import { confirmationValable, blocageCable, plageRelue, sousLigneBouton, socVali
     $("lblDep").textContent = fills.dep;
   }
 
+  // Nuit de changement d'heure (dernier dimanche de mars ou d'octobre) : null ou { sens, decalage, minute }, voir calc.js.
+  // L'adresse ?soir=AAAA-MM-JJ simule le soir, seulement sur la machine locale (essais).
+  function soirCourant() { return soirSimule(location.search, location.hostname) || soirDe(new Date(), cur.hcStart, cur.hcEnd); }
+  function cleSoir() { var d = soirCourant(); return typeof d === "string" ? d : d.getFullYear() + "-" + (d.getMonth() + 1) + "-" + d.getDate(); }
+  var soirAffiche = null, dernierPlan = null, dernierNuit = null;
+
   function render() {
     var rd = read(), p = rd.p, bad = rd.bad, sansPrix = rd.sansPrix;
-    mark(bad);
+    mark(bad.filter(function (k) { return k !== "soc" || String($("soc").value).trim() !== ""; })); // batterie vide : attendue, pas en erreur
     // Enregistre uniquement les champs valides : les autres gardent leur dernière valeur valide.
     ids.forEach(function (k) { if (bad.indexOf(k) < 0 && sansPrix.indexOf(k) < 0) cur[k] = p[k]; });
-    if (bad.indexOf("soc") < 0) cur.soc = p.soc;
+    if (bad.indexOf("soc") < 0) { cur.soc = p.soc; socEnregistre = true; }
     save(cur);
+    var nuit = nuitChangementHeure(soirCourant());
+    soirAffiche = cleSoir(); dernierNuit = nuit; dernierPlan = null;
+    $("dstBanner").textContent = texteChangementHeure(nuit);
+    $("dstBanner").hidden = !nuit;
     updateStatic();
     syncStepper();
 
     var pe = $("paramErr");
     pe.hidden = true;
 
+    if (bad.length === 1 && bad[0] === "soc" && String($("soc").value).trim() === "") {
+      // Batterie pas encore saisie : on l'attend, ce n'est pas une erreur.
+      clearResults();
+      setHero("attente", "Heure d'allumage", [el("p", "alt-text", "Elle s'affichera dès que la batterie est saisie.")]);
+      announce("Entrez votre batterie");
+      drawAide(null, null);
+      setDemande(null);
+      majProvisoire();
+      return;
+    }
     if (bad.length) {
       clearResults();
       var pbad = bad.filter(function (k) { return k !== "soc"; });
@@ -161,7 +191,8 @@ import { confirmationValable, blocageCable, plageRelue, sousLigneBouton, socVali
       return;
     }
 
-    var r = plan(p);
+    var r = plan(Object.assign({}, p, { nuit: nuit }));
+    dernierPlan = r;
     if (r.status === "err") {
       clearResults();
       setHero("bad", "Paramètres incomplets", [el("p", "alt-text", "Vérifiez la capacité, le SOH, le courant, la tension et le rendement : ils doivent être supérieurs à zéro.")]);
@@ -175,7 +206,7 @@ import { confirmationValable, blocageCable, plageRelue, sousLigneBouton, socVali
     var sv = startVaries(p, r);
 
     if (r.status === "none") {
-      setHero("none", "Pas de charge nécessaire", [el("p", "alt-text", "Réglez le début de la plage à une minute avant la fin des heures creuses (" + fmt(hm(cur.hcEnd) - 1) + ") dans Smart Life, ou ne branchez pas la voiture.")]);
+      setHero("none", "Pas de charge nécessaire", [el("p", "alt-text", "Réglez le début de la plage à une minute avant la fin des heures creuses (" + fmt(hm(cur.hcEnd) - 1) + ") dans Smart Life, ou ne branchez pas la voiture."), el("p", "alt-text", RAPPEL_REPROGRAMMER)]);
       announce("Pas de charge nécessaire");
     } else if (!reached) {
       var t1 = el("p", "alt-text", "Environ " + Math.round(r.arrival) + " % au départ au lieu de " + p.target + " %, même en démarrant au plus tôt.");
@@ -190,7 +221,7 @@ import { confirmationValable, blocageCable, plageRelue, sousLigneBouton, socVali
       $("kSmall").textContent = sv ? "Éteindre à" : "Allumer à";
       $("tSmall").textContent = fmt(sv ? r.end : r.start);
       // En mode « commencer à », une charge qui doit débuter avant les heures creuses change aussi l'arrêt.
-      $("tagSmall").textContent = (p.mode === "start" && sv) ? "à régler aussi" : "inchangé";
+      $("tagSmall").textContent = (p.mode === "start" && sv) ? "à régler aussi" : "déjà réglé";
       var note = $("heroNote");
       if (r.status === "short") {
         note.hidden = false;
@@ -198,6 +229,7 @@ import { confirmationValable, blocageCable, plageRelue, sousLigneBouton, socVali
       } else note.hidden = true;
       announce((sv ? "Allumer la prise à " : "Éteindre à ") + fmt(sv ? r.start : r.end));
     }
+    majProvisoire();
 
     // Tuiles
     $("fArr").textContent = Math.round(r.arrival) + " %";
@@ -253,9 +285,11 @@ import { confirmationValable, blocageCable, plageRelue, sousLigneBouton, socVali
 
     tk.textContent = "";
     var step = total > 14 * 60 ? 240 : 120; // nuit très longue (charge bien avant les HC) : toutes les 4 h, sinon illisible
+    // Graduations en heures murales (xw, depuis le début des HC) ; la position suit les minutes réelles (x). Nuit ordinaire : xw = x.
     var first = Math.ceil((r.hcS + o) / step) * step - r.hcS;
-    for (var x = first; x <= endX; x += step) {
-      var s = el("span", null, fmt(r.hcS + x).slice(0, 2) + " h");
+    for (var xw = first; r.vraie(xw) <= endX; xw += step) {
+      var x = r.vraie(xw);
+      var s = el("span", null, fmt(r.hcS + xw).slice(0, 2) + " h");
       s.style.left = pc(x);
       if (x - o < 20) s.className = "first";
       else if (endX - x < 20) s.className = "last";
@@ -307,7 +341,16 @@ import { confirmationValable, blocageCable, plageRelue, sousLigneBouton, socVali
     confirmeLe = oui ? Date.now() : null;
     $("socCard").className = "card soc-card" + (oui ? "" : " unconfirmed");
     $("socHint").hidden = oui;
+    majProvisoire();
     updateSend();
+  }
+  // Tant que la batterie n'est pas confirmée, l'heure vient de la dernière valeur : bloc atténué, « d'après 38 % ».
+  function majProvisoire() {
+    var on = !confirme && !$("heroPlan").hidden;
+    $("hero").classList.toggle("provisoire", on);
+    var f = $("heroFrom");
+    f.hidden = !on;
+    f.textContent = on ? mentionProvisoire(socValide($("soc").value)) : "";
   }
   function syncStepper() {
     var v = Number($("soc").value), empty = String($("soc").value).trim() === "";
@@ -316,6 +359,9 @@ import { confirmationValable, blocageCable, plageRelue, sousLigneBouton, socVali
     var n = socValide($("soc").value);
     $("socRange").value = $("soc").value.trim() === "" || !isFinite(v) ? cur.soc : Math.min(100, Math.max(0, v));
     $("keepBtn").textContent = "Garder " + (n === null ? cur.soc : n) + " %";
+    // Aucune dernière valeur (premier lancement, champ vide) : rien à garder, on invite à saisir.
+    $("socHintText").textContent = empty ? LIBELLES_SOC.aucune : LIBELLES_SOC.derniere;
+    $("keepBtn").hidden = empty;
   }
   function bump(d) {
     var raw = String($("soc").value).trim(), v = Number(raw);
@@ -482,6 +528,7 @@ import { confirmationValable, blocageCable, plageRelue, sousLigneBouton, socVali
   }
   var att = null, controle = false; // att : attente du Wi-Fi en cours ; controle : contrôle du réseau au toucher
   var demande = null, busy = false, alertKey = null, moyen = null, reussi = null, etatCable = null, debugPont = false;
+  var plageCable = null; // plage lue sur le câble { debut, fin, active } ; null = inconnue (la ligne « Câble réglé » est alors masquée)
   var pontOk = !!(globalThis.PontLocal && typeof globalThis.PontLocal.postMessage === "function");
 
   function lsGet(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
@@ -570,17 +617,20 @@ import { confirmationValable, blocageCable, plageRelue, sousLigneBouton, socVali
     svcSummary();
     var b = $("sendBtn"), help = $("sendHelp");
     var occ = busy || !!localEnVol || !!att; // un envoi local dont le plafond est tombé tourne encore : pas de second envoi
-    var lab = libelleBouton(demande);
+    var ctx = demande && dernierPlan ? contexteHoraire({ maintenant: new Date(), hcStart: cur.hcStart, hcEnd: cur.hcEnd, startRel: dernierPlan.startRel, nuitChangement: !!dernierNuit }) : null;
+    var lab = libelleBouton(demande, ctx);
     moyen = moyenEnvoi({ pont: pontOk, adresse: svc.adresse, jeton: svc.jeton });
-    $("sendMain").textContent = att ? LIBELLES_ATTENTE.principal : occ ? "Envoi en cours…" : (lab ? lab.principal : "Programmer la charge");
+    // Le câble a déjà la plage demandée : rien à envoyer (seulement quand la batterie est confirmée).
+    var deja = confirme && dejaProgramme(plageCable, demande);
+    $("sendMain").textContent = att ? LIBELLES_ATTENTE.principal : occ ? "Envoi en cours…" : deja ? libelleDejaProgramme(demande) : (lab ? lab.principal : "Programmer la charge");
     var cle = demande ? JSON.stringify(demande) : null;
     $("sendSub").textContent = sousLigneBouton({
       attente: att ? att.etape : null, occupe: occ, delaiS: moyen === "local" ? 30 : 25, demande: demande, confirme: confirme,
-      reussi: reussi && reussi.cle === cle ? "programmé à " + reussi.heure + " · relu sur le câble" : null,
+      reussi: reussi && reussi.cle === cle ? "programmé à " + reussi.heure + " · relu sur le câble" : null, deja: deja,
       blocage: moyen === "local" ? blocageCable(etatCable) : null,
       secondaire: lab ? lab.secondaire : "",
     });
-    b.disabled = !boutonActif({ moyen: moyen, demande: demande, confirme: confirme, occupe: occ });
+    b.disabled = !boutonActif({ moyen: moyen, demande: demande, confirme: confirme, occupe: occ, dejaProgramme: deja });
     b.classList.toggle("attente", !b.disabled && moyen === "local" && !!blocageCable(etatCable));
     // Sans moyen d'envoi, la barre est masquée : réglage manuel avec l'heure affichée (voir Aide).
     $("sendBar").hidden = !moyen;
@@ -603,6 +653,7 @@ import { confirmationValable, blocageCable, plageRelue, sousLigneBouton, socVali
     if (res.etat === "ok") {
       a.appendChild(el("p", "alert-title", res.message));
       if (res.detail) a.appendChild(el("p", null, res.detail));
+      if (res.rappel) a.appendChild(el("p", null, res.rappel));
       if (res.avertissement) a.appendChild(el("p", "manual", res.avertissement));
     } else {
       a.appendChild(el("p", "alert-title", res.titre || "Programmation non confirmée"));
@@ -889,6 +940,9 @@ import { confirmationValable, blocageCable, plageRelue, sousLigneBouton, socVali
         var pr = plageRelue(res);
         notifierFin(opts.a, resultatNotification({ res: res }), !!(res && res.etat === "ko" && res.incertain), heureNotification({ demande: d, finHC: finHC, debutRelu: pr.debut }));
       }
+      // Plage du câble : relue dans un envoi réussi ; inconnue si le résultat est incertain (la ligne disparaît).
+      if (res && res.etat === "ok") majPlage(plageDuCable(res));
+      else if (res && res.incertain) majPlage(null);
       setDemande(demande); // la demande a pu changer pendant l'envoi
       if (m === "local") {
         var pl = plageRelue(res);
@@ -932,9 +986,18 @@ import { confirmationValable, blocageCable, plageRelue, sousLigneBouton, socVali
     var act = $("cableAction");
     act.hidden = !label; act.textContent = label || ""; act.setAttribute("data-action", action || "");
   }
+  // Ligne « Câble réglé : 00:35 → 06:00 » sous la pastille, seulement quand la plage a été lue.
+  function majPlage(plage) {
+    plageCable = plage || null;
+    var t = ligneCable(plageCable);
+    $("cablePlage").hidden = !t;
+    $("cablePlage").textContent = t || "";
+    updateSend();
+  }
   function pastilleMontre(etat) {
     var d = pastille(etat);
     if (etat !== "verification" && etat !== "recherche") etatCable = etat;
+    if (etat !== "pret" && etat !== "verification") majPlage(null); // pastille d'échec ou recherche : rien de plus que la pastille
     var interactive = !!(d.aide || d.action);
     $("pill").hidden = !interactive; $("pillFixe").hidden = interactive;
     var box = interactive ? $("pill") : $("pillFixe");
@@ -952,6 +1015,7 @@ import { confirmationValable, blocageCable, plageRelue, sousLigneBouton, socVali
       journal({ action: "page-etat", etat: r.etat });
       if (cherche) return;
       pastilleMontre(r.etat);
+      if (r.etat === "pret") majPlage(plageDuCable(r));
       // Aucune adresse connue (première ouverture, nouvelle clé) : une seule recherche automatique par chargement.
       if (rechercheAutomatique({ etat: r.etat, dejaFaite: rechercheAutoFaite, pont: pontOk })) { rechercheAutoFaite = true; lancerRecherche(true); }
     }).catch(function () { if (!cherche) pastilleMontre("erreur"); });
@@ -960,18 +1024,19 @@ import { confirmationValable, blocageCable, plageRelue, sousLigneBouton, socVali
     if (cherche || opCable) return;
     cherche = true;
     var echeance = null;
+    // Pendant la recherche, seule la pastille reste (le panneau ferait glisser l'écran) ; le compte à rebours est dans la pastille.
     pastilleMontre("recherche");
-    ouvrirPanneau(true); actionPanneau(null);
+    ouvrirPanneau(false);
     function texte() {
       var s = secondesRestantes(echeance, Date.now());
-      $("cableMsg").textContent = s === null ? "Recherche du câble sur le Wi-Fi…" : "Recherche du câble sur le Wi-Fi : au plus " + s + " s.";
+      $("pillSec").textContent = s === null ? "" : " · " + s + " s"; // lecteur d'écran : texte masqué, pas d'annonce chaque seconde
     }
     texte();
     minuteurRecherche = setInterval(texte, 1000);
     var fin = function (r) {
-      clearInterval(minuteurRecherche); cherche = false;
+      clearInterval(minuteurRecherche); cherche = false; $("pillSec").textContent = "";
       journal({ action: "page-chercher", auto: auto === true, ok: !!(r && r.ok), etat: r && r.ok ? "pret" : r && r.etat });
-      if (r && r.ok) { rechercheEchouee = false; pastilleMontre("pret"); ouvrirPanneau(false); return; }
+      if (r && r.ok) { rechercheEchouee = false; pastilleMontre("pret"); majPlage(plageDuCable({ etat: "pret", plage: r.plage })); ouvrirPanneau(false); return; }
       rechercheEchouee = true;
       var e = r && r.etat;
       // Recherche ratée sans aucune adresse connue : le câble reste « à localiser » (Programmer ouvre le panneau,
@@ -979,6 +1044,7 @@ import { confirmationValable, blocageCable, plageRelue, sousLigneBouton, socVali
       var inconnu = etatCable === "sans_adresse";
       pastilleMontre(e === "a_relier" ? "a_relier" : e === "hors_wifi" ? "hors_wifi" : e === "introuvable" ? (inconnu ? "sans_adresse" : "muet") : "erreur");
       if (e === "introuvable") $("cableMsg").textContent = "Aucun câble trouvé sur le Wi-Fi. Vérifiez qu'il est branché, fermez Smart Life s'il est ouvert, puis réessayez.";
+      $("pillSec").textContent = "";
       ouvrirPanneau(true);
     };
     opCableLancer(function () {
@@ -1006,6 +1072,8 @@ import { confirmationValable, blocageCable, plageRelue, sousLigneBouton, socVali
     }
     verifierPlafondEnvoi();
     verifierConfirmation();
+    if (soirAffiche !== null && soirAffiche !== cleSoir() && !busy && !att) render(); // page restée ouverte d'un soir à l'autre : bandeau et calcul
+    else updateSend(); // « pour cette nuit » / « démarre tout de suite » dépendent de l'heure
     if (pontOk && !busy && !att) majEtatCable();
   });
   // Pastille « Hors Wi-Fi maison » : le Wi-Fi est relu toutes les 5 s (page visible seulement, rien en cours) ;
@@ -1026,6 +1094,13 @@ import { confirmationValable, blocageCable, plageRelue, sousLigneBouton, socVali
     hideAlert(); setConfirme(false);
   }
 
+  // Premier lancement ou données effacées : un seul bandeau, tant qu'il n'a pas été vu (lien ou « Masquer »).
+  function defautsVus() { return lsGet(KEY_DEFAUTS) === "1"; }
+  function marquerDefautsVus() { lsSet(KEY_DEFAUTS, "1"); $("bandeauDefauts").hidden = true; }
+  function afficherBandeauDefauts() { $("bandeauDefauts").hidden = !(reglagesParDefaut && !defautsVus()); }
+  $("defautsMasquer").addEventListener("click", marquerDefautsVus);
+  $("defautsLien").addEventListener("click", marquerDefautsVus); // la navigation est faite par le gestionnaire commun
+
   // Stockage persistant : sans lui, Chrome peut vider les réglages et le jeton si le téléphone
   // manque de place. Chrome l'accorde en général à une page installée, sans fenêtre de demande.
   // Facultatif : un refus ou une erreur ne change rien au reste de la page.
@@ -1039,7 +1114,16 @@ import { confirmationValable, blocageCable, plageRelue, sousLigneBouton, socVali
     }).catch(function () { /* stockage ordinaire, la page fonctionne pareil */ });
   }
 
-  hideAlert(); load(); loadService(); chargerVehicules(); render(); setConfirme(false); route(false);
+  hideAlert(); load();
+  // Essais et captures, seulement sur la machine locale : ?soc=38 simule une dernière valeur, &confirme=1 la confirme.
+  var essai = (location.hostname === "127.0.0.1" || location.hostname === "localhost") ? new URLSearchParams(location.search) : null;
+  if (essai && socValide(essai.get("soc")) !== null) { $("soc").value = socValide(essai.get("soc")); socEnregistre = true; }
+  loadService(); chargerVehicules(); render(); setConfirme(!!essai && essai.get("confirme") === "1" && socValide($("soc").value) !== null); route(false);
   if (pontOk) { $("svcBox").hidden = true; majEtatCable(); } // dans l'appli, le service n'est pas joignable : pas de carte service
+  else if (svc.adresse && svc.jeton) {
+    // Mode service (GitHub Pages) : une lecture de la plage, purement informative ; au moindre échec, rien de plus n'est affiché.
+    lireEtatService(svc.adresse, svc.jeton).then(function (r) { if (r && !busy) majPlage(plageDuCable(r)); }, function () { /* sans effet */ });
+  }
+  afficherBandeauDefauts();
   protegerStockage();
 })();
