@@ -5,7 +5,7 @@ import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import {
   validerAdresse, validerJeton, choisirDemande, libelleBouton, consigneManuelle,
-  interpreterReponse, envoyer, envoyerEtAfficher, resultatKo, demandeValide, minutesHeuresPleines, deciderDemande,
+  interpreterReponse, envoyer, resultatKo, demandeValide, minutesHeuresPleines, deciderDemande,
 } from "../site/service.js";
 
 // Contrat du 2026-11-22 : début, fin du plan, durée de charge du plan (minutes) et heure de départ.
@@ -346,25 +346,6 @@ describe("Envoi (fetch simulé)", () => {
     const r = await envoyer("https://a.workers.dev", "t", prog, { onLine: true, fetch: async (u, init) => { if (init.redirect === "error") throw new TypeError("redirect"); return reponse(200, okRep); } });
     assert.equal(r.etat, "ko");
     assert.equal(r.code, "injoignable");
-  });
-});
-
-describe("Envoi et affichage : jamais d'échec silencieux", () => {
-  const reponse = (status, corps) => ({ status, text: async () => JSON.stringify(corps) });
-  test("affichage qui lève : un KO générique avec l'heure à la main est tenté, sans exception", async () => {
-    const vus = [];
-    await envoyerEtAfficher("https://a.workers.dev", "t", prog, (res) => { vus.push(res); if (vus.length === 1) throw new Error("DOM"); }, { onLine: true, fetch: async () => reponse(200, okRep) });
-    assert.equal(vus.length, 2);
-    assert.equal(vus[1].etat, "ko");
-    assert.match(vus[1].manuel, /00:35/);
-  });
-  test("affichage qui lève toujours : la promesse se résout quand même (bouton libéré)", async () => {
-    await envoyerEtAfficher("https://a.workers.dev", "t", prog, () => { throw new Error("DOM"); }, { onLine: true, fetch: async () => reponse(200, okRep) });
-  });
-  test("résultat transmis tel quel à l'affichage", async () => {
-    let vu;
-    await envoyerEtAfficher("https://a.workers.dev", "t", prog, (r) => { vu = r; }, { onLine: true, fetch: async () => reponse(200, okRep) });
-    assert.equal(vu.etat, "ok");
   });
 });
 

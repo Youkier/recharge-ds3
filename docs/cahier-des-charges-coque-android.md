@@ -2,6 +2,17 @@
 
 Rédigé le 2026-11-15. Les lots et les critères d'acceptation sont repris dans `PLAN.md`, phase 3b. Les règles de `CLAUDE.md` s'appliquent ; les deux exceptions demandées sont au § 9.
 
+## 0. État final (E4, 2026-11-22) : ce qui a remplacé l'architecture ci-dessous
+
+Les §§ 3 à 7 décrivent le plan d'origine (protocole en JavaScript embarqué, pont TCP générique). Depuis les décisions des 2026-11-21 et 2026-11-22, l'appli est la suivante ; en cas de contradiction, ce paragraphe fait foi.
+
+- **Le protocole local n'a qu'une implémentation dans l'appli, en Kotlin** (`android/.../cable/` : négociation 3.5, lecture, écriture de `ss`, `se` et `m` du dp 151, relecture, démarrage tardif). `local/tuya-local.js` n'est plus embarqué : il reste pour l'outil PC (`tools/tuya-local.mjs`), aligné sur le même contrat (`{ allumage, fin, duree_min, depart }` ou `{ desactiver, fin }`).
+- **Plus de pont TCP générique.** La page ne dispose que d'opérations fermées (`RoutesPont.kt`, testée) : lire, programmer, chercher, état de la configuration, saisie de la clé, notifications et attente (`attenteDebut`, `attenteEtat`, `attenteAnnuler`, `attenteAcquitter`). La clé et l'identifiant ne traversent jamais la WebView. Seul `TransportTcp` ouvre une connexion (IPv4 privée, port 6668).
+- **Une seule instance d'`OperationsCable` et de `PiloteAttente` par processus** (`ProprietaireCable`), partagées par l'activité (singleTask) et le service.
+- **L'attente est tenue par le natif** : `PiloteAttente` (hébergé par le service de premier plan `AttenteWifi`) attend le Wi-Fi de la maison puis le câble (lecture toutes les 5 s, recherche après 60 s de silence, 10 min au plus), envoie avec une seule règle « jamais de second envoi après une écriture », persiste son état dans un fichier privé sans secret et notifie (textes fixes, début et fin à régler à la main en cas d'échec). La page n'est qu'une vue. Balayer l'appli n'annule rien ; « Annuler » n'agit qu'avant l'envoi ; une attente dont le processus a été tué est signalée au lancement suivant.
+- **Un seul fichier de cas pour la règle « heure passée »** : `tests/plage-tardif-cas.json`, lu par le Worker, la coque et `local/`.
+- Version de mise au point seulement : `android/essai/` (page d'essai), débogage de la WebView, actions par adb, durée d'attente raccourcie (`attente_max_s`), journal du pilote (lignes « ESSAI », sans secret ni adresse).
+
 ## 1. But
 
 Sur le Pixel de Mathieu, la page personnelle avec un bouton « Programmer la charge » qui règle le câble **par le Wi-Fi de la maison**, sans cloud Tuya, sans Worker et sans internet.

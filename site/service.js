@@ -356,13 +356,3 @@ export async function lireEtatService(adresse, jeton, deps = {}) {
     clearTimeout(minuteur);
   }
 }
-
-// Envoie puis affiche le résultat. Ne lève jamais : si l'envoi ou l'affichage échoue, on tente
-// d'afficher un KO générique avec l'heure à régler à la main (règle n°2, pas d'échec silencieux).
-export async function envoyerEtAfficher(adresse, jeton, demande, afficher, deps = {}) {
-  let res;
-  try { res = await envoyer(adresse, jeton, demande, deps); } catch (e) { res = resultatKo(demande, 'inattendue', deps.finHC, deps.maintenant && deps.maintenant()); }
-  try { afficher(res); } catch (e) {
-    try { afficher(resultatKo(demande, 'inattendue', deps.finHC, deps.maintenant && deps.maintenant())); } catch (e2) { /* rien de plus à faire */ }
-  }
-}

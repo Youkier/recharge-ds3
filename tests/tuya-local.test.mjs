@@ -17,6 +17,9 @@ const plage = (m, ss, se, dt = 0) => JSON.stringify({ m, dt, ss, se });
 const dpsBase = (p151 = plage(2, '03:30', '06:00')) => ({ 101: 202, 102: '{"p":0}', 107: '[6,8,10,13,16]', 109: 'WAIT', 150: 16, 151: p151, 152: 16 });
 const cfgDe = (extra = {}) => ({ ip: V.ip, deviceId: V.deviceId, cleLocale: CLE, version: '3.5', pause: sansPause, maintenant: maintenantV, ...extra });
 const FAUX = (opts = {}) => fauxCable({ cle: CLE, dps: dpsBase(), ...opts });
+// Contrat du 2026-11-22 : début, fin de la plage, durée de charge, départ (la fin est écrite à chaque fois) ; « pas de charge » : fin des heures creuses.
+const dem = (h, fin = '06:00') => ({ allumage: h, fin, duree_min: 420, depart: '07:30' });
+const des = (fin = '06:00') => ({ desactiver: true, fin });
 
 describe('Exports (aucune fonction d\'envoi générique)', () => {
   test('seulement lireEtat et programmer', () => {
@@ -74,7 +77,7 @@ describe('Vecteurs produits par tinytuya', () => {
 
   test('écriture : mêmes octets envoyés (négociation, lecture, écriture, relecture) et réponses relues', async () => {
     const t = transportVecteur(V.ecriture.echanges);
-    const r = await programmer(cfgDe({ aleas: aleasDepuis(V.aleas) }), t.transport, V.ecriture.demande);
+    const r = await programmer(cfgDe({ aleas: aleasDepuis(V.aleas) }), t.transport, dem(V.ecriture.demande.allumage));
     assert.deepEqual(r, { ok: true, debut: '00:15', fin: '06:00', plage_active: true });
     assert.deepEqual(t.envoyes, V.ecriture.echanges.map((e) => e.client));
     assert.deepEqual(t.recus, V.ecriture.echanges.flatMap((e) => e.cable));
@@ -89,7 +92,7 @@ describe('Vecteurs produits par tinytuya', () => {
     });
     const recus = [];
     const transport = { ...f.transport, async recevoir(d) { const c = await f.transport.recevoir(d); recus.push(hex(c)); return c; } };
-    const r = await programmer(cfgDe({ aleas: aleasDepuis(V.aleas) }), transport, V.ecriture.demande);
+    const r = await programmer(cfgDe({ aleas: aleasDepuis(V.aleas) }), transport, dem(V.ecriture.demande.allumage));
     assert.equal(r.ok, true);
     assert.deepEqual(f.journal.envoyes.map(hex), V.ecriture.echanges.map((e) => e.client));
     const attendus = V.ecriture.echanges.flatMap((e) => e.cable);
@@ -179,9 +182,9 @@ describe('Clé fausse', () => {
 });
 
 describe('Programmer', () => {
-  test('écriture normale : seuls ss et m changent, relue conforme', async () => {
+  test('écriture normale : seuls ss, se et m changent, relue conforme', async () => {
     const f = FAUX();
-    const r = await programmer(cfgDe(), f.transport, { allumage: '00:15' });
+    const r = await programmer(cfgDe(), f.transport, dem('00:15'));
     assert.deepEqual(r, { ok: true, debut: '00:15', fin: '06:00', plage_active: true });
     assert.equal(f.journal.ecritures.length, 1);
     const { entete, corps } = f.journal.ecritures[0];
@@ -193,21 +196,21 @@ describe('Programmer', () => {
     assert.equal(corps.data.dps['151'], plage(2, '00:15', '06:00'));
     assert.equal(f.journal.fermetures, 1);
   });
-  test('plage inactive : m repasse à 2, dt et se recopiés', async () => {
+  test('plage inactive : m repasse à 2, dt recopié, se = fin demandée (écrite à chaque fois)', async () => {
     const f = FAUX({ dps: dpsBase(plage(0, '03:30', '06:15', 3)) });
-    const r = await programmer(cfgDe(), f.transport, { allumage: '01:00' });
+    const r = await programmer(cfgDe(), f.transport, dem('01:00'));
     assert.equal(r.ok, true);
-    assert.equal(f.journal.ecritures[0].corps.data.dps['151'], plage(2, '01:00', '06:15', 3));
+    assert.equal(f.journal.ecritures[0].corps.data.dps['151'], plage(2, '01:00', '06:00', 3));
   });
   test('déjà réglé : rien n\'est envoyé', async () => {
     const f = FAUX();
-    const r = await programmer(cfgDe(), f.transport, { allumage: '03:30' });
+    const r = await programmer(cfgDe(), f.transport, dem('03:30'));
     assert.deepEqual(r, { ok: true, debut: '03:30', fin: '06:00', plage_active: true });
     assert.deepEqual(f.journal.ecritures, []);
   });
   test('simulation : tout sauf l\'écriture', async () => {
     const f = FAUX();
-    const r = await programmer(cfgDe({ simuler: true }), f.transport, { allumage: '00:15' });
+    const r = await programmer(cfgDe({ simuler: true }), f.transport, dem('00:15'));
     assert.equal(r.ok, true);
     assert.equal(r.simulation, true);
     assert.equal(r.a_ecrire.debut, '00:15');
@@ -217,56 +220,65 @@ describe('Programmer', () => {
   test('trame coupée en deux et deux réponses dans une trame', async () => {
     for (const opts of [{ decouper: true }, { grouper: true }, { decouper: true, grouper: true }]) {
       const f = FAUX(opts);
-      const r = await programmer(cfgDe(), f.transport, { allumage: '00:15' });
+      const r = await programmer(cfgDe(), f.transport, dem('00:15'));
       assert.equal(r.ok, true, JSON.stringify(opts));
       assert.equal(f.journal.ecritures.length, 1);
     }
   });
   test('sans accusé ni annonce : la relecture décide', async () => {
     const f = FAUX({ sansAccuse: true });
-    assert.equal((await programmer(cfgDe(), f.transport, { allumage: '00:15' })).ok, true);
+    assert.equal((await programmer(cfgDe(), f.transport, dem('00:15'))).ok, true);
   });
 
-  test('heure déjà passée dans la plage : démarrage immédiat à l\'heure de Paris (hiver)', async () => {
-    const f = FAUX(); // plage 03:30-06:00 ; 03:10 UTC = 04:10 à Paris en hiver
-    const r = await programmer(cfgDe({ maintenant: () => new Date('2026-11-17T03:10:00Z') }), f.transport, { allumage: '03:30' });
-    assert.deepEqual(r, { ok: true, debut: '04:10', fin: '06:00', plage_active: true, immediat: true });
-    assert.equal(f.journal.ecritures[0].corps.data.dps['151'], plage(2, '04:10', '06:00'));
+  // Démarrage tardif (décision du 2026-11-22) : début = maintenant + 10 min, fin = min(début + durée, départ). Les cas détaillés sont dans
+  // tests/plage-tardif-cas.json (tuya-local-cas.test.mjs) ; ici, l'écriture réelle contre le faux câble.
+  test("heure de début déjà passée : démarrage tardif à l'heure de Paris (hiver), fin bornée par le départ", async () => {
+    const f = FAUX(); // 03:10 UTC = 04:10 à Paris en hiver : début 03:30 passé -> 04:20 ; fin = min(04:20 + 7 h, départ 07:30)
+    const r = await programmer(cfgDe({ maintenant: () => new Date('2026-11-17T03:10:00Z') }), f.transport, dem('03:30'));
+    assert.deepEqual(r, { ok: true, debut: '04:20', fin: '07:30', plage_active: true, tardif: true });
+    assert.equal(f.journal.ecritures[0].corps.data.dps['151'], plage(2, '04:20', '07:30'));
   });
-  test('heure déjà passée : fuseau de Paris en été, quel que soit le fuseau du système', async () => {
+  test('démarrage tardif : fuseau de Paris en été, quel que soit le fuseau du système', async () => {
     const f = FAUX(); // 02:10 UTC = 04:10 à Paris en été (UTC+2)
-    const r = await programmer(cfgDe({ maintenant: () => new Date('2026-07-01T02:10:00Z') }), f.transport, { allumage: '03:30' });
-    assert.equal(r.debut, '04:10');
-    assert.equal(r.immediat, true);
+    const r = await programmer(cfgDe({ maintenant: () => new Date('2026-07-01T02:10:00Z') }), f.transport, dem('03:30'));
+    assert.equal(r.debut, '04:20');
+    assert.equal(r.tardif, true);
   });
-  test('heure déjà passée : plage qui passe minuit', async () => {
+  test('démarrage tardif : plage qui passe minuit', async () => {
     const f = FAUX({ dps: dpsBase(plage(2, '22:00', '06:00')) });
-    const r = await programmer(cfgDe({ maintenant: () => new Date('2026-11-16T22:30:00Z') }), f.transport, { allumage: '23:00' }); // 23:30 à Paris
-    assert.equal(r.immediat, true);
-    assert.equal(r.debut, '23:30');
+    const r = await programmer(cfgDe({ maintenant: () => new Date('2026-11-16T22:30:00Z') }), f.transport, dem('23:00')); // 23:30 à Paris
+    assert.equal(r.tardif, true);
+    assert.equal(r.debut, '23:40');
+    assert.equal(r.fin, '06:40');
   });
-  test('heure pas encore atteinte : pas de démarrage immédiat', async () => {
+  test('heure pas encore atteinte : écriture normale, pas de démarrage tardif', async () => {
     const f = FAUX();
-    const r = await programmer(cfgDe({ maintenant: () => new Date('2026-11-17T02:00:00Z') }), f.transport, { allumage: '03:30' });
-    assert.equal(r.immediat, undefined);
+    const r = await programmer(cfgDe({ maintenant: () => new Date('2026-11-17T02:00:00Z') }), f.transport, dem('03:30'));
+    assert.equal(r.tardif, undefined);
     assert.equal(r.debut, '03:30');
   });
-
-  test('plage courte : début = fin relue moins une minute', async () => {
+  test("trop tard (départ à 10 min ou moins) : rien n'est écrit", async () => {
     const f = FAUX();
-    const r = await programmer(cfgDe(), f.transport, { desactiver: true });
+    const r = await programmer(cfgDe({ maintenant: () => new Date('2026-11-17T06:20:00Z') }), f.transport, dem('23:00')); // 07:20, départ 07:30
+    assert.deepEqual(r, { ok: false, erreur: 'trop_tard' });
+    assert.deepEqual(f.journal.ecritures, []);
+  });
+
+  test('plage courte : début = fin demandée moins une minute, fin écrite', async () => {
+    const f = FAUX();
+    const r = await programmer(cfgDe(), f.transport, des());
     assert.deepEqual(r, { ok: true, debut: '05:59', fin: '06:00', plage_active: true, courte: true });
     assert.equal(f.journal.ecritures[0].corps.data.dps['151'], plage(2, '05:59', '06:00'));
   });
   test('plage courte : fin à minuit', async () => {
     const f = FAUX({ dps: dpsBase(plage(2, '03:30', '00:00')) });
-    const r = await programmer(cfgDe(), f.transport, { desactiver: true });
+    const r = await programmer(cfgDe(), f.transport, des('00:00'));
     assert.equal(r.debut, '23:59');
     assert.equal(r.courte, true);
   });
   test('plage courte, plage inactive : m repasse à 2', async () => {
     const f = FAUX({ dps: dpsBase(plage(0, '03:30', '06:00')) });
-    const r = await programmer(cfgDe(), f.transport, { desactiver: true });
+    const r = await programmer(cfgDe(), f.transport, des());
     assert.equal(r.plage_active, true);
   });
 });
@@ -290,7 +302,7 @@ describe('Rien n\'est écrit quand la valeur du câble est inattendue', () => {
   for (const [nom, valeur] of Object.entries(mauvaises)) {
     test(nom, async () => {
       const f = FAUX({ dps: dpsBase(valeur) });
-      assert.deepEqual(await programmer(cfgDe(), f.transport, { allumage: '00:15' }), { ok: false, erreur: 'format' });
+      assert.deepEqual(await programmer(cfgDe(), f.transport, dem('00:15')), { ok: false, erreur: 'format' });
       assert.deepEqual(f.journal.ecritures, []);
       assert.equal(f.journal.fermetures, 1);
     });
@@ -300,7 +312,7 @@ describe('Rien n\'est écrit quand la valeur du câble est inattendue', () => {
       const dps = dpsBase();
       if (v === undefined) delete dps['151']; else dps['151'] = v;
       const f = fauxCable({ cle: CLE, dps });
-      assert.deepEqual(await programmer(cfgDe(), f.transport, { allumage: '00:15' }), { ok: false, erreur: 'format' });
+      assert.deepEqual(await programmer(cfgDe(), f.transport, dem('00:15')), { ok: false, erreur: 'format' });
       assert.deepEqual(f.journal.ecritures, []);
     }
   });
@@ -309,32 +321,32 @@ describe('Rien n\'est écrit quand la valeur du câble est inattendue', () => {
 describe('Vérification après écriture', () => {
   test('écriture sans effet : relecture_differente', async () => {
     const f = FAUX({ ignorerEcriture: true });
-    assert.deepEqual(await programmer(cfgDe(), f.transport, { allumage: '00:15' }), { ok: false, erreur: 'relecture_differente', ecrit: true });
+    assert.deepEqual(await programmer(cfgDe(), f.transport, dem('00:15')), { ok: false, erreur: 'relecture_differente', ecrit: true });
     assert.equal(f.journal.ecritures.length, 1);
     assert.equal(f.journal.fermetures, 1);
   });
   test('le câble applique une autre valeur : relecture_differente', async () => {
     const f = FAUX({ transformerEcriture: () => plage(2, '00:20', '06:00') });
-    assert.deepEqual(await programmer(cfgDe(), f.transport, { allumage: '00:15' }), { ok: false, erreur: 'relecture_differente', ecrit: true });
+    assert.deepEqual(await programmer(cfgDe(), f.transport, dem('00:15')), { ok: false, erreur: 'relecture_differente', ecrit: true });
   });
   test('un autre point de réglage change en même temps : relecture_differente', async () => {
     const f = FAUX({ effetsEcriture: { 150: 6 } });
-    assert.deepEqual(await programmer(cfgDe(), f.transport, { allumage: '00:15' }), { ok: false, erreur: 'relecture_differente', ecrit: true });
+    assert.deepEqual(await programmer(cfgDe(), f.transport, dem('00:15')), { ok: false, erreur: 'relecture_differente', ecrit: true });
   });
   test('un point apparaît : relecture_differente', async () => {
     const f = FAUX({ effetsEcriture: { 999: true } });
-    assert.deepEqual(await programmer(cfgDe(), f.transport, { allumage: '00:15' }), { ok: false, erreur: 'relecture_differente', ecrit: true });
+    assert.deepEqual(await programmer(cfgDe(), f.transport, dem('00:15')), { ok: false, erreur: 'relecture_differente', ecrit: true });
   });
   test('points volatils (101, 102, 105, 109) ignorés', async () => {
     const f = FAUX({ effetsEcriture: { 101: 300, 102: '{"p":33}', 105: 'x', 109: 'WORKING' } });
-    assert.equal((await programmer(cfgDe(), f.transport, { allumage: '00:15' })).ok, true);
+    assert.equal((await programmer(cfgDe(), f.transport, dem('00:15'))).ok, true);
   });
   test('relecture muette après l\'écriture : delai', async () => {
     const f = FAUX();
     let lectures = 0;
     const transport = { ...f.transport, async envoyer(o) { await f.transport.envoyer(o); },
       async recevoir(d) { if (f.journal.commandes.filter((c) => c === 0x10).length >= 2) { lectures++; throw Object.assign(new Error('x'), { code: 'delai' }); } return f.transport.recevoir(d); } };
-    const r = await programmer(cfgDe(), transport, { allumage: '00:15' });
+    const r = await programmer(cfgDe(), transport, dem('00:15'));
     assert.deepEqual(r, { ok: false, erreur: 'delai', ecrit: true });
     assert.ok(lectures >= 1);
   });
@@ -342,8 +354,12 @@ describe('Vérification après écriture', () => {
 
 describe('Demandes invalides : rien n\'est ouvert', () => {
   const invalides = [
-    { allumage: '24:00' }, { allumage: '7:30' }, { allumage: '07:30\n' }, { allumage: ' 07:30' }, { allumage: '07:60' }, { allumage: 730 },
-    { allumage: '07:30', desactiver: true }, { allumage: '07:30', extra: 1 }, { desactiver: false }, { desactiver: 1 },
+    { allumage: '24:00', fin: '06:00', duree_min: 420, depart: '07:30' }, { ...dem('07:30'), allumage: '7:30' }, { ...dem('05:00'), allumage: '05:00\n' },
+    { ...dem('05:00'), allumage: ' 05:00' }, { ...dem('05:00'), allumage: '05:60' }, { ...dem('05:00'), allumage: 500 },
+    { ...dem('05:00'), desactiver: true }, { ...dem('05:00'), extra: 1 }, { desactiver: false, fin: '06:00' }, { desactiver: 1, fin: '06:00' },
+    { desactiver: true }, { desactiver: true, fin: '6:00' }, { desactiver: true, fin: '06:00', extra: 1 },
+    { allumage: '05:00' }, { allumage: '05:00', fin: '06:00' }, { ...dem('05:00'), duree_min: 0 }, { ...dem('05:00'), duree_min: 1440 },
+    { ...dem('05:00'), duree_min: 1.5 }, { ...dem('05:00'), fin: '08:00' }, { ...dem('05:00'), depart: '05:00' }, { ...dem('05:00'), fin: '05:00' },
     { courte: true }, {}, null, undefined, 'allumage', ['07:30'], 7,
   ];
   for (const a of invalides) {
@@ -355,13 +371,13 @@ describe('Demandes invalides : rien n\'est ouvert', () => {
   }
 });
 
-describe('Garde-fou : seul le dp 151, et seuls ss et m', () => {
-  test('quelle que soit la plage lue, chaque écriture ne change que ss et m du dp 151', async () => {
+describe('Garde-fou : seul le dp 151, et seuls ss, se et m', () => {
+  test('quelle que soit la plage lue, chaque écriture ne change que ss, se et m du dp 151', async () => {
     const plages = [
       plage(2, '03:30', '06:00'), plage(0, '03:30', '06:00', 5), plage(2, '22:00', '06:00', 1), plage(0, '00:00', '23:59', 9),
       plage(2, '05:59', '06:00'), plage(0, '12:00', '00:00'),
     ];
-    const actions = [{ allumage: '00:15' }, { allumage: '23:59' }, { allumage: '04:00' }, { desactiver: true }];
+    const actions = [dem('00:15'), dem('23:59'), dem('04:00'), dem('05:00', '07:00'), des(), des('00:00')];
     const instants = ['2026-11-16T22:30:00Z', '2026-11-17T03:10:00Z', '2026-07-01T10:00:00Z'];
     let ecritures = 0;
     for (const p of plages) for (const a of actions) for (const i of instants) {
@@ -375,8 +391,8 @@ describe('Garde-fou : seul le dp 151, et seuls ss et m', () => {
         assert.deepEqual(Object.keys(v), ['m', 'dt', 'ss', 'se']);
         assert.equal(v.m, 2);
         assert.equal(v.dt, avant.dt);
-        assert.equal(v.se, avant.se);
         assert.match(v.ss, /^([01]\d|2[0-3]):[0-5]\d$/);
+        assert.match(v.se, /^([01]\d|2[0-3]):[0-5]\d$/); // la fin est la fin demandée (ou la fin décalée du démarrage tardif)
       }
       assert.ok(f.journal.ecritures.length <= 1);
       assert.deepEqual(f.journal.commandes.filter((c) => c !== 0x10 && c !== 0x0d), []); // aucune autre commande
@@ -395,16 +411,16 @@ describe('La clé n\'apparaît nulle part', () => {
       const f1 = FAUX({ cle: 'AUTRE-CLE-FAUSSE' });
       resultats.push(await lireEtat(cfgDe(), f1.transport));
       const f2 = FAUX({ ignorerEcriture: true });
-      resultats.push(await programmer(cfgDe(), f2.transport, { allumage: '00:15' }));
+      resultats.push(await programmer(cfgDe(), f2.transport, dem('00:15')));
       const f3 = FAUX({ dps: dpsBase('pas du json') });
-      resultats.push(await programmer(cfgDe(), f3.transport, { allumage: '00:15' }));
+      resultats.push(await programmer(cfgDe(), f3.transport, dem('00:15')));
       resultats.push(await lireEtat(cfgDe({ cleLocale: 'courte' }), FAUX().transport));
       const piege = new Error(`échec avec la clé ${CLE}`);
       const trans = {
         async ouvrir() {}, async envoyer() { throw piege; }, async recevoir() { throw piege; }, fermer() { throw piege; },
       };
       resultats.push(await lireEtat(cfgDe(), trans));
-      resultats.push(await programmer(cfgDe(), { ...trans, ouvrir: async () => { throw piege; } }, { desactiver: true }));
+      resultats.push(await programmer(cfgDe(), { ...trans, ouvrir: async () => { throw piege; } }, des()));
     } finally {
       for (const n of Object.keys(orig)) console[n] = orig[n];
     }
@@ -420,18 +436,16 @@ describe('La clé n\'apparaît nulle part', () => {
 describe('Compatibilité avec la page (interpreterReponse de site/service.js)', () => {
   test('les succès sont acceptés comme ceux du Worker', async () => {
     let f = FAUX();
-    let r = await programmer(cfgDe(), f.transport, { allumage: '00:15' });
-    // Demande du contrat du 2026-11-22 (début, fin du plan, durée, départ) : l'outil PC relit la fin du câble (06:00), égale à la fin demandée.
-    assert.equal(interpreterReponse({ allumage: '00:15', fin: '06:00', duree_min: 345, depart: '07:30' }, 200, r).etat, 'ok');
+    let r = await programmer(cfgDe(), f.transport, dem('00:15'));
+    assert.equal(interpreterReponse(dem('00:15'), 200, r).etat, 'ok');
     f = FAUX();
-    r = await programmer(cfgDe({ maintenant: () => new Date('2026-11-17T03:10:00Z') }), f.transport, { allumage: '03:30' });
-    // Écart voulu : l'outil PC (local/tuya-local.js) garde l'ancienne règle « immédiat » ; la page ne la reconnaît plus
-    // (début relu différent du début demandé, sans tardif) et la traite comme un KO. Il ne sert plus qu'à la maintenance.
-    assert.equal(r.immediat, true);
-    assert.equal(interpreterReponse({ allumage: '03:30', fin: '06:00', duree_min: 150, depart: '07:30' }, 200, r).etat, 'ko');
+    r = await programmer(cfgDe({ maintenant: () => new Date('2026-11-17T03:10:00Z') }), f.transport, dem('03:30'));
+    // Démarrage tardif (depuis le 2026-11-22, comme le Worker et la coque) : la page l'accepte, début et fin relus dans la nuit.
+    assert.equal(r.tardif, true);
+    assert.equal(interpreterReponse(dem('03:30'), 200, r).etat, 'ok');
     f = FAUX();
-    r = await programmer(cfgDe(), f.transport, { desactiver: true });
-    assert.equal(interpreterReponse({ desactiver: true }, 200, r).etat, 'ok');
+    r = await programmer(cfgDe(), f.transport, des());
+    assert.equal(interpreterReponse(des(), 200, r).etat, 'ok');
   });
   test('les échecs sont des KO (cle et format : code « inattendue » tant que site/ ne les connaît pas, lot C4)', () => {
     for (const erreur of ['hors_ligne', 'delai', 'relecture_differente', 'cle', 'format', 'requete_invalide']) {
@@ -519,7 +533,7 @@ describe('Câble en veille (dp 109 = SLEEP)', () => {
   const enVeille = () => fauxCable({ cle: CLE, dps: { ...dpsBase(), 109: 'SLEEP' }, veille: true });
   test('première écriture jetée : un second envoi de la même valeur, puis relu conforme', async () => {
     const f = enVeille();
-    const r = await programmer(cfgDe(), f.transport, { allumage: '00:15' });
+    const r = await programmer(cfgDe(), f.transport, dem('00:15'));
     assert.equal(r.ok, true, JSON.stringify(r));
     assert.equal(r.debut, '00:15');
     assert.equal(f.journal.ecritures.length, 2);
@@ -527,13 +541,13 @@ describe('Câble en veille (dp 109 = SLEEP)', () => {
   });
   test('câble éveillé qui ignore l\'écriture : jamais de second envoi', async () => {
     const f = FAUX({ ignorerEcriture: true });
-    const r = await programmer(cfgDe(), f.transport, { allumage: '00:15' });
+    const r = await programmer(cfgDe(), f.transport, dem('00:15'));
     assert.deepEqual(r, { ok: false, erreur: 'relecture_differente', ecrit: true });
     assert.equal(f.journal.ecritures.length, 1);
   });
   test('en veille et qui ignore toujours : deux envois au plus, puis relecture différente', async () => {
     const f = fauxCable({ cle: CLE, dps: { ...dpsBase(), 109: 'SLEEP' }, veille: true, ignorerEcriture: true });
-    const r = await programmer(cfgDe(), f.transport, { allumage: '00:15' });
+    const r = await programmer(cfgDe(), f.transport, dem('00:15'));
     assert.deepEqual(r, { ok: false, erreur: 'relecture_differente', ecrit: true });
     assert.equal(f.journal.ecritures.length, 2);
   });

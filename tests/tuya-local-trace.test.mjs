@@ -16,7 +16,7 @@ const cfg = (extra = {}) => ({ ip: '192.0.2.10', deviceId: ID, cleLocale: CLE, v
 describe('cfg.trace', () => {
   test('absente : aucun appel, résultat inchangé', async () => {
     const f = fauxCable({ cle: CLE, dps });
-    const r = await programmer(cfg(), f.transport, { allumage: '00:15' });
+    const r = await programmer(cfg(), f.transport, { allumage: '00:15', fin: '06:00', duree_min: 420, depart: '07:30' });
     assert.equal(r.ok, true);
   });
 
@@ -26,7 +26,7 @@ describe('cfg.trace', () => {
     const bruts = [];
     const envoyer = f.transport.envoyer;
     f.transport.envoyer = async (o) => { bruts.push(hex(o)); return envoyer(o); };
-    const r = await programmer(cfg({ trace: (e) => evts.push(e) }), f.transport, { allumage: '00:15' });
+    const r = await programmer(cfg({ trace: (e) => evts.push(e) }), f.transport, { allumage: '00:15', fin: '06:00', duree_min: 420, depart: '07:30' });
     assert.equal(r.ok, true);
     const envoyes = evts.filter((e) => e.sens === '->');
     const recus = evts.filter((e) => e.sens === '<-');

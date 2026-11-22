@@ -3,7 +3,7 @@
 // ce module ne fait que demander au pont natif des opérations de haut niveau (lire, programmer, chercher) et traduire leurs
 // résultats en états de la page. Il ne voit JAMAIS la clé ni l'identifiant du câble. Module ES pur : son client du pont est
 // INJECTÉ (site/pont.js), il ne charge rien lui-même.
-// La page ne le charge que si le pont natif est présent ; sur GitHub Pages, il n'est jamais chargé.
+// La page ne le charge que si le pont natif est présent (app.js, pontOk) ; sur GitHub Pages, il n'est jamais chargé.
 //
 // Règles (CLAUDE.md, décisions du 2026-11-20) :
 // - jamais d'échec silencieux : tout échec d'écriture rend l'heure à régler à la main (service.js, resultatKo) ;
@@ -13,10 +13,6 @@
 // - la clé reste dans le code natif : jamais lue, gardée, affichée ni journalisée ici.
 
 import { resultatKo, interpreterReponse, messageNonSuivie } from './service.js';
-
-export function pontPresent(g = globalThis) {
-  return !!(g && g.PontLocal && typeof g.PontLocal.postMessage === 'function');
-}
 
 // Les nouvelles tentatives (seconde lecture, seconde écriture, second balayage) ne sont PAS faites ici : la page les demande
 // au pont natif (reessayer: true) et OperationsCable les applique, avec la règle unique « jamais de nouvel envoi après

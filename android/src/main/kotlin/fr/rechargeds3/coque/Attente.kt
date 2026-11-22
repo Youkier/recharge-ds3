@@ -15,9 +15,8 @@ data class HeuresManuelles(val debut: String, val fin: String)
  * Aucune chaîne venue de la page n'est jamais affichée : la page ne fournit que des heures HH:MM validées.
  */
 object Attente {
-    private val HEURE = Regex("^([01][0-9]|2[0-3]):[0-5][0-9]$")
-
-    fun heureValide(h: String?): Boolean = h != null && HEURE.matches(h)
+    /** HH:MM strict : une seule définition, celle de [Plage] (revue d'architecture du 2026-11-22, constat n°4). */
+    fun heureValide(h: String?): Boolean = h != null && Plage.heureValide(h)
 
     /** Issue d'une attente, telle qu'annoncée par la notification de résultat. */
     enum class Issue { PROGRAMMEE, AUCUNE, TARDIVE, TROP_TARD, NON_FAITE, INCERTAINE, ANNULEE, INCONNUE }

@@ -4,10 +4,11 @@
 //
 // Ce module n'exporte QUE deux fonctions (règle n°9 : jamais d'envoi de commande quelconque) :
 //   lireEtat(cfg, transport)                                          -> { ok, debut, fin, plage_active } | { ok:false, erreur }
-//   programmer(cfg, transport, { allumage:"HH:MM" } | { desactiver:true }) -> idem, plus immediat | courte
+//   programmer(cfg, transport, { allumage, fin, duree_min, depart } | { desactiver:true, fin }) -> idem, plus tardif | courte, ou erreur trop_tard
+//   (démarrage tardif, décision du 2026-11-22 : même règle que le Worker et la coque, cas communs dans tests/plage-tardif-cas.json)
 //
 // Garanties (mêmes que worker/src/service.js) :
-// - n'écrit que ss et m du dp 151 (x_charge_mode) ; jamais dt, se, le courant ni un autre point ;
+// - n'écrit que ss, se et m du dp 151 (x_charge_mode) ; jamais dt, le courant ni un autre point ;
 // - relit avant d'écrire : objet aux clés exactes m, dt, ss, se, heures valides, mode connu, sinon RIEN n'est envoyé ;
 // - relit après l'écriture : succès seulement si le dp 151 relu est celui demandé et qu'aucun autre point non volatil a changé ;
 // - une seule connexion, fermée dans tous les cas ; échéance globale de 20 s ; la clé n'apparaît dans aucun message.
@@ -256,18 +257,47 @@ const plageDepuisDps = (dps) => {
 };
 const memePlage = (a, b) => CLES_PLAGE.every((k) => a[k] === b[k]);
 
-// --- Heure de Paris et règle de l'heure déjà passée (même règle que le Worker, décision du 2026-11-14) ---
+// --- Heure de Paris et règle du démarrage tardif (décision du 2026-11-22) ---
+// Copie de deciderPlage du Worker (worker/src/service.js) et de Plage.decider de la coque Android : les trois lisent le même fichier de
+// cas, tests/plage-tardif-cas.json.
 const formatParis = new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Paris', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
-function heureParis(date) {
-  const p = Object.fromEntries(formatParis.formatToParts(date).map((x) => [x.type, x.value]));
-  return `${String(Number(p.hour) % 24).padStart(2, '0')}:${p.minute}`;
-}
 const minutes = (hhmm) => Number(hhmm.slice(0, 2)) * 60 + Number(hhmm.slice(3));
-function decider(allumage, fin, maintenant) {
-  const nowHHMM = heureParis(maintenant);
-  const a = minutes(allumage), f = minutes(fin), n = minutes(nowHHMM);
-  const dedans = a < f ? n >= a && n < f : a > f ? n >= a || n < f : false;
-  return dedans ? { debut: nowHHMM, immediat: true } : { debut: allumage, immediat: false };
+const mod24 = (x) => ((x % 1440) + 1440) % 1440;
+const formater = (total) => `${String(Math.floor(mod24(total) / 60)).padStart(2, '0')}:${String(mod24(total) % 60).padStart(2, '0')}`;
+const DUREE_MIN_MAX = 1439; // durée de charge demandée : 1 à 1439 minutes
+const MARGE_TARDIF_MIN = 10; // un début qui tombe dans moins de 10 minutes est reporté à maintenant + 10 min
+
+// Demande { allumage, fin, duree_min, depart } : trois heures HH:MM, durée entière 1..1439, fin entre l'allumage (exclu) et le départ (inclus).
+function demandeValide(d) {
+  if (!d || typeof d !== 'object') return false;
+  if (![d.allumage, d.fin, d.depart].every((h) => typeof h === 'string' && HEURE_VALIDE.test(h))) return false;
+  if (!Number.isInteger(d.duree_min) || d.duree_min < 1 || d.duree_min > DUREE_MIN_MAX) return false;
+  const a = minutes(d.allumage);
+  const nuit = mod24(minutes(d.depart) - a);
+  const jusquaFin = mod24(minutes(d.fin) - a);
+  return nuit > 0 && jusquaFin > 0 && jusquaFin <= nuit;
+}
+
+// Minutes depuis minuit (heure murale de Paris), arrondies à la minute SUPÉRIEURE : 23:50:20 -> 23:51.
+function minutesParisSuperieures(date) {
+  const p = Object.fromEntries(formatParis.formatToParts(date).map((x) => [x.type, x.value]));
+  const reste = date.getUTCSeconds() > 0 || date.getUTCMilliseconds() > 0 ? 1 : 0;
+  return mod24((Number(p.hour) % 24) * 60 + Number(p.minute) + reste);
+}
+
+// Pris AU MOMENT DE L'ENVOI, en heure murale de Paris (la plage se répète chaque nuit : pas de date).
+//  'normal' : écrire l'allumage et la fin demandés ; 'tardif' : l'allumage est passé (ou dans moins de 10 min) : début = maintenant + 10 min,
+//  fin = min(début + durée, départ) ; 'trop_tard' : le départ est à 10 min ou moins, rien n'est écrit ; 'invalide'.
+function deciderPlage(d, maintenant) {
+  if (!demandeValide(d)) return { statut: 'invalide' };
+  const a = minutes(d.allumage);
+  const n = minutesParisSuperieures(maintenant);
+  const nuit = mod24(minutes(d.depart) - a);
+  const dansLaNuit = mod24(n - a) < nuit;
+  if (!dansLaNuit && mod24(a - n) >= MARGE_TARDIF_MIN) return { statut: 'normal', debut: d.allumage, fin: d.fin };
+  const avantDepart = mod24(minutes(d.depart) - n);
+  if (avantDepart <= MARGE_TARDIF_MIN) return { statut: 'trop_tard' };
+  return { statut: 'tardif', debut: formater(n + MARGE_TARDIF_MIN), fin: formater(n + Math.min(MARGE_TARDIF_MIN + d.duree_min, avantDepart)) };
 }
 function moinsUneMinute(hhmm) {
   const m = (minutes(hhmm) + 1439) % 1440;
@@ -277,10 +307,10 @@ function moinsUneMinute(hhmm) {
 // --- Écriture : la SEULE construction d'une commande d'écriture du module ---
 // Corps tinytuya (payload_dict « v3.5 », CONTROL -> CONTROL_NEW) : {"protocol":5,"t":<secondes>,"data":{"dps":{"151":"<texte JSON>"}}},
 // sans espaces, précédé de l'en-tête de version « 3.5 » + 12 zéros (hors NO_PROTOCOL_HEADER_CMDS).
-// Garde-fou : on n'envoie que le dp 151, et la valeur ne peut différer de la valeur relue que par ss et m.
-function corpsEcriture(actuelle, debut, t) {
-  const voulue = { m: 2, dt: actuelle.dt, ss: debut, se: actuelle.se };
-  // dt et se sont recopiés de la valeur relue (contrôlée par le lecteur) : seuls ss et m peuvent changer.
+// Garde-fou : on n'envoie que le dp 151, et la valeur ne peut différer de la valeur relue que par ss, se et m.
+function corpsEcriture(actuelle, debut, fin, t) {
+  const voulue = { m: 2, dt: actuelle.dt, ss: debut, se: fin };
+  // dt est recopié de la valeur relue (contrôlée par le lecteur) : seuls ss, se et m peuvent changer.
   if (!HEURE_VALIDE.test(voulue.ss) || !HEURE_VALIDE.test(voulue.se)) {
     throw new ErreurLocale('format');
   }
@@ -358,10 +388,11 @@ export async function lireEtat(cfg, transport) {
 
 function validerAction(action) {
   if (!action || typeof action !== 'object' || Array.isArray(action)) return null;
-  const cles = Object.keys(action);
-  if (cles.length !== 1) return null;
-  if (cles[0] === 'allumage' && typeof action.allumage === 'string' && HEURE_VALIDE.test(action.allumage)) return { allumage: action.allumage };
-  if (cles[0] === 'desactiver' && action.desactiver === true) return { desactiver: true };
+  const cles = Object.keys(action).sort().join(',');
+  if (cles === 'allumage,depart,duree_min,fin' && demandeValide(action)) {
+    return { allumage: action.allumage, fin: action.fin, duree_min: action.duree_min, depart: action.depart };
+  }
+  if (cles === 'desactiver,fin' && action.desactiver === true && HEURE_VALIDE.test(action.fin)) return { desactiver: true, fin: action.fin };
   return null;
 }
 
@@ -371,23 +402,27 @@ export async function programmer(cfg, transport, action) {
   return executer(cfg, transport, async (ctx) => {
     const avant = await lireDps(ctx);
     const actuelle = plageDepuisDps(avant); // format inattendu : on s'arrête ici, rien n'est envoyé
-    let debut, extra;
+    let debut, fin, extra;
     if (demande.desactiver) {
-      debut = moinsUneMinute(actuelle.se);
+      debut = moinsUneMinute(demande.fin);
+      fin = demande.fin;
       extra = { courte: true };
     } else {
-      const d = decider(demande.allumage, actuelle.se, ctx.maintenant());
+      const d = deciderPlage(demande, ctx.maintenant());
+      if (d.statut === 'trop_tard') return { ok: false, erreur: 'trop_tard' }; // rien n'est écrit
+      if (d.statut !== 'normal' && d.statut !== 'tardif') return { ok: false, erreur: 'requete_invalide' };
       debut = d.debut;
-      extra = d.immediat ? { immediat: true } : {};
+      fin = d.fin;
+      extra = d.statut === 'tardif' ? { tardif: true } : {};
     }
     const t = Math.floor(ctx.maintenant().getTime() / 1000);
-    const { voulue } = corpsEcriture(actuelle, debut, t); // valide aussi le format, avant tout envoi
+    const { voulue } = corpsEcriture(actuelle, debut, fin, t); // valide aussi le format, avant tout envoi
     if (ctx.cfg.simuler === true) return { ok: true, simulation: true, actuelle: reponsePlage(actuelle), a_ecrire: reponsePlage(voulue, extra) };
     if (memePlage(actuelle, voulue)) return reponsePlage(actuelle, extra); // déjà réglé : rien à envoyer
 
-    // Un seul endroit construit et envoie l'écriture (toujours la même valeur voulue : seuls ss et m du dp 151).
+    // Un seul endroit construit et envoie l'écriture (toujours la même valeur voulue : seuls ss, se et m du dp 151).
     const envoyerEcriture = async (tEnvoi) => {
-      const { clair: trame } = corpsEcriture(actuelle, debut, tEnvoi);
+      const { clair: trame } = corpsEcriture(actuelle, debut, fin, tEnvoi);
       tracer(ctx, { note: 'écriture : envoi de la commande' });
       ctx.ecrit = true; // à partir d'ici, l'écriture a pu être appliquée même si la suite échoue
       await envoyerTrame(ctx, CMD_ECRITURE, trame);

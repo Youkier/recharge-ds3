@@ -225,7 +225,6 @@ export const LIBELLES_ATTENTE = {
     recherche: 'recherche du câble…',
     envoi: "l'envoi ne peut plus être annulé",
   },
-  annuler: 'Annuler',
   regler: 'Régler à la main',
   autoriser: 'Autorisez les notifications pour être prévenu écran éteint',
   sansNotifications: "Sans notification, l'attente continue : rouvrez l'application pour voir le résultat",

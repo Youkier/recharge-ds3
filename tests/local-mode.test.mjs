@@ -4,7 +4,7 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { pontPresent, etatCable, chercherCable, programmerLocal, surLeReseauDeLaMaison } from '../site/local.js';
+import { etatCable, chercherCable, programmerLocal, surLeReseauDeLaMaison } from '../site/local.js';
 
 // Demande complète du contrat du 2026-11-22 : début, fin du plan, durée de charge, départ.
 const dem = (allumage, o = {}) => ({ allumage, fin: '06:00', duree_min: 300, depart: '07:30', ...o });
@@ -27,14 +27,6 @@ function client({ configure = true, adresse = '192.168.1.48', prefixe = '192.168
     async chercher(params, surProgres) { journal.recherches.push(params); return rep(chercher ?? { ok: false, erreur: 'introuvable' }, params, surProgres); },
   };
 }
-
-describe('Pont présent', () => {
-  test('pontPresent', () => {
-    assert.equal(pontPresent({}), false);
-    assert.equal(pontPresent({ PontLocal: {} }), false);
-    assert.equal(pontPresent({ PontLocal: { postMessage() {} } }), true);
-  });
-});
 
 describe('État du câble à l\'ouverture (une lecture, jamais de recherche)', () => {
   test('câble prêt : plage lue à l\'adresse retenue', async () => {

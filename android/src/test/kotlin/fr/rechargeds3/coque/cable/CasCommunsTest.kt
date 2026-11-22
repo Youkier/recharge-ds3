@@ -7,8 +7,8 @@ import org.junit.Test
 
 /**
  * Cas communs au JS et au Kotlin : tests/tuya-local-cas.json est lu ici contre Plage.kt, et par
- * tests/tuya-local-cas.test.mjs contre local/tuya-local.js. Les deux doivent donner exactement les mêmes résultats,
- * sauf la section « decider » (ancienne règle « immédiat », décision du 2026-11-22 : seul l'outil PC la garde).
+ * tests/tuya-local-cas.test.mjs contre local/tuya-local.js. Les deux doivent donner exactement les mêmes résultats.
+ * La règle du démarrage tardif a son propre fichier commun (plage-tardif-cas.json, voir PlageTardifTest).
  */
 class CasCommunsTest {
     private val cas = Aides.json("tuya-local-cas.json")
@@ -20,8 +20,7 @@ class CasCommunsTest {
     private fun objet(v: Any?): Map<String, Any?> = v as Map<String, Any?>
 
     @Test fun lesSectionsSontPresentes() {
-        // La section « decider » (ancienne règle « immédiat ») ne sert plus qu'à l'outil PC (local/tuya-local.js) : le Kotlin
-        // applique la règle du démarrage tardif, voir PlageTardifTest et tests/plage-tardif-cas.json.
+        // La règle du démarrage tardif n'a qu'un fichier de cas : tests/plage-tardif-cas.json (PlageTardifTest).
         for (k in listOf("moinsUneMinute", "plages", "autresPointsModifies")) assertTrue(k, liste(k).isNotEmpty())
     }
 

@@ -35,7 +35,7 @@ function transportTcp(port) {
   };
 }
 
-const cfg = (extra = {}) => ({ ip: '127.0.0.1', deviceId: 'ID-FACTICE', cleLocale: CLE_FACTICE, version: '3.5', attentes: [20, 20, 20], ...extra });
+const cfg = (extra = {}) => ({ ip: '127.0.0.1', deviceId: 'ID-FACTICE', cleLocale: CLE_FACTICE, version: '3.5', attentes: [20, 20, 20], maintenant: () => new Date('2026-11-17T14:00:00Z'), ...extra }); // 15:00 à Paris : écriture normale
 const attendre = (ms) => new Promise((r) => setTimeout(r, ms));
 
 async function avecServeur(fn, opts = {}) {
@@ -62,7 +62,7 @@ test('lecture par le module réel, par TCP : plage initiale', async () => {
 
 test('une écriture persiste : relecture sur une autre connexion', async () => {
   await avecServeur(async (srv) => {
-    const w = await programmer(cfg(), transportTcp(srv.port), { allumage: '05:10' });
+    const w = await programmer(cfg(), transportTcp(srv.port), { allumage: '05:10', fin: '06:00', duree_min: 420, depart: '07:30' });
     assert.equal(w.ok, true, JSON.stringify(w));
     const r = await lireEtat(cfg(), transportTcp(srv.port));
     assert.equal(r.ok, true);
@@ -77,7 +77,7 @@ test('une écriture persiste : relecture sur une autre connexion', async () => {
 
 test('clé fausse : erreur cle, rien n\'est écrit', async () => {
   await avecServeur(async (srv) => {
-    const r = await programmer(cfg({ cleLocale: 'AUTRE-CLE-FAUSSE' }), transportTcp(srv.port), { allumage: '05:10' });
+    const r = await programmer(cfg({ cleLocale: 'AUTRE-CLE-FAUSSE' }), transportTcp(srv.port), { allumage: '05:10', fin: '06:00', duree_min: 420, depart: '07:30' });
     assert.deepEqual(r, { ok: false, erreur: 'cle' });
     assert.equal(srv.dps()['151'], DPS_INITIAUX['151']);
   });
@@ -171,7 +171,7 @@ test("délai plus long que l'échéance du client : « delai », rien n'est écr
 test("silence après l'écriture : appliquée, puis plus de réponse, résultat incertain, une seule écriture vue", async () => {
   const lignes = [];
   await avecServeur(async (srv) => {
-    const w = await programmer(cfg({ delaiGlobalMs: 1500 }), transportTcp(srv.port), { allumage: '05:10' });
+    const w = await programmer(cfg({ delaiGlobalMs: 1500 }), transportTcp(srv.port), { allumage: '05:10', fin: '06:00', duree_min: 420, depart: '07:30' });
     assert.deepEqual(w, { ok: false, erreur: 'delai', ecrit: true }, 'écriture partie, relecture sans réponse : incertain');
     assert.equal(srv.stats.ecritures, 1);
     assert.equal(JSON.parse(srv.dps()['151']).ss, '05:10', "l'écriture a bien été appliquée par le câble");
@@ -186,7 +186,7 @@ test("silence après l'écriture : appliquée, puis plus de réponse, résultat 
 
 test("sans l'option de silence, l'écriture est comptée une fois et la relecture aboutit", async () => {
   await avecServeur(async (srv) => {
-    const w = await programmer(cfg(), transportTcp(srv.port), { allumage: '05:10' });
+    const w = await programmer(cfg(), transportTcp(srv.port), { allumage: '05:10', fin: '06:00', duree_min: 420, depart: '07:30' });
     assert.equal(w.ok, true, JSON.stringify(w));
     assert.equal(srv.stats.ecritures, 1);
   });

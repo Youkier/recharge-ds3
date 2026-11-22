@@ -364,11 +364,21 @@ Construit et essayé sur GitHub Actions (décision du 2026-11-19) ; sous-étapes
 
 Lot C4 :
 
-- [ ] Sans le pont (navigateur, GitHub Pages), la page se comporte comme avant (test) ; cas de référence inchangés
-- [ ] Les fichiers de la page embarqués dans l'APK sont identiques à ceux de `site/`
-- [ ] Mode Local : mêmes alertes OK et KO que le service, heure à régler à la main rappelée à chaque échec, pas de bascule silencieuse vers le service
-- [ ] Clé chiffrée sur le téléphone, hors sauvegarde, jamais réaffichée, effaçable ; une mise à jour de l'APK ne la fait pas ressaisir
+- [x] Sans le pont (navigateur, GitHub Pages), la page se comporte comme avant (test) ; cas de référence inchangés
+- [x] Les fichiers de la page embarqués dans l'APK sont identiques à ceux de `site/`
+- [x] Mode Local : mêmes alertes OK et KO que le service, heure à régler à la main rappelée à chaque échec, pas de bascule silencieuse vers le service
+- [x] Clé chiffrée sur le téléphone, hors sauvegarde, jamais réaffichée, effaçable ; une mise à jour de l'APK ne la fait pas ressaisir
 - [ ] `SECURITE.md` complété ; relecture sécurité du module et du pont faite une fois avec le modèle le plus capable
+
+Lots E1 à E4 (décisions du 2026-11-21 : le protocole local n'a qu'une implémentation dans l'appli, en Kotlin ; l'attente est tenue par le code natif) :
+
+- [x] E1 : protocole 3.5 en Kotlin (`android/.../cable/`), mêmes octets que les vecteurs tinytuya, mêmes cas que `local/` (JUnit, faux câble)
+- [x] E2 : la page ne parle plus qu'à des opérations de haut niveau (lire, programmer, chercher) ; la clé ne traverse plus la WebView ; essai réel R1 réussi sur le Pixel 9 (0.5.0)
+- [x] E3 : attente en arrière-plan tenue par le pilote natif (`PiloteAttente` dans le service), état persisté, résultat brut interprété par la page, attente non suivie, notifications à début et fin (JUnit en temps virtuel, scénarios S15 à S22 et S-C, S-I, S-N sur émulateurs)
+- [ ] E3 : trois soirs sur le Pixel 9 (R2 et R3) sans intervention, notification au plus 2 min après que le câble répond
+- [x] E4 : code mort retiré (routes, constantes, doublon de validation HH:MM), outil PC `local/` aligné sur le contrat du démarrage tardif, règle « heure passée » : un seul fichier de cas (`tests/plage-tardif-cas.json`) lu par le Worker, la coque et `local/`
+- [ ] E4 : relecture de sécurité complète (modèle le plus capable), exception du pont TCP retirée de `CLAUDE.md` et `SECURITE.md` (règle 9), une semaine sur le Pixel 10
+- [ ] `android/essai/` embarqué seulement dans la version de mise au point (aujourd'hui : jamais servi en version publiée, `FiltreAssets.serviEnPublication` testé ; la séparation des deux jeux d'assets demande une modification de `.github/workflows/android.yml`)
 
 Lot C5 :
 

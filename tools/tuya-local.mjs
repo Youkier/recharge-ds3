@@ -3,15 +3,16 @@
 // celles de local/tuya-local.js, avec un transport TCP Node. Aucune dépendance.
 //
 //   node tools/tuya-local.mjs etat
-//   node tools/tuya-local.mjs ecrire-debut HH:MM [--confirmer]
-//   node tools/tuya-local.mjs desactiver [--confirmer]
+//   node tools/tuya-local.mjs ecrire-debut HH:MM [--fin=06:00] [--duree=MIN] [--depart=07:30] [--confirmer]
+//   node tools/tuya-local.mjs desactiver [--fin=06:00] [--confirmer]
 //   ... --trace : affiche chaque trame envoyée et reçue (sens, commande, séquence, longueur, code retour, texte JSON
 //                 de session) pour diagnostiquer ; jamais la clé, l'identifiant du câble ni les octets chiffrés.
 //
 // Sans --confirmer, rien n'est écrit : le câble est lu, et l'écriture qui serait faite est affichée.
 // Lit tools/.env : TUYA_DEVICE_ID, TUYA_LOCAL_KEY, TUYA_LOCAL_IP (variable d'environnement prioritaire) et,
 // en option, TUYA_LOCAL_VERSION (3.5 seulement). Aucune valeur secrète n'est jamais affichée (ni clé, ni identifiant).
-// N'agit que sur TUYA_DEVICE_ID, et n'écrit que ss et m du dp 151, comme tools/tuya-local-test.py.
+// N'agit que sur TUYA_DEVICE_ID, et n'écrit que ss, se et m du dp 151 (démarrage tardif du 2026-11-22 : début décalé à maintenant + 10 min
+// si l'heure est dépassée). Les options --fin, --duree et --depart reprennent le contrat de la coque Android.
 
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
 import { networkInterfaces } from 'node:os';
@@ -24,7 +25,7 @@ import { creerTransportNode, adresseAutorisee, sonderPort } from '../local/trans
 const ICI = dirname(fileURLToPath(import.meta.url));
 const HEURE_VALIDE = /^([01]\d|2[0-3]):[0-5]\d$/;
 const FICHIER_ADRESSE = join(ICI, 'releves', 'cable-adresse.json'); // dossier ignoré par git ; adresse seulement
-const AIDE = 'Actions : etat | ecrire-debut <HH:MM> [--confirmer] | desactiver [--confirmer]';
+const AIDE = 'Actions : etat | ecrire-debut <HH:MM> [--fin=HH:MM] [--duree=MIN] [--depart=HH:MM] [--confirmer] | desactiver [--fin=HH:MM] [--confirmer]';
 
 export function parseEnv(texte) {
   const out = {};
@@ -86,7 +87,8 @@ const MESSAGES = {
   cle: 'Négociation refusée : clé locale périmée (elle change à chaque appairage) ou mauvaise version.',
   format: 'Valeur du câble inattendue (ou version non prise en charge) : rien n\'a été écrit.',
   relecture_differente: 'Le câble n\'a pas la valeur demandée après l\'écriture, ou un autre point a changé : vérifier dans Smart Life.',
-  requete_invalide: 'Demande invalide : heure HH:MM attendue.',
+  requete_invalide: 'Demande invalide : heures HH:MM, durée 1 à 1439 minutes, fin entre le début et le départ.',
+  trop_tard: 'Trop tard : le départ est à 10 minutes ou moins, rien n\'a été écrit.',
 };
 
 const NOMS_CMD = { 3: 'NEG_DEBUT', 4: 'NEG_REPONSE', 5: 'NEG_FIN', 8: 'STATUS', 0x0d: 'CONTROL_NEW', 0x10: 'DP_QUERY_NEW' };
@@ -112,12 +114,18 @@ async function main(argv) {
   if (!action || action === 'aide') { console.log(AIDE); return 0; }
   if (!['etat', 'ecrire-debut', 'desactiver'].includes(action)) { console.log(AIDE); return 1; }
   let demande = null;
+  const option = (nom, defaut) => { const a = argv.find((x) => x.startsWith(`--${nom}=`)); return a ? a.slice(nom.length + 3) : defaut; };
   if (action === 'ecrire-debut') {
     if (!HEURE_VALIDE.test(args[1] ?? '')) { console.error('Heure invalide : attendu HH:MM (00:00 à 23:59).'); return 1; }
-    demande = { allumage: args[1] };
+    // Contrat du 2026-11-22 : début, fin de la plage (06:00 par défaut), durée de charge (de l'allumage à la fin par défaut), départ (07:30).
+    const fin = option('fin', '06:00');
+    const depart = option('depart', '07:30');
+    const m = (h) => Number(h.slice(0, 2)) * 60 + Number(h.slice(3));
+    const duree = Number(option('duree', ((m(fin) - m(args[1])) % 1440 + 1440) % 1440 || 1));
+    demande = { allumage: args[1], fin, duree_min: duree, depart };
   } else if (action === 'desactiver') {
     if (args.length > 1) { console.error('desactiver ne prend pas d\'heure.'); return 1; }
-    demande = { desactiver: true };
+    demande = { desactiver: true, fin: option('fin', '06:00') }; // fin des heures creuses : début = fin - 1 min
   }
   let cfg;
   try { cfg = chargerConfig(undefined, undefined, { ipFacultative: true }); } catch (e) { console.error(e.message); return 1; }
@@ -150,11 +158,11 @@ async function main(argv) {
   if (!r.ok) { console.error(`ECHEC (${r.erreur}) : ${MESSAGES[r.erreur] ?? ''}`); return 1; }
   if (r.simulation) {
     console.log(`Valeur actuelle : ${plageTexte(r.actuelle)}.`);
-    console.log(`Valeur à écrire : ${plageTexte(r.a_ecrire)}${r.a_ecrire.immediat ? ' (heure déjà passée : démarrage immédiat)' : ''}${r.a_ecrire.courte ? ' (plage courte : pas de charge)' : ''}.`);
+    console.log(`Valeur à écrire : ${plageTexte(r.a_ecrire)}${r.a_ecrire.tardif ? ' (heure de début dépassée : démarrage tardif, maintenant + 10 min)' : ''}${r.a_ecrire.courte ? ' (plage courte : pas de charge)' : ''}.`);
     console.log('Simulation : rien n\'a été envoyé. Ajouter --confirmer pour écrire.');
     return 0;
   }
-  console.log(`Écrit et relu : ${plageTexte(r)}${r.immediat ? ' (démarrage immédiat)' : ''}${r.courte ? ' (plage courte)' : ''}. Valeur relue conforme, aucun autre point modifié.`);
+  console.log(`Écrit et relu : ${plageTexte(r)}${r.tardif ? ' (démarrage tardif)' : ''}${r.courte ? ' (plage courte)' : ''}. Valeur relue conforme, aucun autre point modifié.`);
   return 0;
 }
 

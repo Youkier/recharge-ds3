@@ -1,7 +1,6 @@
 // Cas communs de la règle du démarrage tardif : tests/plage-tardif-cas.json est lu ici contre le Worker
-// (worker/src/service.js, deciderPlage) et par PlageTardifTest.kt contre la coque Android (Plage.decider).
-// Les deux implémentations doivent donner EXACTEMENT les mêmes résultats (décision du 2026-11-22).
-// local/tuya-local.js (outil PC) garde l'ancienne règle : il n'est pas concerné par ce fichier.
+// (worker/src/service.js, deciderPlage), par PlageTardifTest.kt contre la coque Android (Plage.decider) et par tuya-local-cas.test.mjs
+// contre l'outil PC (local/tuya-local.js). Les trois implémentations doivent donner EXACTEMENT les mêmes résultats (décision du 2026-11-22).
 
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
