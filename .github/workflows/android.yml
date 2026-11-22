@@ -156,7 +156,7 @@ jobs:
     name: Émulateur API ${{ matrix.api }}
     needs: construire
     runs-on: ubuntu-latest
-    timeout-minutes: 100 # S21 (330 s), S-C et S-I2 (540 s écran éteint) ajoutent une trentaine de minutes
+    timeout-minutes: 120 # S21 et sa variante Wi-Fi (330 s chacune), S-C et S-I2 (500 s écran éteint) ajoutent une quarantaine de minutes
     strategy:
       fail-fast: false
       matrix:
