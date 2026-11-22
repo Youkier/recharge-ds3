@@ -254,10 +254,10 @@ class OperationsCableTest {
     }
 
     @Test fun nouvelleCleNEstPasMasqueeParLAncienneMemoire() {
-        val env = Env(fabrique = { faux(cleCable = "NOUVELLE-CLE-0000") })
+        val env = Env(fabrique = { faux(cleCable = "NOUVELLE-CLE-000") })
         val o = ops(env)
         o.memoriser() // ancienne clé gardée (« CLE-FACTICE-0000 »)
-        env.cleCoffre = "ID_FACTICE" to "NOUVELLE-CLE-0000"
+        env.cleCoffre = "ID_FACTICE" to "NOUVELLE-CLE-000"
         assertEquals("tant que la mémoire n'est pas effacée, l'ancienne clé est utilisée", "cle", o.lire(null, null)["erreur"])
         o.oublierMemoire() // ce que font l'enregistrement d'une clé, « Oublier le câble » et saisirCle
         assertEquals(true, o.lire(null, null)["ok"])

@@ -195,8 +195,7 @@ class OperationsCable(
             )
             val etat = res.etat
             if (!res.ok || res.ip == null || etat == null) return@exclusif erreur("introuvable")
-            retenir(res.ip)
-            val r = reponse(etat, res.ip).toMutableMap()
+            val r = reponse(etat, res.ip).toMutableMap() // reponse() retient l'adresse
             r["ip"] = res.ip
             r["trouve"] = res.trouve
             r
