@@ -712,6 +712,11 @@ premier_lancement() {
   # Page avec les réglages par défaut : bandeau, batterie vide, pas de « dernière valeur » ; câble à localiser, recherche automatique.
   L="$(attendre_essai page-etat 90)"
   verifier "$p ($theme) état à l'ouverture sans adresse" "$L" 'l.etat === "sans_adresse"'
+  # Saisies du premier lancement jamais journalisées : contrôle ICI, avant le prochain « logcat -c » (S9, en fin de script,
+  # ne voit plus ce tampon).
+  if adb logcat -d | tr -d '\015' | grep -F -q -e "$CLE_COURTE" -e "$IDENTIFIANT_KO" -e "$CLE_OK" -e "$IDENTIFIANT"; then
+    echec "$p ($theme) : une saisie de l'écran natif (identifiant ou clé) apparaît dans logcat"
+  fi
   attendre_texte_page "Réglages par défaut" 30
   contient "$DUMP" "Entrez votre batterie" || echec "$p ($theme) : « Entrez votre batterie » absent (champ batterie pas vide)"
   if contient "$DUMP" "Dernière valeur"; then echec "$p ($theme) : « Dernière valeur » affiché au premier lancement"; fi
@@ -869,11 +874,11 @@ etape "S-G « Démarrage immédiat » et « Pas de charge » : cartes de confirm
 # c'est vrai à toute heure sauf une minute : tools/heure-page.mjs choisit la batterie qui évite cette minute (l'heure du
 # téléphone est celle du runner). Le faux câble reçoit donc une plage 03:30 -> (début - 1 min), et non 06:00 : la carte
 # affiche alors, en plus, l'avertissement sur la fin de plage, absent d'un vrai soir.
-IMM="$(node "$RACINE/tools/heure-page.mjs" immediat)"
-read -r SOC_IMM DEB_IMM FIN_IMM <<< "$IMM"
-echo "démarrage immédiat : batterie $SOC_IMM %, heure calculée $DEB_IMM, fin de plage du faux câble $FIN_IMM"
-
 g_immediat() { # g_immediat <thème>
+  # Calculé juste avant chaque passage (clair puis sombre) : la marge de tools/heure-page.mjs ne couvre que quelques minutes.
+  IMM="$(node "$RACINE/tools/heure-page.mjs" immediat)"
+  read -r SOC_IMM DEB_IMM FIN_IMM <<< "$IMM"
+  echo "démarrage immédiat ($1) : batterie $SOC_IMM %, heure calculée $DEB_IMM, fin de plage du faux câble $FIN_IMM"
   lancer_faux --plage="03:30-$FIN_IMM"
   regler_soc "$SOC_IMM"
   adb logcat -c
