@@ -655,6 +655,33 @@ attendre_notification() { # attendre_notification <texte> [délai en s] : écrit
   done
   return 1
 }
+# Diagnostic du retour du Wi-Fi écran éteint (S21, S-I2) : état de la connectivité relevé toutes les 30 s dans <fichier>, avec une seconde
+# commande d'activation du Wi-Fi à 30 s (sans réveiller l'écran). Même attente que attendre_notification : n'écrit que les secondes écoulées.
+attendre_notification_diag() { # attendre_notification_diag <texte> [délai en s] <fichier>
+  local texte="$1" delai="$2" fichier="$3" i
+  : > "$fichier"
+  for i in $(seq 0 "$delai"); do
+    if notification_contient "$texte"; then echo "$i"; return 0; fi
+    if [ $(( i % 30 )) = 0 ]; then
+      {
+        echo "== $(date +%T) +${i} s après le retour du Wi-Fi =="
+        adb shell dumpsys connectivity 2>&1 | tr -d '\015' | grep -E "NetworkAgentInfo|WIFI|wlan" | head -20
+        adb shell cmd wifi status 2>&1 | tr -d '\015' | head -15
+        adb shell dumpsys power 2>&1 | tr -d '\015' | grep -m3 -E "mWakefulness|Wake Locks|AttenteWifi|RechargeDS3"
+      } >> "$fichier" 2>&1 || true
+      [ "$i" = 30 ] && adb shell svc wifi enable > /dev/null 2>&1 # le Wi-Fi n'est pas revenu : seconde demande
+    fi
+    sleep 1
+  done
+  return 1
+}
+# Journal de l'appli (processus de l'appli, tous les tags : pilote, service, réseau) pour comprendre une attente qui n'aboutit pas.
+diag_logcat_appli() { # diag_logcat_appli <fichier>
+  local pid
+  pid="$(adb shell pidof "$PKG" 2> /dev/null | tr -d '\r' | awk '{print $1}')"
+  if [ -n "$pid" ]; then adb logcat -d -v time --pid="$pid" > "$1" 2>&1 || true; else adb logcat -d -v time 2>&1 | grep -F "$PKG" > "$1" || true; fi
+  adb shell dumpsys activity services "$PKG" 2> /dev/null | tr -d '\015' >> "$1" || true
+}
 service_au_premier_plan() { # service_au_premier_plan <fichier de trace>
   adb shell dumpsys activity services "$PKG" | tr -d '\015' > "$1" || true
   grep -q "isForeground=true" "$1"
@@ -735,7 +762,9 @@ ligne_vue page-programmer && echec "S21 : envoi parti sans Wi-Fi"
 ECRAN_S21="$(adb shell dumpsys power | tr -d '\015' | grep -m1 -o 'mWakefulness=[A-Za-z]*' || true)"
 T0=$(date +%s)
 adb shell svc wifi enable
-DELAI_NOTIF="$(attendre_notification "harge programmée" 180 || true)"
+DELAI_NOTIF="$(attendre_notification_diag "harge programmée" 180 "$SORTIE/s21-connectivite.txt" || true)"
+diag_logcat_appli "$SORTIE/logcat-appli-s21.txt"
+grep -c "ESSAI.*pilote" "$SORTIE/logcat-appli-s21.txt" > /dev/null || echo "S21 : aucune ligne du pilote dans le journal de l'appli (pilote non lancé ?)"
 if [ -z "$DELAI_NOTIF" ] && [ "$S21_ATTENDU_ECHEC" = 1 ]; then
   echo "CONNU S21 : aucune notification 180 s après le retour du Wi-Fi" | tee -a "$ATTENTE_RESUME"
   adb shell input keyevent KEYCODE_SLEEP > /dev/null 2>&1 || true
@@ -1401,7 +1430,8 @@ sleep "$S_I2_ATTENTE_S"
 service_au_premier_plan "$SORTIE/attente-services-si2-apres.txt" || echec "S-I2 : le service d'attente a été arrêté pendant ${S_I2_ATTENTE_S} s d'économiseur de batterie"
 T0=$(date +%s)
 adb shell svc wifi enable
-DELAI_NOTIF="$(attendre_notification "harge programmée" 120 || true)"
+DELAI_NOTIF="$(attendre_notification_diag "harge programmée" 120 "$SORTIE/si2-connectivite.txt" || true)"
+diag_logcat_appli "$SORTIE/logcat-appli-si2.txt"
 [ -n "$DELAI_NOTIF" ] || echec "S-I2 : notification « Charge programmée » absente 120 s après le retour du Wi-Fi (économiseur de batterie)"
 echo "S-I2 : notification $(( $(date +%s) - T0 )) s après le retour du Wi-Fi, après ${S_I2_ATTENTE_S} s écran éteint avec l'économiseur de batterie" | tee -a "$ATTENTE_RESUME"
 e0_deverrouiller

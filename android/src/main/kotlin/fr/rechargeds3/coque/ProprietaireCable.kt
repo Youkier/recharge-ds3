@@ -1,6 +1,8 @@
 package fr.rechargeds3.coque
 
 import android.content.Context
+import android.content.pm.ApplicationInfo
+import android.util.Log
 import java.io.File
 
 /**
@@ -18,7 +20,12 @@ class ProprietaireCable private constructor(contexte: Context) {
     val coffre = CoffreCable(contexte)
     private val env = EnvironnementAndroid(wifi, coffre)
     val operations = OperationsCable(env)
-    val pilote = PiloteAttente(operations, env, StockageAttenteFichier(File(contexte.filesDir, "attente.json")))
+    // Version de mise au point seulement : le pilote journalise ses phases et ses vérifications du Wi-Fi (« ESSAI … », sans secret ni adresse).
+    private val debug = (contexte.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0
+    val pilote = PiloteAttente(
+        operations, env, StockageAttenteFichier(File(contexte.filesDir, "attente.json")),
+        trace = if (debug) fun(m: String) { Log.i("RechargeEssai", "ESSAI {\"action\":\"pilote\",\"msg\":\"" + m + "\"}") } else fun(_: String) { },
+    )
 
     companion object {
         @Volatile

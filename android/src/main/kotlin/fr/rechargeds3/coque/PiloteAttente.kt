@@ -69,6 +69,9 @@ class PiloteAttente(
     private val pause: ((Long) -> Unit)? = null,
     dureeMax: Long = DUREE_MAX_MS,
     private val silenceMs: Long = SILENCE_MS,
+    /** Journal de mise au point (version de mise au point seulement, sinon rien) : phases et vérifications du Wi-Fi, jamais de clé,
+     *  d'identifiant ni d'adresse (des booléens et des codes seulement). */
+    private val trace: (String) -> Unit = {},
 ) {
     @Volatile
     var ecouteur: EcouteurAttente? = null
@@ -163,6 +166,7 @@ class PiloteAttente(
             resultat = null
             persister()
         }
+        trace("demarre")
         return mapOf("ok" to true)
     }
 
@@ -220,6 +224,7 @@ class PiloteAttente(
             Triple(session, action!!, debutMs)
         }
         reveil.clear()
+        trace("boucle debut")
         try {
             boucle(s, a, debut)
         } catch (e: Throwable) {
@@ -234,8 +239,14 @@ class PiloteAttente(
         var derniere: Long? = null
         var rechercheFaite = false
         var refusCle = 0
+        var derniereTrace = Long.MIN_VALUE
         while (actif(s)) {
             val now = horloge()
+            if (derniereTrace == Long.MIN_VALUE || now - derniereTrace >= TRACE_MS || now < derniereTrace) {
+                derniereTrace = now
+                trace("wifi reseau=" + (env.prefixeWifi() != null) + " adresse=" + (env.adresse() != null) + " maison=" + surReseauMaison() +
+                    " ecoule_s=" + ((now - debut) / 1000))
+            }
             if (now < debut || now - debut >= dureeMaxMs) {
                 // Sur le Wi-Fi mais câble muet, ou jamais revenu sur le Wi-Fi : le message de la page diffère.
                 terminer(s, Issue.NON_FAITE, erreur(if (cableDepuis != null) "attente_cable" else "attente_expiree"))
@@ -265,6 +276,7 @@ class PiloteAttente(
                 setEtape(s, "cable")
                 val r = operations.lire(null, DELAI_LECTURE_MS, true, Origine.SERVICE)
                 derniere = horloge()
+                trace("lecture ok=" + (r["ok"] == true) + " erreur=" + (r["erreur"] ?: "-"))
                 if (!actif(s)) return
                 if (r["ok"] == true) { envoyer(s, a); return }
                 val e = r["erreur"] as? String
@@ -287,6 +299,7 @@ class PiloteAttente(
             else { phase = Phase.ENVOI; persister(); false }
         }
         if (perime) { terminer(s, Issue.NON_FAITE, erreur("attente_cable")); return }
+        trace("envoi")
         ecouteur?.envoiCommence()
         val r = operations.programmer(null, a, DELAI_ENVOI_MS, true, Origine.SERVICE)
         terminer(s, Attente.issue(a, r), r)
@@ -308,6 +321,7 @@ class PiloteAttente(
             persister()
             Pair(action!!, manuel!!)
         }
+        trace("termine " + issue.name)
         operations.oublierMemoire() // dans tous les cas : la clé ne survit pas à l'attente
         val (debut, fin) = heuresDeLaNotification(issue, a, h, res)
         synchronized(verrou) { if (session == s) aNotifier = Triple(issue, debut, fin) }
@@ -325,7 +339,10 @@ class PiloteAttente(
 
     private fun actif(s: Int): Boolean = synchronized(verrou) { session == s && phase == Phase.ATTENTE }
 
-    private fun setEtape(s: Int, e: String) { synchronized(verrou) { if (session == s && phase == Phase.ATTENTE) etape = e } }
+    private fun setEtape(s: Int, e: String) {
+        val change = synchronized(verrou) { if (session == s && phase == Phase.ATTENTE && etape != e) { etape = e; true } else false }
+        if (change) trace("etape " + e)
+    }
 
     private fun reveiller() { reveil.offer(true) }
 
@@ -412,6 +429,7 @@ class PiloteAttente(
         const val DELAI_LECTURE_MS = 4_000L
         const val DELAI_ENVOI_MS = 20_000L
         const val REFUS_CLE_MAX = 2
+        const val TRACE_MS = 10_000L
         const val PEREMPTION_MS = 12L * 3600_000L
     }
 }

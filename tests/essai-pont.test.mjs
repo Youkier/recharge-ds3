@@ -221,7 +221,7 @@ test("une seule instance d'OperationsCable et de PiloteAttente par processus : c
     assert.ok(!/PiloteAttente\(/.test(sans(f)), f + ' ne crée pas de pilote');
   }
   assert.match(sans('ProprietaireCable.kt'), /val operations = OperationsCable\(env\)/);
-  assert.match(sans('ProprietaireCable.kt'), /val pilote = PiloteAttente\(operations, env, StockageAttenteFichier\(/);
+  assert.match(sans('ProprietaireCable.kt'), /val pilote = PiloteAttente\(\s*operations, env, StockageAttenteFichier\(/);
   assert.match(sans('MainActivity.kt'), /ProprietaireCable\.obtenir\(this\)/);
   assert.match(sans('AttenteWifi.kt'), /ProprietaireCable\.obtenir\(this\)/);
   // La sortie de l'activité n'annule que la page : l'attente appartient au service (balayer l'appli ne l'annule pas).

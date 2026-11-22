@@ -121,6 +121,17 @@ class PiloteAttenteTest {
         assertEquals(true, resultat(e)["ok"]); assertEquals(1, ecritures())
     }
 
+    @Test fun leWifiRevientPendantLAttenteActiviteArreteeSansReseauUtilisableImmediatement() {
+        // Au retour du Wi-Fi, le réseau est annoncé avant que son adresse ou sa liaison soient prêtes : plusieurs vérifications ratées
+        // (préfixe absent, puis préfixe présent mais aucun transport lié) avant que tout soit prêt. Le pilote réessaie seul, sans l'activité.
+        val b = banc({ null }) { it.prefixe = null }
+        b.env.fabrique = { if (b.t >= 340_000) faux() else null } // pas_wifi tant que la liaison n'est pas prête
+        b.surPause = { if (b.t >= 330_000) b.env.prefixe = "192.168.1" }
+        val e = b.demarrerEtLancer()
+        assertEquals(true, resultat(e)["ok"]); assertEquals(Issue.PROGRAMMEE, b.ecoute.fins.single().first)
+        assertTrue(b.t in 340_000L..360_000L); assertEquals(1, ecritures())
+    }
+
     @Test fun leReseauDuWifiDoitEtreCeluiDeLAdresseRetenue() {
         val b = banc({ faux() }) { it.prefixe = "10.0.0" } // autre réseau : jamais d'envoi
         val e = b.demarrerEtLancer()
