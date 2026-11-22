@@ -130,6 +130,11 @@ test('le pont natif n\'expose aucune route générique : liste fermée des opér
   const ops = [...kt.matchAll(/^\s*"([A-Za-z]+)"(?:, "[A-Za-z]+")* ->/gm)].flatMap((m) => m[0].match(/"[A-Za-z]+"/g)).map((s) => s.slice(1, -1)).sort();
   assert.deepEqual(ops, ['attenteDebut', 'attenteEtat', 'attenteFin', 'cable', 'chercher', 'demanderNotifications', 'demarrage',
     'essaiArrierePlan', 'essaiFiltre', 'lire', 'memoriser', 'notifications', 'oublierMemoire', 'prefixeWifi', 'programmer', 'saisirCle', 'variante']);
+  assert.match(kt, /RoutesPont\.autorisee\(op, estDebug\)/, 'toute opération passe par la table des routes');
+  const routes = lire('../android/src/main/kotlin/fr/rechargeds3/coque/RoutesPont.kt');
+  const entre = (nom) => [...routes.match(new RegExp(nom + ' = setOf\(([^)]*)\)'))[1].matchAll(/"(\w+)"/g)].map((m) => m[1]);
+  assert.deepEqual(entre('MISE_AU_POINT'), ['essaiArrierePlan', 'essaiFiltre'], 'seules ces deux opérations sont réservées à la mise au point');
+  assert.deepEqual([...entre('PUBLIQUES'), ...entre('MISE_AU_POINT')].sort(), ops);
   for (const interdit of ['ouvrir', 'envoyer', 'recevoir', 'fermer', 'sonder', 'retenirAdresse']) assert.ok(!ops.includes(interdit), interdit);
   // Seul le transport natif ouvre une connexion : aucun autre fichier de l'appli n'utilise de socket.
   const dossier = '../android/src/main/kotlin/fr/rechargeds3/coque/';

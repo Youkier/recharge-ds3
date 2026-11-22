@@ -142,7 +142,7 @@ describe('Programmer en local (règle 2 : jamais d\'échec silencieux)', () => {
       [client({ programmer: { ok: false, erreur: 'cle' } }), 'local_cle', false],
       [client({ programmer: { ok: false, erreur: 'pas_wifi' } }), 'local_hors_wifi', false],
       [client({ programmer: { ok: false, erreur: 'pas_de_cle' } }), 'local_pas_de_cle', false],
-      [client({ programmer: { ok: false, erreur: 'occupe' } }), 'local_format', true],
+      [client({ programmer: { ok: false, erreur: 'occupe' } }), 'local_occupe', false],
       [client({ programmer: { ok: false, erreur: 'pont_muet' } }), 'local_format', true],
     ];
     for (const [c, code, incertain] of cas) {

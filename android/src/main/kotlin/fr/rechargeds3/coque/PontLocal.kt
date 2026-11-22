@@ -61,11 +61,14 @@ class PontLocal(
         if (n < 0) return
         val rep = { r: JSONObject -> repondre(replyProxy, n, r) }
         try {
-            when (val op = q.optString("op", "")) {
+            val op = q.optString("op", "")
+            // Table fermée des routes (RoutesPont) : une opération de mise au point est refusée dans la version publiée.
+            if (!RoutesPont.autorisee(op, estDebug)) return rep(erreur("operation_inconnue"))
+            when (op) {
                 "demarrage" -> demarrage(rep)
                 "variante" -> rep(JSONObject().put("ok", true).put("variante", variante()))
                 "prefixeWifi" -> prefixeWifi(rep)
-                "saisirCle" -> { surSaisirCle(); rep(ok()) }
+                "saisirCle" -> { operations.oublierMemoire(); surSaisirCle(); rep(ok()) }
                 "cable" -> enArrierePlan(rep) { enJson(operations.cable()) }
                 "lire" -> enArrierePlan(rep) { enJson(operations.lire(adresse(q), delai(q))) }
                 "programmer" -> programmer(q, rep)

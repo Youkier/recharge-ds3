@@ -746,7 +746,7 @@ import { confirmationValable, blocageCable, plageRelue, sousLigneBouton, socVali
           return null;
         });
       });
-    }).catch(function () { return null; });
+    }).catch(function () { if (c) c.client.oublierMemoire(); return null; });
   }
   function quitterAttente() {
     var a = sortirAttente();

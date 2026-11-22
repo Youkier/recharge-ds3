@@ -346,6 +346,7 @@ class MainActivity : Activity() {
                     // Magasin de clés hors du fil principal.
                     Thread {
                         val reussi = try { coffre.enregistrer(id, cle); true } catch (e: Exception) { false }
+                        if (reussi) pont.oublierMemoire() // une nouvelle clé : l'ancienne copie gardée pour l'attente est périmée
                         runOnUiThread {
                             enregistrer.setText(R.string.enregistrer)
                             if (reussi) { viderChamps(); majEtat(); afficherPage(nouvelleConfiguration = true) }
@@ -368,6 +369,7 @@ class MainActivity : Activity() {
                 .setPositiveButton(R.string.oublier_confirmer) { _, _ ->
                     Thread {
                         coffre.oublier()
+                        pont.oublierMemoire() // « Oublier le câble » efface aussi la copie gardée en mémoire
                         runOnUiThread { viderChamps(); afficherFormulaire() }
                     }.start()
                 }

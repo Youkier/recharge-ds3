@@ -10,6 +10,8 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.time.ZonedDateTime
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
 
 /** Routage des opérations du pont vers le protocole local, contre le faux câble en mémoire (clé et adresses factices). */
@@ -31,8 +33,9 @@ class OperationsCableTest {
     ) : EnvironnementCable {
         val retenues = ArrayList<String>()
         var lecturesCoffre = 0
+        var surLireCle: () -> Unit = {}
         override fun configure() = estConfigure
-        override fun lireCle(): Pair<String, String>? { lecturesCoffre++; return cleCoffre }
+        override fun lireCle(): Pair<String, String>? { lecturesCoffre++; surLireCle(); return cleCoffre }
         override fun adresse() = adresseRetenue
         override fun retenirAdresse(ip: String) { retenues.add(ip); adresseRetenue = ip }
         override fun prefixeWifi() = prefixe
@@ -222,5 +225,41 @@ class OperationsCableTest {
 
     @Test fun memoriserSansCleLisibleEchoue() {
         assertEquals("pas_de_cle", ops(Env(cleCoffre = null)).memoriser()["erreur"])
+    }
+
+    // --- annulation et changement de clé ---
+
+    @Test fun annulationPendantLeDechiffrementNOuvreRienEtNEcritRien() {
+        for (ecriture in listOf(false, true)) {
+            val f = faux()
+            val env = Env(fabrique = { f })
+            val entre = CountDownLatch(1)
+            val libere = CountDownLatch(1)
+            env.surLireCle = { entre.countDown(); libere.await(5, TimeUnit.SECONDS) }
+            val o = ops(env)
+            val res = AtomicReference<Map<String, Any?>>()
+            val fil = Thread { res.set(if (ecriture) o.programmer(null, Action.Allumage("05:00"), null) else o.lire(null, null)) }
+                .apply { isDaemon = true; start() }
+            assertTrue(entre.await(5, TimeUnit.SECONDS))
+            o.annulerTout() // appli cachée pendant le déchiffrement de la clé
+            libere.countDown()
+            fil.join(5000)
+            assertFalse(fil.isAlive)
+            assertEquals(false, res.get()["ok"])
+            assertEquals("hors_ligne", res.get()["erreur"])
+            assertEquals("aucune connexion ouverte", 0, f.ouvertures.get())
+            assertEquals("aucune écriture", 0, f.ecritures.size)
+            assertFalse(o.enCours())
+        }
+    }
+
+    @Test fun nouvelleCleNEstPasMasqueeParLAncienneMemoire() {
+        val env = Env(fabrique = { faux(cleCable = "NOUVELLE-CLE-0000") })
+        val o = ops(env)
+        o.memoriser() // ancienne clé gardée (« CLE-FACTICE-0000 »)
+        env.cleCoffre = "ID_FACTICE" to "NOUVELLE-CLE-0000"
+        assertEquals("tant que la mémoire n'est pas effacée, l'ancienne clé est utilisée", "cle", o.lire(null, null)["erreur"])
+        o.oublierMemoire() // ce que font l'enregistrement d'une clé, « Oublier le câble » et saisirCle
+        assertEquals(true, o.lire(null, null)["ok"])
     }
 }

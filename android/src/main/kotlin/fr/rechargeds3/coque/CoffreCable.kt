@@ -63,7 +63,7 @@ class CoffreCable(contexte: Context) {
     /** Dernière adresse où une lecture a réussi, si elle est encore une IPv4 privée valide. */
     fun adresse(): String? = prefs.getString(ADRESSE, null)?.takeIf { FiltreReseau.adressePrivee(it) != null }
 
-    /** À n'appeler qu'après une lecture réussie avec la bonne clé (contrat tenu par la page, voir PontLocal). Hors du fil
+    /** À n'appeler qu'après une lecture réussie avec la bonne clé (contrat tenu par OperationsCable, qui l'appelle après une lecture, une écriture ou une recherche réussie). Hors du fil
      *  principal : écriture synchrone, pour que l'adresse survive à un arrêt immédiat de l'appli. */
     @Synchronized
     fun retenirAdresse(ip: String) {

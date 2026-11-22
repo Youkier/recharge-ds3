@@ -26,7 +26,7 @@ const BUDGET_ECRITURE_MS = 27000; // sous le plafond de 30 s de site/app.js (DEL
 const IPV4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/;
 const reseau24 = (ip) => (typeof ip === 'string' && IPV4.test(ip) ? ip.split('.').slice(0, 3).join('.') : null);
 
-// Code d'erreur du pont natif -> code de service.js (CAUSES). Un code inconnu (occupe, pont_muet…) reste « incertain ».
+// Code d'erreur du pont natif -> code de service.js (CAUSES). Un code inconnu (pont_muet…) reste « incertain ».
 function codeLocal(erreur) {
   switch (erreur) {
     case 'hors_ligne': case 'sans_adresse': return 'local_muet';
@@ -34,6 +34,7 @@ function codeLocal(erreur) {
     case 'cle': return 'local_cle';
     case 'pas_de_cle': return 'local_pas_de_cle';
     case 'pas_wifi': return 'local_hors_wifi';
+    case 'occupe': return 'local_occupe'; // le natif n'a rien lancé
     case 'relecture_differente': return 'relecture_differente';
     case 'requete_invalide': return 'requete_invalide';
     default: return 'local_format';

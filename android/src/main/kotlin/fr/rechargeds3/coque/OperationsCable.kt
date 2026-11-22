@@ -124,7 +124,20 @@ class OperationsCable(
         }
     }
 
-    private fun nouveauTransport(): Transport? = env.creerTransport()?.also { transports.add(it) }
+    /** Transport lié à la génération [gen] : null si l'opération a été annulée entre-temps (rien n'est alors ouvert). */
+    private fun nouveauTransport(gen: Int): Transport? {
+        if (gen != generation.get()) return null
+        val t = env.creerTransport() ?: return null
+        transports.add(t)
+        if (gen != generation.get()) { // annulerTout est passé entre la vérification et l'enregistrement
+            transports.remove(t)
+            try { t.fermer() } catch (e: Exception) { /* jamais ouvert */ }
+            return null
+        }
+        return t
+    }
+
+    private fun causeSansTransport(gen: Int) = erreur(if (gen != generation.get()) "hors_ligne" else "pas_wifi")
 
     // --- Opérations ---
 
@@ -142,18 +155,18 @@ class OperationsCable(
     }
 
     /** Lit la plage de charge. [ip] : adresse à utiliser à la place de l'adresse retenue (filtrée). */
-    fun lire(ip: String?, delaiMs: Long?): Map<String, Any?> = exclusif {
+    fun lire(ip: String?, delaiMs: Long?): Map<String, Any?> = exclusif { gen ->
         avecConfig(ip, delaiMs) { cfg ->
-            val t = nouveauTransport() ?: return@avecConfig erreur("pas_wifi")
+            val t = nouveauTransport(gen) ?: return@avecConfig causeSansTransport(gen)
             reponse(ClientCable.lireEtat(cfg, t), cfg.ip)
         }
     }
 
     /** Règle le début de la plage, ou la rend « courte » : les deux seules écritures. */
-    fun programmer(ip: String?, action: Action, delaiMs: Long?): Map<String, Any?> = exclusif {
+    fun programmer(ip: String?, action: Action, delaiMs: Long?): Map<String, Any?> = exclusif { gen ->
         if (action is Action.Allumage && !Plage.heureValide(action.hhmm)) return@exclusif erreur("requete_invalide")
         avecConfig(ip, delaiMs) { cfg ->
-            val t = nouveauTransport() ?: return@avecConfig erreur("pas_wifi")
+            val t = nouveauTransport(gen) ?: return@avecConfig causeSansTransport(gen)
             reponse(ClientCable.programmer(cfg, t, action, maintenant, pause), cfg.ip)
         }
     }
@@ -173,7 +186,7 @@ class OperationsCable(
                 departs, prefixe,
                 sonder = { a, d -> env.sonder(a, d) },
                 lire = { a, d ->
-                    val t = nouveauTransport()
+                    val t = nouveauTransport(gen)
                     if (t == null) Resultat(false, "hors_ligne")
                     else ClientCable.lireEtat(ConfigCable(c.first, c.second, a, d.coerceIn(1000, 30_000)), t)
                 },
