@@ -7,7 +7,10 @@ import {
   plageDuCable, plageSansCharge, ligneCable, dejaProgramme, libelleDejaProgramme, contexteHoraire,
   sousLigneBouton, boutonActif, mentionProvisoire, LIBELLES_SOC,
 } from '../site/accueil.js';
-import { libelleBouton, lireEtatService, resultatKo, interpreterReponse, PENSE_BRANCHER, RAPPEL_REPROGRAMMER } from '../site/service.js';
+import { libelleBouton, lireEtatService, resultatKo, interpreterReponse, brancherAvant, brancherAvantTardif, RAPPEL_REPROGRAMMER } from '../site/service.js';
+
+// Demande complète du contrat du 2026-11-22 : début, fin du plan, durée de charge, départ.
+const D = { allumage: '00:35', fin: '06:00', duree_min: 325, depart: '07:30' };
 
 const lecture = (debut, fin, plage_active = true) => ({ etat: 'pret', plage: { debut, fin, plage_active } });
 
@@ -17,8 +20,11 @@ describe('Plage lue sur le câble', () => {
     assert.deepEqual(plageDuCable(lecture('00:35', '06:00', false)), { debut: '00:35', fin: '06:00', active: false });
   });
   test('résultat « ok » d\'un envoi : relu par plageRelue', () => {
-    const ok = interpreterReponse({ allumage: '00:35' }, 200, { ok: true, debut: '00:35', fin: '06:00', plage_active: true });
+    const ok = interpreterReponse(D, 200, { ok: true, debut: '00:35', fin: '06:00', plage_active: true });
     assert.deepEqual(plageDuCable(ok), { debut: '00:35', fin: '06:00', active: true });
+    // Démarrage tardif : les heures écrites et relues viennent de champs structurés, pas du texte de l'alerte.
+    const tardif = interpreterReponse(D, 200, { ok: true, debut: '23:58', fin: '07:30', plage_active: true, tardif: true });
+    assert.deepEqual(plageDuCable(tardif), { debut: '23:58', fin: '07:30', active: true });
     const aucune = interpreterReponse({ desactiver: true }, 200, { ok: true, debut: '05:59', fin: '06:00', plage_active: true, courte: true });
     assert.deepEqual(plageDuCable(aucune), { debut: '05:59', fin: '06:00', active: true });
   });
@@ -42,17 +48,25 @@ describe('Plage lue sur le câble', () => {
 
 describe('« Déjà programmé » : aucun envoi inutile', () => {
   const plage = { debut: '00:35', fin: '06:00', active: true };
-  test('même heure : déjà programmé ; autre heure ou plage inactive : non', () => {
-    assert.equal(dejaProgramme(plage, { allumage: '00:35' }), true);
-    assert.equal(dejaProgramme(plage, { allumage: '00:40' }), false);
-    assert.equal(dejaProgramme({ ...plage, active: false }, { allumage: '00:35' }), false);
-    assert.equal(dejaProgramme(null, { allumage: '00:35' }), false);
+  test('même début ET même fin : déjà programmé ; autre heure, autre fin ou plage inactive : non', () => {
+    assert.equal(dejaProgramme(plage, D), true);
+    assert.equal(dejaProgramme(plage, { ...D, allumage: '00:40' }), false);
+    assert.equal(dejaProgramme(plage, { ...D, fin: '05:30' }), false); // la fin du plan change : à réécrire
+    assert.equal(dejaProgramme({ ...plage, fin: undefined }, D), false); // fin inconnue : on ne conclut pas
+    assert.equal(dejaProgramme({ ...plage, active: false }, D), false);
+    assert.equal(dejaProgramme(null, D), false);
     assert.equal(dejaProgramme(plage, null), false);
+  });
+  test('début passé ou imminent (contexte tardif) : jamais « déjà programmé », la charge ne démarrerait pas', () => {
+    assert.equal(dejaProgramme(plage, D, 'tardif'), false);
+    assert.equal(dejaProgramme(plage, D, 'cette_nuit'), true);
+    assert.equal(dejaProgramme(plage, D, null), true);
+    assert.equal(dejaProgramme({ debut: '05:59', fin: '06:00', active: true }, { desactiver: true }, 'tardif'), true); // pas de charge : inchangé
   });
   test('pas de charge : seulement si le câble est déjà sur la plage d\'une minute', () => {
     assert.equal(dejaProgramme({ debut: '05:59', fin: '06:00', active: true }, { desactiver: true }), true);
     assert.equal(dejaProgramme(plage, { desactiver: true }), false);
-    assert.equal(dejaProgramme({ debut: '05:59', fin: '06:00', active: true }, { allumage: '05:59' }), true);
+    assert.equal(dejaProgramme({ debut: '05:59', fin: '06:00', active: true }, { allumage: '05:59', fin: '06:00', duree_min: 1, depart: '07:30' }), true);
   });
   test('textes du bouton', () => {
     assert.equal(libelleDejaProgramme({ allumage: '00:35' }), 'Déjà programmé à 00:35');
@@ -71,21 +85,32 @@ describe('« Déjà programmé » : aucun envoi inutile', () => {
   });
 });
 
-describe('Contexte horaire : « pour cette nuit », « démarre tout de suite »', () => {
-  const c = (h, m, startRel, extra = {}) => contexteHoraire({ maintenant: new Date(2027, 0, 12, h, m), hcStart: '22:00', hcEnd: '06:00', startRel, ...extra });
+describe('Contexte horaire : « pour cette nuit », « début dans 10 min »', () => {
+  const c = (h, m, startRel, extra = {}) => contexteHoraire({ maintenant: new Date(2027, 0, 12, h, m, extra.s ?? 0), hcStart: '22:00', hcEnd: '06:00', startRel, ...extra });
   test('en journée (après 06:00) : pour cette nuit', () => {
     assert.equal(c(8, 15, 155), 'cette_nuit');
     assert.equal(c(21, 59, 155), 'cette_nuit');
   });
-  test('dans les heures creuses : heure à venir = rien ; heure passée = tout de suite', () => {
+  test('dans les heures creuses : heure à venir = rien ; heure passée ou dans moins de 10 min = début décalé', () => {
     assert.equal(c(22, 30, 155), null); // début à 00:35 (155 min après 22:00), pas encore
     assert.equal(c(0, 0, 155), null);
-    assert.equal(c(2, 0, 155), 'immediat'); // 02:00 = 240 min après 22:00 : 00:35 est passé
+    assert.equal(c(2, 0, 155), 'tardif'); // 02:00 = 240 min après 22:00 : 00:35 est passé
+    assert.equal(c(0, 25, 155), null); // 00:25 : début dans 10 min pile, écriture normale
+    assert.equal(c(0, 26, 155), 'tardif'); // 9 min
+    assert.equal(c(0, 25, 155, { s: 30 }), 'tardif'); // 00:25:30 arrondi à 00:26, comme l'envoi
   });
   test('début avant les heures creuses (charge trop longue)', () => {
     assert.equal(c(19, 0, -155), 'cette_nuit'); // 19:25 pas encore passé
-    assert.equal(c(20, 0, -155), 'immediat'); // 19:25 passé, avant les heures creuses
-    assert.equal(c(23, 0, -155), 'immediat');
+    assert.equal(c(20, 0, -155), 'tardif'); // 19:25 passé, avant les heures creuses
+    assert.equal(c(23, 0, -155), 'tardif');
+  });
+  test('entre la fin des heures creuses et le départ : un début passé reste « tardif » (avec le départ)', () => {
+    const d = (h, m, extra = {}) => contexteHoraire({ maintenant: new Date(2027, 0, 12, h, m), hcStart: '22:00', hcEnd: '06:00', startRel: 155, dep: '07:30', ...extra });
+    assert.equal(d(6, 30), 'tardif'); // 06:30 : 00:35 est passé, départ à 07:30
+    assert.equal(d(7, 29), 'tardif');
+    assert.equal(d(7, 30), 'cette_nuit'); // départ atteint : c'est pour la nuit suivante
+    assert.equal(d(8, 15), 'cette_nuit');
+    assert.equal(c(6, 30, 155), 'cette_nuit'); // sans le départ : comme avant
   });
   test('nuit de changement d\'heure ou entrée invalide : aucune prévision', () => {
     assert.equal(c(8, 0, 155, { nuitChangement: true }), null);
@@ -95,24 +120,26 @@ describe('Contexte horaire : « pour cette nuit », « démarre tout de suite »
   test('libellés du bouton', () => {
     assert.equal(libelleBouton({ allumage: '00:35' }).secondaire, 'démarrage 00:35');
     assert.equal(libelleBouton({ allumage: '00:35' }, 'cette_nuit').secondaire, 'démarrage 00:35 · pour cette nuit');
-    assert.equal(libelleBouton({ allumage: '00:35' }, 'immediat').secondaire, 'démarre tout de suite');
+    assert.equal(libelleBouton({ allumage: '00:35' }, 'tardif').secondaire, 'début dans 10 min');
     assert.equal(libelleBouton({ desactiver: true }).secondaire, 'le câble ne chargera pas cette nuit');
   });
 });
 
 describe('Rappels et messages d\'échec', () => {
   test('même phrase de rappel pour le service et le mode Local (une seule source)', () => {
-    const ok = interpreterReponse({ allumage: '00:35' }, 200, { ok: true, debut: '00:35', fin: '06:00', plage_active: true });
-    assert.equal(ok.rappel, PENSE_BRANCHER);
-    assert.equal(PENSE_BRANCHER, 'Pensez à brancher la voiture ce soir.');
-    const imm = interpreterReponse({ allumage: '00:35' }, 200, { ok: true, debut: '01:10', fin: '06:00', plage_active: true, immediat: true });
-    assert.equal(imm.rappel, PENSE_BRANCHER);
+    const ok = interpreterReponse(D, 200, { ok: true, debut: '00:35', fin: '06:00', plage_active: true });
+    assert.equal(ok.rappel, brancherAvant('00:35'));
+    assert.equal(brancherAvant('00:35'), 'Branchez la voiture avant 00:35 : sinon la charge ne démarrera pas.');
+    assert.equal(brancherAvantTardif('01:10'), 'Branchez la voiture avant 01:10.');
+    const tardif = interpreterReponse(D, 200, { ok: true, debut: '01:10', fin: '06:00', plage_active: true, tardif: true });
+    assert.equal(tardif.rappel, brancherAvantTardif('01:10'));
+    assert.equal(tardif.message, 'Heure de début dépassée : charge programmée de 01:10 à 06:00.');
     const aucune = interpreterReponse({ desactiver: true }, 200, { ok: true, debut: '05:59', fin: '06:00', plage_active: true, courte: true });
     assert.equal(aucune.rappel, RAPPEL_REPROGRAMMER);
     assert.equal(aucune.aucune, true);
     assert.equal(ok.message.includes('brancher'), false); // jamais en condition préalable
   });
-  test('un échec ne dit pas « Pensez à brancher » et donne toujours l\'heure à régler à la main', () => {
+  test('un échec ne dit pas « Branchez la voiture » et donne toujours l\'heure à régler à la main', () => {
     for (const code of ['local_muet', 'local_delai', 'delai', 'tuya', 'relecture_differente']) {
       const r = resultatKo({ allumage: '00:35' }, code, '06:00');
       assert.equal(r.rappel, undefined);

@@ -5,10 +5,11 @@ import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import {
   validerAdresse, validerJeton, choisirDemande, libelleBouton, consigneManuelle,
-  interpreterReponse, envoyer, envoyerEtAfficher, resultatKo,
+  interpreterReponse, envoyer, envoyerEtAfficher, resultatKo, demandeValide, minutesHeuresPleines,
 } from "../site/service.js";
 
-const prog = { allumage: "00:35" };
+// Contrat du 2026-11-22 : début, fin du plan, durée de charge du plan (minutes) et heure de départ.
+const prog = { allumage: "00:35", fin: "06:00", duree_min: 325, depart: "07:30" };
 const desact = { desactiver: true };
 const okRep = { ok: true, debut: "00:35", fin: "06:00", plage_active: true };
 const courteRep = { ok: true, debut: "05:59", fin: "06:00", plage_active: true, courte: true };
@@ -38,14 +39,32 @@ describe("Jeton", () => {
 
 describe("Choix de la demande", () => {
   test("aucune charge -> désactiver", () => assert.deepEqual(choisirDemande("none", null), desact));
-  test("charge -> allumage", () => {
-    assert.deepEqual(choisirDemande("ok", "00:35"), prog);
-    assert.deepEqual(choisirDemande("short", "21:10"), { allumage: "21:10" });
+  const plan = { fin: "06:00", dureeMin: 325, depart: "07:30" };
+  test("charge -> allumage, fin, durée et départ", () => {
+    assert.deepEqual(choisirDemande("ok", "00:35", plan), prog);
+    assert.deepEqual(choisirDemande("short", "21:10", { fin: "06:00", dureeMin: 600, depart: "07:30" }), { allumage: "21:10", fin: "06:00", duree_min: 600, depart: "07:30" });
+    assert.deepEqual(choisirDemande("ok", "22:00", { fin: "03:30", dureeMin: 330, depart: "07:30" }), { allumage: "22:00", fin: "03:30", duree_min: 330, depart: "07:30" });
   });
   test("heure invalide ou statut inconnu -> rien", () => {
-    assert.equal(choisirDemande("ok", "0:35"), null);
-    assert.equal(choisirDemande("ok", null), null);
-    assert.equal(choisirDemande("err", "00:35"), null);
+    assert.equal(choisirDemande("ok", "0:35", plan), null);
+    assert.equal(choisirDemande("ok", null, plan), null);
+    assert.equal(choisirDemande("err", "00:35", plan), null);
+  });
+  test("plan incomplet ou hors de la nuit -> rien n'est envoyé", () => {
+    assert.equal(choisirDemande("ok", "00:35"), null); // ancien appel sans plan
+    for (const p of [{ ...plan, fin: "08:00" }, { ...plan, dureeMin: 0 }, { ...plan, dureeMin: 901 }, { ...plan, dureeMin: 12.5 }, { ...plan, dureeMin: "325" },
+      { ...plan, depart: "00:35" }, { ...plan, depart: "7:30" }, { ...plan, fin: undefined }, { fin: "06:00", dureeMin: 325 }]) {
+      assert.equal(choisirDemande("ok", "00:35", p), null, JSON.stringify(p));
+    }
+  });
+  test("demandeValide : même règle que le Worker et la coque", () => {
+    assert.equal(demandeValide(prog), true);
+    assert.equal(demandeValide({ ...prog, fin: "07:30" }), true); // fin = départ
+    assert.equal(demandeValide({ ...prog, fin: "00:35" }), false);
+    assert.equal(demandeValide({ ...prog, fin: "00:30" }), false); // avant l'allumage
+    assert.equal(demandeValide({ ...prog, allumage: "07:30" }), false); // départ = allumage
+    assert.equal(demandeValide(null), false);
+    assert.equal(demandeValide({ desactiver: true }), false);
   });
   test("libellés", () => {
     assert.deepEqual(libelleBouton(prog), { principal: "Programmer la charge", secondaire: "démarrage 00:35" });
@@ -86,17 +105,63 @@ describe("Interprétation : OK seulement si tout est conforme", () => {
     assert.equal(interpreterReponse(prog, 201, okRep).etat, "ko");
     assert.equal(interpreterReponse(prog, 502, okRep).etat, "ko");
   });
-  test("démarrage immédiat", () => {
-    const r = interpreterReponse(prog, 200, { ...okRep, debut: "23:58", immediat: true });
+  test("rappel de la charge programmée : brancher AVANT l'heure de début", () => {
+    const r = interpreterReponse(prog, 200, okRep);
+    assert.equal(r.rappel, "Branchez la voiture avant 00:35 : sinon la charge ne démarrera pas.");
+    assert.equal(r.debut, "00:35"); assert.equal(r.fin, "06:00");
+  });
+  test("fin relue différente de la fin demandée -> KO", () => {
+    for (const fin of ["06:30", "05:59", undefined, "6:00"]) {
+      const r = interpreterReponse(prog, 200, { ...okRep, fin });
+      assert.equal(r.etat, "ko", String(fin));
+      assert.equal(r.code, "relecture_differente");
+    }
+  });
+  test("démarrage tardif : alerte avec les heures écrites et relues", () => {
+    const r = interpreterReponse(prog, 200, { ...okRep, debut: "23:58", fin: "07:30", tardif: true }, "06:00");
     assert.equal(r.etat, "ok");
-    assert.match(r.message, /Démarrage immédiat : l'heure calculée était passée/);
-    assert.match(r.detail, /23:58/);
+    assert.equal(r.tardif, true);
+    assert.equal(r.message, "Heure de début dépassée : charge programmée de 23:58 à 07:30.");
+    assert.equal(r.rappel, "Branchez la voiture avant 23:58.");
+    assert.equal(r.detail, "Dont 90 min en heures pleines."); // 06:00 -> 07:30
+    assert.deepEqual([r.debut, r.fin], ["23:58", "07:30"]);
   });
-  test("immédiat sans heure relue valide -> KO", () => {
-    assert.equal(interpreterReponse(prog, 200, { ...okRep, debut: undefined, immediat: true }).etat, "ko");
+  test("démarrage tardif : pas de mention des heures pleines si la fin est dans les heures creuses", () => {
+    const r = interpreterReponse(prog, 200, { ...okRep, debut: "01:10", fin: "05:30", tardif: true }, "06:00");
+    assert.equal(r.etat, "ok");
+    assert.equal(r.detail, null);
+    assert.equal(interpreterReponse(prog, 200, { ...okRep, debut: "01:10", fin: "05:30", tardif: true }).detail, null); // fin des heures creuses inconnue
   });
-  test("immédiat truthy mais pas true : on exige l'égalité", () => {
-    assert.equal(interpreterReponse(prog, 200, { ...okRep, debut: "23:58", immediat: "oui" }).etat, "ko");
+  test("démarrage tardif : minutes en heures pleines", () => {
+    assert.equal(minutesHeuresPleines("23:58", "07:30", "06:00", "07:30"), 90);
+    assert.equal(minutesHeuresPleines("01:10", "06:00", "06:00", "07:30"), 0);
+    assert.equal(minutesHeuresPleines("01:10", "06:20", "06:00", "07:30"), 20);
+    assert.equal(minutesHeuresPleines("06:40", "07:30", "06:00", "07:30"), 50); // début déjà après les heures creuses : tout en heures pleines
+    assert.equal(minutesHeuresPleines("06:40", "07:30", undefined, "07:30"), 0);
+  });
+  test("démarrage tardif sans heures valides ou hors de la nuit -> KO", () => {
+    for (const rep of [
+      { ...okRep, debut: undefined, tardif: true }, { ...okRep, fin: undefined, tardif: true },
+      { ...okRep, debut: "23:58", fin: "08:00", tardif: true }, // fin après le départ
+      { ...okRep, debut: "23:58", fin: "23:58", tardif: true }, { ...okRep, debut: "23:58", fin: "6:00", tardif: true },
+      { ...okRep, debut: "23:58", fin: "07:30", tardif: true, plage_active: false },
+    ]) assert.equal(interpreterReponse(prog, 200, rep).etat, "ko", JSON.stringify(rep));
+  });
+  test("tardif truthy mais pas true : on exige l'égalité (début différent de la demande -> KO)", () => {
+    assert.equal(interpreterReponse(prog, 200, { ...okRep, debut: "23:58", fin: "07:30", tardif: "oui" }).etat, "ko");
+  });
+  test("l'ancien champ immediat n'ouvre plus aucun chemin vers « ok »", () => {
+    assert.equal(interpreterReponse(prog, 200, { ...okRep, debut: "23:58", immediat: true }).etat, "ko");
+  });
+  test("trop tard : KO sans incertitude, message avec le départ, heure à la main", () => {
+    const r = interpreterReponse(prog, 409, { ok: false, erreur: "trop_tard" });
+    assert.equal(r.etat, "ko");
+    assert.equal(r.code, "trop_tard");
+    assert.equal(r.message, "Trop tard pour charger avant le départ (07:30) : rien n'a été modifié sur le câble.");
+    assert.match(r.manuel, /début 00:35, déjà passé/);
+    assert.match(r.manuel, /Smart Life/);
+    assert.equal(r.incertain, false);
+    assert.equal(r.verifier, null);
   });
   test("plage courte : OK avec les heures relues", () => {
     const r = interpreterReponse(desact, 200, courteRep);
@@ -118,18 +183,10 @@ describe("Interprétation : OK seulement si tout est conforme", () => {
       assert.equal(r.code, "relecture_differente");
     }
   });
-  test("avertissement si la fin relue diffère de la fin des heures creuses, sans KO", () => {
-    const r = interpreterReponse(prog, 200, okRep, "07:00");
-    assert.equal(r.etat, "ok");
-    assert.match(r.avertissement, /fin de plage du câble \(06:00\) ne correspond pas à la fin des heures creuses \(07:00\) : vérifiez dans Smart Life/);
-    const c = interpreterReponse(desact, 200, courteRep, "07:00");
-    assert.equal(c.etat, "ok");
-    assert.match(c.avertissement, /\(06:00\).*\(07:00\)/);
-  });
-  test("pas d'avertissement si la fin correspond ou si la fin des Paramètres est inconnue", () => {
-    assert.equal(interpreterReponse(prog, 200, okRep, "06:00").avertissement, undefined);
-    assert.equal(interpreterReponse(desact, 200, courteRep, "06:00").avertissement, undefined);
-    assert.equal(interpreterReponse(prog, 200, okRep).avertissement, undefined);
+  test("plus d'avertissement de fin de plage : la fin est écrite et vérifiée (fin du plan, pas celle des Paramètres)", () => {
+    assert.equal(interpreterReponse(prog, 200, okRep, "07:00").avertissement, undefined);
+    assert.equal(interpreterReponse(desact, 200, courteRep, "07:00").avertissement, undefined);
+    assert.equal(interpreterReponse(prog, 200, okRep, "07:00").etat, "ok");
   });
 });
 
@@ -198,7 +255,7 @@ describe("Envoi (fetch simulé)", () => {
     assert.equal(vu.init.method, "POST");
     assert.equal(vu.init.headers.Authorization, "Bearer tok-123");
     assert.equal(vu.init.headers["Content-Type"], "application/json");
-    assert.equal(vu.init.body, '{"allumage":"00:35"}');
+    assert.equal(vu.init.body, '{"allumage":"00:35","fin":"06:00","duree_min":325,"depart":"07:30"}');
     assert.equal(vu.init.credentials, "omit");
     assert.equal(vu.init.redirect, "error");
     assert.ok(!vu.url.includes("tok-123"));
@@ -313,7 +370,7 @@ describe("Critères 2c : alerte KO distincte, aide hors ligne, avertissement aff
     });
   });
   test("tous les messages d'erreur sont distincts deux à deux", () => {
-    const codes = ["non_autorise", "trop_de_requetes", "hors_ligne", "jeton", "tuya", "delai", "relecture_differente", "requete_invalide", "hors_ligne_navigateur", "injoignable", "delai_page", "illisible", "inattendue"];
+    const codes = ["non_autorise", "trop_de_requetes", "hors_ligne", "jeton", "tuya", "delai", "relecture_differente", "requete_invalide", "trop_tard", "hors_ligne_navigateur", "injoignable", "delai_page", "illisible", "inattendue"];
     const msgs = codes.map((c) => resultatKo(prog, c).message);
     assert.equal(new Set(msgs).size, codes.length);
   });
@@ -323,9 +380,11 @@ describe("Critères 2c : alerte KO distincte, aide hors ligne, avertissement aff
     assert.match(ko, /res\.manuel/);
     assert.match(ko, /navLink\([^)]*"#aide"/);
   });
-  test("l'avertissement de fin de plage est affiché dans l'alerte OK, et la fin des Paramètres est transmise", () => {
-    assert.match(app, /if \(res\.avertissement\) a\.appendChild/);
+  test("l'alerte OK affiche titre, détail (heures pleines) et rappel ; la fin des Paramètres est transmise ; le plan envoie fin, durée et départ", () => {
+    assert.match(app, /if \(res\.detail\) a\.appendChild/);
+    assert.match(app, /if \(res\.rappel\) a\.appendChild/);
     assert.match(app, /finHC = fmt\(hm\(cur\.hcEnd\)\)/);
+    assert.match(app, /choisirDemande\(r\.status, [^\n]*\{ fin: fmt\(r\.end\), dureeMin: r\.chargeMin, depart: fmt\(r\.dep\) \}\)/);
   });
   test("l'Aide est dans la page mise en cache : vue #aide dans index.html, index.html et app.js dans le précache", () => {
     assert.match(html, /id="v-aide"/);

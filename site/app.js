@@ -266,7 +266,8 @@ import { confirmationValable, blocageCable, plageRelue, plageDuCable, ligneCable
 
     drawTimeline(r);
     drawAide(p, r);
-    setDemande(choisirDemande(r.status, r.status === "none" ? null : fmt(r.start)));
+    // Le plan fournit aussi la fin, la durée de charge et le départ : le câble décide au moment de l'envoi (démarrage tardif).
+    setDemande(choisirDemande(r.status, r.status === "none" ? null : fmt(r.start), { fin: fmt(r.end), dureeMin: r.chargeMin, depart: fmt(r.dep) }));
   }
 
   // Frise : du début des heures creuses (plus tôt si la charge commence avant)
@@ -626,11 +627,11 @@ import { confirmationValable, blocageCable, plageRelue, plageDuCable, ligneCable
     svcSummary();
     var b = $("sendBtn"), help = $("sendHelp");
     var occ = busy || !!localEnVol || !!att; // un envoi local dont le plafond est tombé tourne encore : pas de second envoi
-    var ctx = demande && dernierPlan ? contexteHoraire({ maintenant: new Date(), hcStart: cur.hcStart, hcEnd: cur.hcEnd, startRel: dernierPlan.startRel, nuitChangement: !!dernierNuit }) : null;
+    var ctx = demande && dernierPlan ? contexteHoraire({ maintenant: new Date(), hcStart: cur.hcStart, hcEnd: cur.hcEnd, startRel: dernierPlan.startRel, nuitChangement: !!dernierNuit, dep: cur.dep }) : null;
     var lab = libelleBouton(demande, ctx);
     moyen = moyenEnvoi({ pont: pontOk, adresse: svc.adresse, jeton: svc.jeton });
     // Le câble a déjà la plage demandée : rien à envoyer (seulement quand la batterie est confirmée).
-    var deja = confirme && dejaProgramme(plageCable, demande);
+    var deja = confirme && dejaProgramme(plageCable, demande, ctx);
     $("sendMain").textContent = att ? LIBELLES_ATTENTE.principal : occ ? "Envoi en cours…" : deja ? libelleDejaProgramme(demande) : (lab ? lab.principal : "Programmer la charge");
     var cle = demande ? JSON.stringify(demande) : null;
     var socVide = String($("soc").value).trim() === "";
@@ -664,7 +665,6 @@ import { confirmationValable, blocageCable, plageRelue, plageDuCable, ligneCable
       a.appendChild(el("p", "alert-title", res.message));
       if (res.detail) a.appendChild(el("p", null, res.detail));
       if (res.rappel) a.appendChild(el("p", null, res.rappel));
-      if (res.avertissement) a.appendChild(el("p", "manual", res.avertissement));
     } else {
       a.appendChild(el("p", "alert-title", res.titre || "Programmation non confirmée"));
       a.appendChild(el("p", null, res.message));

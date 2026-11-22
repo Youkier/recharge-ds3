@@ -421,10 +421,14 @@ describe('Compatibilité avec la page (interpreterReponse de site/service.js)', 
   test('les succès sont acceptés comme ceux du Worker', async () => {
     let f = FAUX();
     let r = await programmer(cfgDe(), f.transport, { allumage: '00:15' });
-    assert.equal(interpreterReponse({ allumage: '00:15' }, 200, r).etat, 'ok');
+    // Demande du contrat du 2026-11-22 (début, fin du plan, durée, départ) : l'outil PC relit la fin du câble (06:00), égale à la fin demandée.
+    assert.equal(interpreterReponse({ allumage: '00:15', fin: '06:00', duree_min: 345, depart: '07:30' }, 200, r).etat, 'ok');
     f = FAUX();
     r = await programmer(cfgDe({ maintenant: () => new Date('2026-11-17T03:10:00Z') }), f.transport, { allumage: '03:30' });
-    assert.equal(interpreterReponse({ allumage: '03:30' }, 200, r).etat, 'ok');
+    // Écart voulu : l'outil PC (local/tuya-local.js) garde l'ancienne règle « immédiat » ; la page ne la reconnaît plus
+    // (début relu différent du début demandé, sans tardif) et la traite comme un KO. Il ne sert plus qu'à la maintenance.
+    assert.equal(r.immediat, true);
+    assert.equal(interpreterReponse({ allumage: '03:30', fin: '06:00', duree_min: 150, depart: '07:30' }, 200, r).etat, 'ko');
     f = FAUX();
     r = await programmer(cfgDe(), f.transport, { desactiver: true });
     assert.equal(interpreterReponse({ desactiver: true }, 200, r).etat, 'ok');

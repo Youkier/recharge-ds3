@@ -81,6 +81,8 @@ export function rechercheAutomatique({ etat, dejaFaite, pont }) {
 // Plage relue sur le câble, extraite d'un résultat « ok » de service.js : { debut, fin } (chaque champ peut manquer).
 export function plageRelue(res) {
   if (!res || res.etat !== 'ok') return {};
+  // Champs structurés (service.js, depuis le démarrage tardif) : le texte d'une alerte n'est plus la source.
+  if (typeof res.debut === 'string' && HEURE_RE.test(res.debut)) return { debut: res.debut, fin: typeof res.fin === 'string' && HEURE_RE.test(res.fin) ? res.fin : undefined };
   const t = [res.message, res.detail].filter(Boolean).join(' ');
   const d = /(?:Début relu sur le câble : |démarrage |\()(\d\d:\d\d)/.exec(t);
   const f = /(?:Fin de la plage : |–)(\d\d:\d\d)/.exec(t);
@@ -119,10 +121,13 @@ export function ligneCable(plage) {
 }
 
 // Le câble a-t-il déjà ce qu'on s'apprête à lui envoyer ? Alors « Programmer » n'a rien à faire (aucun envoi inutile).
-export function dejaProgramme(plage, demande) {
+// Début ET fin identiques. Jamais « déjà programmé » quand le début est passé ou imminent (contexte 'tardif') : la charge ne démarrerait
+// pas si la voiture est branchée maintenant, il faut décaler le début (démarrage tardif).
+export function dejaProgramme(plage, demande, contexte) {
   if (!plage || !demande || plage.active !== true) return false; // seulement une plage lue ACTIVE
   if (demande.desactiver) return plageSansCharge(plage);
-  return typeof demande.allumage === 'string' && plage.debut === demande.allumage;
+  if (contexte === 'tardif') return false;
+  return typeof demande.allumage === 'string' && plage.debut === demande.allumage && typeof demande.fin === 'string' && plage.fin === demande.fin;
 }
 
 // Texte principal du bouton quand le câble a déjà la plage demandée.
@@ -132,19 +137,29 @@ export function libelleDejaProgramme(demande) {
 
 // ---------- Quand la programmation a lieu ----------
 // Contexte horaire de la demande, pour la sous-ligne du bouton :
-//   'immediat'      : l'heure de début calculée est déjà passée dans la nuit en cours (le câble démarre tout de suite) ;
+//   'tardif'        : l'heure de début calculée est déjà passée dans la nuit en cours, ou dans moins de 10 min : le début sera
+//                     décalé à maintenant + 10 min (démarrage tardif) ;
 //   'cette_nuit'    : on programme en journée, pour la nuit qui vient (après la fin des heures creuses) ;
 //   null            : rien à dire (ou nuit de changement d'heure : pas de prévision).
 // startRel : début calculé en minutes depuis le début des heures creuses (négatif s'il précède les heures creuses).
-export function contexteHoraire({ maintenant, hcStart, hcEnd, startRel, nuitChangement }) {
+// dep (facultatif) : heure de départ ; entre la fin des heures creuses et le départ, un début passé reste « tardif ».
+export function contexteHoraire({ maintenant, hcStart, hcEnd, startRel, nuitChangement, dep }) {
   if (!(maintenant instanceof Date) || isNaN(maintenant.getTime()) || nuitChangement || !Number.isFinite(startRel)) return null;
   const s = hm(hcStart), e = hm(hcEnd);
   const rel = (x) => ((x - s) % 1440 + 1440) % 1440;
   const longueur = rel(e) || 1440;
-  const t = rel(maintenant.getHours() * 60 + maintenant.getMinutes());
-  if (t < longueur) return startRel <= t ? 'immediat' : null; // dans les heures creuses
-  // Hors heures creuses : un début avant les heures creuses (startRel < 0) peut déjà être passé ce soir.
-  return startRel < 0 && t >= startRel + 1440 ? 'immediat' : 'cette_nuit';
+  const seconde = maintenant.getSeconds() > 0 || maintenant.getMilliseconds() > 0 ? 1 : 0; // comme l'envoi : minute supérieure
+  const t = rel(maintenant.getHours() * 60 + maintenant.getMinutes() + seconde);
+  const MARGE = 10; // un début dans moins de 10 min est aussi décalé
+  if (t < longueur) return startRel < t + MARGE ? 'tardif' : null; // dans les heures creuses
+  // Hors heures creuses : un début avant les heures creuses (startRel < 0) peut déjà être passé ce soir (ou l'être dans moins de 10 min).
+  if (startRel < 0 && t + MARGE > startRel + 1440) return 'tardif';
+  // Entre la fin des heures creuses et le départ : le début (dans les heures creuses) est passé.
+  if (typeof dep === 'string' && HEURE_RE.test(dep)) {
+    const depRel = rel(hm(dep));
+    if (depRel > longueur && t < depRel) return 'tardif';
+  }
+  return 'cette_nuit';
 }
 
 // Sous-ligne du bouton Programmer, par ordre de priorité.
@@ -255,12 +270,13 @@ export function quitterSiCache({ cache, arriere, prepa }) {
   return !!cache && !arriere && !prepa;
 }
 
-// Résultat envoyé à la notification de fin : 'ok' | 'ko' | 'annulee'.
+// Résultat envoyé à la notification de fin : 'ok' | 'aucune' | 'tardif' | 'trop_tard' | 'ko' | 'annulee'.
 export function resultatNotification({ code, res }) {
   if (code === 'local_attente_annulee') return 'annulee';
+  if (res && res.etat === 'ko' && res.code === 'trop_tard') return 'trop_tard'; // début passé, départ trop proche : rien n'est écrit
   if (!res || res.etat !== 'ok') return 'ko';
-  if (res.aucune === true) return 'aucune';     // « pas de charge cette nuit » : jamais « Charge programmée »
-  if (res.immediat === true) return 'immediat'; // heure passée : « démarrage immédiat », pas « démarrage HH:MM »
+  if (res.aucune === true) return 'aucune';  // « pas de charge cette nuit » : jamais « Charge programmée »
+  if (res.tardif === true) return 'tardif';  // début décalé à maintenant + 10 min : pas « démarrage HH:MM » de la demande
   return 'ok';
 }
 

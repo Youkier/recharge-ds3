@@ -11,8 +11,13 @@
 //
 // Opérations sur le câble (une seule à la fois côté natif, sinon erreur occupe) :
 //   lire { ip?, delai?, reessayer? } -> { debut, fin, plage_active }   reessayer : seconde lecture (8 s) après un échec de contact
-//   programmer { allumage:"HH:MM" | desactiver:true, ip?, delai?, reessayer? }
-//                                   -> { debut, fin, plage_active, immediat, courte }   (lit, écrit, relit)
+//   programmer { allumage:"HH:MM", fin:"HH:MM", duree_min:<entier 1..900>, depart:"HH:MM" | desactiver:true, ip?, delai?, reessayer? }
+//                                   -> { debut, fin, plage_active, tardif, courte }   (lit, écrit, relit)
+//                                      Démarrage tardif (décision du 2026-11-22), pris AU MOMENT DE L'ENVOI, en heure de Paris : si
+//                                      l'allumage est passé (entre l'allumage et le départ) ou dans moins de 10 min, le natif écrit
+//                                      début = maintenant + 10 min, fin = min(début + duree_min, depart) et répond tardif:true ;
+//                                      sinon il écrit allumage et fin. Si début >= départ : erreur trop_tard, rien n'est écrit.
+//                                      Le natif écrit ss, se et m (jamais dt) ; fin doit être entre l'allumage et le départ.
 //                                      échec : { ok:false, erreur, ecrit? } ; ecrit:true = l'écriture est partie, ne jamais la relancer
 //   chercher { ip?, reessayer? }    -> { ip, trouve, debut, fin, plage_active } | erreur introuvable
 //                                      pendant la recherche : messages { n, progres:true, etape, appareils, lectures, echeance }
@@ -21,7 +26,7 @@
 //   (ecrit:true) ni pour un échec qui n'est pas un échec de contact (hors_ligne, delai, cle). Programmer : 27 s au total.
 //   ip : adresse IPv4 privée à utiliser à la place de l'adresse retenue (filtrée côté natif) ; delai : millisecondes
 //   (1000 à 30000, 20000 par défaut). L'adresse est retenue côté natif après une lecture, une écriture ou une recherche réussie.
-//   Erreurs : cle, hors_ligne, delai, format, relecture_differente, requete_invalide, pas_de_cle, pas_wifi, sans_adresse,
+//   Erreurs : cle, hors_ligne, delai, format, relecture_differente, requete_invalide, trop_tard, pas_de_cle, pas_wifi, sans_adresse,
 //   refuse (adresse hors filtre), occupe, introuvable, pont_muet (pas de réponse du natif).
 // Configuration :
 //   demarrage                       -> { variante, auto }   coupe toute opération restée en cours (nouvelle page)
@@ -42,7 +47,7 @@
 //   attenteDebut { heure }          -> {}   | erreur requete_invalide, notifications, occupe, service ; notification
 //                                      continue « En attente du Wi-Fi et du câble » avec « Annuler »
 //   attenteEtat                     -> { active, annulee }   annulee : « Annuler » touché dans la notification
-//   attenteFin { resultat: "ok"|"ko"|"annulee", heure?, incertain? } -> {}   notification de résultat (heure absente :
+//   attenteFin { resultat: "ok"|"aucune"|"tardif"|"trop_tard"|"ko"|"annulee", heure?, incertain? } -> {}   notification de résultat (heure absente :
 //                                      texte sans heure), puis arrêt du service et oubli de la configuration gardée
 // Filets côté service : 15 min sans attenteFin -> « Résultat inconnu » ; appli fermée -> « Programmation non envoyée » ;
 // 60 s après « Annuler » sans attenteFin -> « Résultat inconnu ».

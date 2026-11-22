@@ -30,25 +30,48 @@ export function validerJeton(saisie) {
 
 // --- Choix de la demande ---
 
+export const DUREE_MIN_MAX = 900;
+const minutesDe = (hhmm) => Number(hhmm.slice(0, 2)) * 60 + Number(hhmm.slice(3));
+const mod24 = (x) => ((x % 1440) + 1440) % 1440;
+
+// Demande de programmation { allumage, fin, duree_min, depart } valide : trois heures HH:MM, durée entière de 1 à 900 minutes,
+// fin comprise entre l'allumage (exclu) et le départ (inclus), en heures murales, minuit compris. Même règle que le Worker et
+// que la coque Android (qui la revalident : cette fonction ne sert qu'à ne rien envoyer d'invalide).
+export function demandeValide(d) {
+  if (!d || typeof d !== 'object') return false;
+  if (![d.allumage, d.fin, d.depart].every((h) => typeof h === 'string' && HEURE_RE.test(h))) return false;
+  if (!Number.isInteger(d.duree_min) || d.duree_min < 1 || d.duree_min > DUREE_MIN_MAX) return false;
+  const nuit = mod24(minutesDe(d.depart) - minutesDe(d.allumage));
+  const jusquaFin = mod24(minutesDe(d.fin) - minutesDe(d.allumage));
+  return nuit > 0 && jusquaFin > 0 && jusquaFin <= nuit;
+}
+
 // statut : r.status du calcul ('none' = aucune charge nécessaire). heure : "HH:MM" du début de charge.
+// plan : { fin: "HH:MM" fin du plan, dureeMin: durée de charge du plan (chargeMin), depart: "HH:MM" réglage de départ }.
 // Renvoie null si la demande ne peut pas être construite (rien n'est alors envoyé).
-export function choisirDemande(statut, heure) {
+export function choisirDemande(statut, heure, plan = {}) {
   if (statut === 'none') return { desactiver: true };
-  if ((statut === 'ok' || statut === 'short') && typeof heure === 'string' && HEURE_RE.test(heure)) return { allumage: heure };
+  if ((statut === 'ok' || statut === 'short') && typeof heure === 'string' && HEURE_RE.test(heure)) {
+    const d = { allumage: heure, fin: plan.fin, duree_min: plan.dureeMin, depart: plan.depart };
+    return demandeValide(d) ? d : null;
+  }
   return null;
 }
 
-// Phrases communes au service et au mode Local (une seule source). Jamais en condition préalable : la programmation peut
-// précéder ou suivre le branchement de la voiture (décision de Mathieu du 2026-11-22).
-export const PENSE_BRANCHER = 'Pensez à brancher la voiture ce soir.';
+// Phrases communes au service et au mode Local (une seule source). La charge ne démarre PAS si la voiture est branchée après
+// l'heure de début de la plage (constat de Mathieu du 2026-11-22) : on le dit à chaque programmation. Jamais en condition
+// préalable : la programmation peut précéder ou suivre le branchement de la voiture.
+export const brancherAvant = (h) => 'Branchez la voiture avant ' + h + ' : sinon la charge ne démarrera pas.';
+export const brancherAvantTardif = (h) => 'Branchez la voiture avant ' + h + '.';
 export const RAPPEL_REPROGRAMMER = 'Demain soir, reprogrammez : sinon la voiture ne chargera pas.';
 const FERMER_SMART_LIFE = " Fermez Smart Life s'il est ouvert, puis réessayez.";
 
-// contexte (facultatif) : 'immediat' (heure déjà passée dans la nuit) | 'cette_nuit' (programmé en journée), voir accueil.js.
+// contexte (facultatif) : 'tardif' (heure déjà passée ou dans moins de 10 min : le début sera décalé) | 'cette_nuit' (programmé en
+// journée), voir accueil.js.
 export function libelleBouton(demande, contexte) {
   if (!demande) return null;
   if (demande.desactiver) return { principal: 'Pas de charge ce soir', secondaire: 'le câble ne chargera pas cette nuit' };
-  const secondaire = contexte === 'immediat' ? 'démarre tout de suite'
+  const secondaire = contexte === 'tardif' ? 'début dans 10 min'
     : 'démarrage ' + demande.allumage + (contexte === 'cette_nuit' ? ' · pour cette nuit' : '');
   return { principal: 'Programmer la charge', secondaire };
 }
@@ -83,6 +106,8 @@ const CAUSES = {
   delai: { message: 'Le câble n\'a pas répondu à temps.', incertain: true },
   relecture_differente: { message: 'Le câble n\'a pas la valeur demandée après l\'écriture.', incertain: true },
   requete_invalide: { message: 'Le service a refusé la demande (format invalide).', incertain: false },
+  // Début déjà passé et départ à 10 min ou moins : rien n'a été écrit (message complété avec l'heure de départ dans resultatKo).
+  trop_tard: { message: 'Trop tard pour charger avant le départ : rien n\'a été modifié sur le câble.', incertain: false },
   // Échecs côté page
   hors_ligne_navigateur: { message: 'Pas de connexion internet : la demande n\'a pas été envoyée.', incertain: false },
   injoignable: { message: 'Service injoignable (réseau coupé, adresse erronée ou service arrêté).', incertain: true },
@@ -109,14 +134,22 @@ const CAUSES = {
 
 export function resultatKo(demande, code, finHC) {
   const c = CAUSES[code] || CAUSES.inattendue;
+  const tropTard = code === 'trop_tard';
   return {
     etat: 'ko',
     code: CAUSES[code] ? code : 'inattendue',
-    message: c.message,
-    manuel: consigneManuelle(demande, finHC),
+    message: tropTard && demande && estHeure(demande.depart)
+      ? 'Trop tard pour charger avant le départ (' + demande.depart + ') : rien n\'a été modifié sur le câble.'
+      : c.message,
+    manuel: tropTard ? consigneTropTard(demande) : consigneManuelle(demande, finHC),
     incertain: c.incertain,
     verifier: c.incertain ? ouVerifier(demande, finHC) : null,
   };
+}
+
+// Trop tard : l'heure calculée est dépassée et le départ est trop proche ; l'heure à régler à la main est dite, avec le geste.
+function consigneTropTard(demande) {
+  return 'Heure calculée : début ' + (demande && demande.allumage ? demande.allumage : '--:--') + ', déjà passé. Pour charger quand même, démarrez la charge à la main dans Smart Life.';
 }
 
 // Où vérifier quand le résultat est incertain : l'écran et la valeur à comparer.
@@ -127,20 +160,28 @@ function ouVerifier(demande, finHC) {
     : 'Vérifiez dans Smart Life > charge différée.';
 }
 
+// Minutes de charge hors heures creuses : après la fin des heures creuses (finHC) et avant le départ. Le début des heures creuses n'est
+// pas connu ici : un début avant lui n'est pas compté.
+export function minutesHeuresPleines(debut, fin, finHC, depart) {
+  if (![debut, fin, finHC, depart].every(estHeure)) return 0;
+  const duree = mod24(minutesDe(fin) - minutesDe(debut));
+  const jusquaFinHC = mod24(minutesDe(finHC) - minutesDe(debut));
+  const apresHC = mod24(minutesDe(debut) - minutesDe(finHC));
+  const nuit = mod24(minutesDe(depart) - minutesDe(finHC)); // de la fin des heures creuses au départ
+  if (nuit > 0 && apresHC < nuit) return duree; // le début est déjà après la fin des heures creuses : tout est en heures pleines
+  return jusquaFinHC < duree ? duree - jusquaFinHC : 0;
+}
+
 const estHeure = (x) => typeof x === 'string' && HEURE_RE.test(x);
 
 // status : code HTTP ; json : objet déjà décodé, ou undefined si le corps n'était pas du JSON.
-// finHC (facultatif) : fin des heures creuses des Paramètres, pour signaler une fin de plage différente.
+// finHC (facultatif) : fin des heures creuses des Paramètres, pour dire combien de minutes d'une charge tardive tombent en heures pleines.
 export function interpreterReponse(demande, status, json, finHC) {
   const ko = (code) => resultatKo(demande, code, finHC);
-  const res = interpreterSansAvertissement(demande, status, json, ko);
-  if (res.etat === 'ok' && estHeure(finHC) && estHeure(json.fin) && json.fin !== finHC) {
-    res.avertissement = 'La fin de plage du câble (' + json.fin + ') ne correspond pas à la fin des heures creuses (' + finHC + ') : vérifiez dans Smart Life.';
-  }
-  return res;
+  return interpreter(demande, status, json, ko, finHC);
 }
 
-function interpreterSansAvertissement(demande, status, json, ko) {
+function interpreter(demande, status, json, ko, finHC) {
   if (json === undefined || json === null || typeof json !== 'object' || Array.isArray(json)) {
     return ko(status === 401 ? 'non_autorise' : status === 429 ? 'trop_de_requetes' : 'illisible');
   }
@@ -154,7 +195,7 @@ function interpreterSansAvertissement(demande, status, json, ko) {
   if (demande && demande.desactiver) {
     // Plage courte : OK seulement si activée, marquée courte, et début = fin - 1 min (relus sur le câble).
     if (json.plage_active === true && json.courte === true && estHeure(json.debut) && estHeure(json.fin) && json.debut === moinsUneMinute(json.fin)) {
-      return { etat: 'ok', message: 'Le câble ne chargera pas cette nuit (' + json.debut + '–' + json.fin + '), inutile de brancher.', detail: null, rappel: RAPPEL_REPROGRAMMER, aucune: true };
+      return { etat: 'ok', message: 'Le câble ne chargera pas cette nuit (' + json.debut + '–' + json.fin + '), inutile de brancher.', detail: null, rappel: RAPPEL_REPROGRAMMER, aucune: true, debut: json.debut, fin: json.fin };
     }
     return ko('relecture_differente');
   }
@@ -162,12 +203,22 @@ function interpreterSansAvertissement(demande, status, json, ko) {
   if (!demande || !estHeure(demande.allumage) || !estHeure(json.debut) || json.plage_active !== true) {
     return ko('relecture_differente');
   }
-  const fin = estHeure(json.fin) ? 'Fin de la plage : ' + json.fin + '.' : null;
-  if (json.immediat === true) {
-    return { etat: 'ok', message: 'Démarrage immédiat : l\'heure calculée était passée.', detail: ['Début relu sur le câble : ' + json.debut + '.', fin].filter(Boolean).join(' '), rappel: PENSE_BRANCHER, immediat: true };
+  if (!estHeure(json.fin)) return ko('relecture_differente'); // la fin est écrite et relue à chaque fois
+  if (json.tardif === true) {
+    // Début reporté à maintenant + 10 min : vérifié seulement qu'il tient dans la nuit demandée (début -> fin -> départ).
+    const nuit = estHeure(demande.depart) ? mod24(minutesDe(demande.depart) - minutesDe(json.debut)) : 0;
+    const jusquaFin = mod24(minutesDe(json.fin) - minutesDe(json.debut));
+    if (!(nuit > 0 && jusquaFin > 0 && jusquaFin <= nuit)) return ko('relecture_differente');
+    const hp = minutesHeuresPleines(json.debut, json.fin, finHC, demande.depart);
+    return {
+      etat: 'ok', tardif: true, debut: json.debut, fin: json.fin,
+      message: 'Heure de début dépassée : charge programmée de ' + json.debut + ' à ' + json.fin + '.',
+      detail: hp > 0 ? 'Dont ' + hp + ' min en heures pleines.' : null,
+      rappel: brancherAvantTardif(json.debut),
+    };
   }
-  if (json.debut !== demande.allumage) return ko('relecture_differente');
-  return { etat: 'ok', message: 'Charge programmée : démarrage ' + json.debut, detail: fin, rappel: PENSE_BRANCHER };
+  if (json.debut !== demande.allumage || json.fin !== demande.fin) return ko('relecture_differente');
+  return { etat: 'ok', message: 'Charge programmée : démarrage ' + json.debut, detail: 'Fin de la plage : ' + json.fin + '.', rappel: brancherAvant(json.debut), debut: json.debut, fin: json.fin };
 }
 
 // --- Envoi ---

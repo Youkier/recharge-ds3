@@ -6,6 +6,8 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { pontPresent, lireConfigurationCable, etatCable, chercherCable, programmerLocal, surLeReseauDeLaMaison } from '../site/local.js';
 
+// Demande complète du contrat du 2026-11-22 : début, fin du plan, durée de charge, départ.
+const dem = (allumage, o = {}) => ({ allumage, fin: '06:00', duree_min: 300, depart: '07:30', ...o });
 const PLAGE = { ok: true, debut: '03:30', fin: '06:00', plage_active: true };
 
 // Client du pont simulé. lire / programmer / chercher : réponses du natif (valeur, ou fonction appelée à chaque appel).
@@ -20,7 +22,7 @@ function client({ configure = true, adresse = '192.168.1.48', prefixe = '192.168
     async lire(params, delai) { journal.lectures.push({ params, delai }); return rep(lire, params, delai); },
     async programmer(action, params, delai) {
       journal.programmes.push({ action, params, delai });
-      return rep(programmer ?? ((a) => ({ ok: true, debut: a.desactiver ? '05:59' : a.allumage, fin: '06:00', plage_active: true, immediat: false, courte: !!a.desactiver })), action, params, delai);
+      return rep(programmer ?? ((a) => ({ ok: true, debut: a.desactiver ? '05:59' : a.allumage, fin: a.desactiver ? '06:00' : a.fin, plage_active: true, tardif: false, courte: !!a.desactiver })), action, params, delai);
     },
     async chercher(params, surProgres) { journal.recherches.push(params); return rep(chercher ?? { ok: false, erreur: 'introuvable' }, params, surProgres); },
   };
@@ -124,13 +126,36 @@ describe('Programmer en local (règle 2 : jamais d\'échec silencieux)', () => {
     assert.deepEqual(c.journal.programmes.map((x) => x.action), [{ desactiver: true }]);
     assert.deepEqual(c.journal.programmes[0].params, { ip: '192.168.1.48', reessayer: true });
   });
-  test('programmer une heure : ok seulement si relu conforme ; seule l\'heure part', async () => {
+  test('programmer une heure : ok seulement si relu conforme ; seuls début, fin, durée et départ partent', async () => {
     const c = client();
-    const r = await programmerLocal({ allumage: '23:45', autre: 'x', courant: 10 }, { client: c }, '06:00');
+    const r = await programmerLocal({ ...dem('23:45'), autre: 'x', courant: 10 }, { client: c }, '06:00');
     assert.equal(r.etat, 'ok', JSON.stringify(r));
-    assert.equal(r.rappel, 'Pensez à brancher la voiture ce soir.');
-    assert.ok(/Charge programmée : démarrage 23:45|Démarrage immédiat/.test(r.message), r.message);
-    assert.deepEqual(c.journal.programmes.map((x) => x.action), [{ allumage: '23:45' }], 'rien d\'autre que l\'heure n\'est transmis');
+    assert.equal(r.rappel, 'Branchez la voiture avant 23:45 : sinon la charge ne démarrera pas.');
+    assert.equal(r.message, 'Charge programmée : démarrage 23:45');
+    assert.deepEqual(c.journal.programmes.map((x) => x.action), [{ allumage: '23:45', fin: '06:00', duree_min: 300, depart: '07:30' }], 'rien d\'autre que le contrat n\'est transmis');
+    assert.deepEqual(c.journal.programmes[0].params, { ip: '192.168.1.48', reessayer: true });
+  });
+  test('démarrage tardif : le natif décale le début, la page affiche l\'alerte avec les heures relues', async () => {
+    const c = client({ programmer: { ok: true, debut: '23:40', fin: '06:40', plage_active: true, tardif: true, courte: false } });
+    const r = await programmerLocal(dem('23:00', { duree_min: 420 }), { client: c }, '06:00');
+    assert.equal(r.etat, 'ok', JSON.stringify(r));
+    assert.equal(r.tardif, true);
+    assert.equal(r.message, 'Heure de début dépassée : charge programmée de 23:40 à 06:40.');
+    assert.equal(r.detail, 'Dont 40 min en heures pleines.');
+    assert.equal(r.rappel, 'Branchez la voiture avant 23:40.');
+  });
+  test('trop tard : rien n\'a été écrit, KO sans incertitude avec l\'heure à la main', async () => {
+    const c = client({ programmer: { ok: false, erreur: 'trop_tard' } });
+    const r = await programmerLocal(dem('23:00'), { client: c }, '06:00');
+    assert.deepEqual([r.etat, r.code, r.incertain, r.verifier], ['ko', 'trop_tard', false, null]);
+    assert.match(r.message, /Trop tard pour charger avant le départ \(07:30\)/);
+    assert.match(r.manuel, /début 23:00, déjà passé/);
+  });
+  test('demande de l\'ancien contrat (allumage seul) : refusée par le natif, KO affiché', async () => {
+    const c = client({ programmer: { ok: false, erreur: 'requete_invalide' } });
+    const r = await programmerLocal({ allumage: '23:45' }, { client: c }, '06:00');
+    assert.equal(r.etat, 'ko');
+    assert.equal(r.code, 'requete_invalide');
   });
   test('échecs : heure manuelle toujours donnée', async () => {
     const cas = [
@@ -145,7 +170,7 @@ describe('Programmer en local (règle 2 : jamais d\'échec silencieux)', () => {
       [client({ programmer: { ok: false, erreur: 'pont_muet' } }), 'local_format', true],
     ];
     for (const [c, code, incertain] of cas) {
-      const r = await programmerLocal({ allumage: '23:45' }, { client: c }, '06:00');
+      const r = await programmerLocal(dem('23:45'), { client: c }, '06:00');
       assert.equal(r.etat, 'ko');
       assert.equal(r.code, code);
       assert.equal(r.incertain, incertain, code);
@@ -153,14 +178,14 @@ describe('Programmer en local (règle 2 : jamais d\'échec silencieux)', () => {
     }
   });
   test('délai : incertain, « Vérifiez dans Smart Life » ; exception : ko local_format ; relu différent : ko', async () => {
-    const d = await programmerLocal({ allumage: '23:45' }, { client: client({ programmer: { ok: false, erreur: 'delai', ecrit: true } }) }, '06:00');
+    const d = await programmerLocal(dem('23:45'), { client: client({ programmer: { ok: false, erreur: 'delai', ecrit: true } }) }, '06:00');
     assert.deepEqual([d.code, d.incertain, d.verifier], ['local_delai', true, 'Vérifiez dans Smart Life > charge différée : début 23:45, activée.']);
     assert.match(d.message, /Fermez Smart Life s'il est ouvert, puis réessayez\.$/);
-    const x = await programmerLocal({ allumage: '23:45' }, { client: client({ programmer: () => { throw new Error('boum'); } }) }, '06:00');
+    const x = await programmerLocal(dem('23:45'), { client: client({ programmer: () => { throw new Error('boum'); } }) }, '06:00');
     assert.equal(x.code, 'local_format');
-    const f = await programmerLocal({ allumage: '23:45' }, { client: client({ programmer: { ok: true, debut: '23:50', fin: '06:00', plage_active: true } }) }, '06:00');
+    const f = await programmerLocal(dem('23:45'), { client: client({ programmer: { ok: true, debut: '23:50', fin: '06:00', plage_active: true } }) }, '06:00');
     assert.deepEqual([f.etat, f.code], ['ko', 'relecture_differente']);
-    const g = await programmerLocal({ allumage: '23:45' }, { client: client({ programmer: { ok: false, erreur: 'relecture_differente', ecrit: true } }) }, '06:00');
+    const g = await programmerLocal(dem('23:45'), { client: client({ programmer: { ok: false, erreur: 'relecture_differente', ecrit: true } }) }, '06:00');
     assert.deepEqual([g.etat, g.code, g.incertain], ['ko', 'relecture_differente', true]);
   });
   test('demande absente : ko, rien n\'est tenté', async () => {
@@ -184,7 +209,7 @@ describe('Nouvelles tentatives : demandées au natif, jamais relancées par la p
   test('une seule demande d\'écriture, avec reessayer, quel que soit le résultat', async () => {
     for (const e of [{ ok: false, erreur: 'hors_ligne' }, { ok: false, erreur: 'delai', ecrit: true }, { ok: false, erreur: 'relecture_differente', ecrit: true }, { ok: false, erreur: 'requete_invalide' }, { ok: false, erreur: 'format' }, { ok: false, erreur: 'occupe' }]) {
       const c = client({ programmer: e });
-      const r = await programmerLocal({ allumage: '23:45' }, { client: c }, '06:00');
+      const r = await programmerLocal(dem('23:45'), { client: c }, '06:00');
       assert.equal(c.journal.programmes.length, 1, e.erreur);
       assert.equal(c.journal.programmes[0].params.reessayer, true);
       assert.equal(r.etat, 'ko');
@@ -192,12 +217,12 @@ describe('Nouvelles tentatives : demandées au natif, jamais relancées par la p
     }
   });
   test('écriture partie (ecrit: true) : résultat incertain', async () => {
-    const r = await programmerLocal({ allumage: '23:45' }, { client: client({ programmer: { ok: false, erreur: 'delai', ecrit: true } }) }, '06:00');
+    const r = await programmerLocal(dem('23:45'), { client: client({ programmer: { ok: false, erreur: 'delai', ecrit: true } }) }, '06:00');
     assert.deepEqual([r.etat, r.incertain], ['ko', true]);
   });
   test('la durée de la demande reste de 20 s : le budget de 27 s est tenu par le natif', async () => {
     const c = client({ programmer: { ok: false, erreur: 'hors_ligne' } });
-    await programmerLocal({ allumage: '23:45' }, { client: c }, '06:00');
+    await programmerLocal(dem('23:45'), { client: c }, '06:00');
     assert.equal(c.journal.programmes[0].delai, 20000);
   });
   test('site/local.js ne contient plus de liste d\'échecs à retenter ni de budget', () => {
@@ -221,7 +246,7 @@ describe('Configuration du câble gardée par le natif (attente en arrière-plan
     const deps = { client: c, confCable };
     assert.equal(await surLeReseauDeLaMaison(deps), 'oui');
     assert.equal((await etatCable(deps)).etat, 'pret');
-    assert.equal((await programmerLocal({ allumage: '03:30' }, deps, '06:00')).etat, 'ok');
+    assert.equal((await programmerLocal(dem('03:30'), deps, '06:00')).etat, 'ok');
     assert.equal(c.journal.cable, 0);
   });
   test('recherche : trouvé à une autre adresse, la configuration gardée est mise à jour', async () => {
@@ -230,7 +255,7 @@ describe('Configuration du câble gardée par le natif (attente en arrière-plan
     const r = await chercherCable({ client: c, confCable });
     assert.equal(r.ok, true);
     assert.equal(confCable.adresse, '192.168.1.77');
-    const p = await programmerLocal({ allumage: '03:30' }, { client: c, confCable }, '06:00');
+    const p = await programmerLocal(dem('03:30'), { client: c, confCable }, '06:00');
     assert.equal(p.etat, 'ok');
     assert.deepEqual(c.journal.programmes.at(-1).params, { ip: '192.168.1.77', reessayer: true });
   });

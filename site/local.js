@@ -36,6 +36,7 @@ function codeLocal(erreur) {
     case 'occupe': return 'local_occupe'; // le natif n'a rien lancé
     case 'relecture_differente': return 'relecture_differente';
     case 'requete_invalide': return 'requete_invalide';
+    case 'trop_tard': return 'trop_tard'; // début passé et départ à 10 min ou moins : le natif n'a rien écrit
     default: return 'local_format';
   }
 }
@@ -133,8 +134,8 @@ export async function chercherCable(deps, surProgres = null) {
 }
 
 /**
- * Programme le câble (demande de service.js : { allumage } ou { desactiver:true }). Ne lève jamais.
- * -> même forme que service.js : { etat:'ok', message, detail?, avertissement? } | resultatKo(...)
+ * Programme le câble (demande de service.js : { allumage, fin, duree_min, depart } ou { desactiver:true }). Ne lève jamais.
+ * -> même forme que service.js : { etat:'ok', message, detail?, rappel, tardif? } | resultatKo(...)
  */
 export async function programmerLocal(demande, deps, finHC) {
   const ko = (code) => resultatKo(demande, code, finHC);
@@ -147,7 +148,9 @@ export async function programmerLocal(demande, deps, finHC) {
     const reseau = await surLeReseau(client, conf.adresse);
     if (reseau !== 'oui') return ko('local_hors_wifi');
     // Les deux seules actions du projet ; le natif les revalide.
-    const action = demande.desactiver ? { desactiver: true } : { allumage: demande.allumage };
+    const action = demande.desactiver
+      ? { desactiver: true }
+      : { allumage: demande.allumage, fin: demande.fin, duree_min: demande.duree_min, depart: demande.depart };
     // Le natif refait une tentative SEULEMENT si l'écriture n'est pas partie, dans un budget de 27 s (sous le plafond de
     // 30 s de la page, app.js) ; une écriture peut-être appliquée n'est jamais relancée (règle 2 : résultat incertain).
     const r = await client.programmer(action, { ip: conf.adresse, reessayer: true }, 20000);
