@@ -28,6 +28,7 @@ on:
       - "tests/tuya-local-faux-cable.mjs"
       - "tests/tuya-local-vecteurs.json"
       - "tests/tuya-local-cas.json"
+      - "tests/plage-tardif-cas.json"
       - ".github/workflows/android.yml"
   workflow_dispatch:
 

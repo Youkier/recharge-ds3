@@ -49,12 +49,15 @@ try {
     case 'etat': await appeler('/api/etat'); break;
     case 'sans-jeton': await appeler('/api/etat', { jeton: false }); break;
     case 'route-inconnue': await appeler('/api/commande'); break;
-    case 'desactiver': await appeler('/api/programmer', { methode: 'POST', corps: { desactiver: true } }); break;
-    case 'programmer':
+    case 'desactiver': await appeler('/api/programmer', { methode: 'POST', corps: { desactiver: true, fin: '06:00' } }); break;
+    case 'programmer': {
       if (!HEURE_VALIDE.test(arg ?? '')) throw new Error('Usage : programmer HH:MM --confirmer');
-      if (!confirmer) { console.log(`Simulation : enverrait {"allumage":"${arg}"}. Ajouter --confirmer pour l'envoyer.`); break; }
-      await appeler('/api/programmer', { methode: 'POST', corps: { allumage: arg } });
+      // Contrat du 2026-11-22 (démarrage tardif) : fin, durée et départ fixés pour l'essai (heures creuses 22:00-06:00, départ 07:30).
+      const corps = { allumage: arg, fin: '06:00', duree_min: 420, depart: '07:30' };
+      if (!confirmer) { console.log(`Simulation : enverrait ${JSON.stringify(corps)}. Ajouter --confirmer pour l'envoyer.`); break; }
+      await appeler('/api/programmer', { methode: 'POST', corps });
       break;
+    }
     default:
       console.log('Actions : etat | sans-jeton | route-inconnue | desactiver | programmer HH:MM --confirmer');
   }
