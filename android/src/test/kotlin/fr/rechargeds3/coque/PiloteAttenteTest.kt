@@ -61,7 +61,8 @@ class PiloteAttenteTest {
         var t = 0L
         var surPause: (Long) -> Unit = {}
         val ecoute = Ecoute()
-        private val maintenant = { ZonedDateTime.parse(parisUtc) }
+        var instant: ZonedDateTime = ZonedDateTime.parse(parisUtc) // l'heure de Paris peut avancer pendant l'attente
+        private val maintenant = { instant }
         val ops = OperationsCable(env, 15 * 60_000L, { t }, maintenant, pause = {})
         val pilote = PiloteAttente(ops, env, stock, { t }, maintenant, pause = { ms -> t += ms; surPause(ms) }).also { it.ecouteur = ecoute }
     }
@@ -223,6 +224,30 @@ class PiloteAttenteTest {
         val e = b.demarrerEtLancer(Action.Allumage("23:00", "06:00", 420, "07:30"), HeuresManuelles("23:00", "06:00"))
         assertEquals(true, resultat(e)["tardif"]); assertEquals("23:40", resultat(e)["debut"]); assertEquals("06:40", resultat(e)["fin"])
         assertEquals(listOf(Triple(Issue.TARDIVE, "23:40", "06:40")), b.ecoute.fins)
+    }
+
+    @Test fun demarrageTardifSeDecideALEnvoiPasAuToucher() {
+        // Au toucher (23:30), le début 23:45 est dans le futur ; l'envoi a lieu à 23:50 : début = 00:00, fin = min(00:00 + 7 h, 07:30) = 07:00.
+        val b = banc({ faux() }) { it.prefixe = null }
+        b.surPause = { if (b.t >= 30_000L) { b.instant = ZonedDateTime.parse("2026-11-16T22:50:00Z"); b.env.prefixe = "192.168.1" } }
+        val e = b.demarrerEtLancer(Action.Allumage("23:45", "06:00", 420, "07:30"), HeuresManuelles("23:45", "06:00"))
+        assertEquals(true, resultat(e)["tardif"]); assertEquals("00:00", resultat(e)["debut"]); assertEquals("07:00", resultat(e)["fin"])
+        assertEquals(listOf(Triple(Issue.TARDIVE, "00:00", "07:00")), b.ecoute.fins)
+    }
+
+    @Test fun unResultatDePlusDe12HEstOublieEtLeNotifierAussi() {
+        val b = banc({ faux() })
+        b.demarrerEtLancer()
+        assertTrue(b.pilote.resultatANotifier() != null)
+        b.t += 11 * 3600_000L
+        assertEquals("terminee", b.pilote.etat()["phase"])
+        b.t += 2 * 3600_000L // 13 h
+        assertEquals("inactive", b.pilote.etat()["phase"]); assertNull(b.stock.contenu); assertNull(b.pilote.resultatANotifier())
+        // Une attente perdue datée de son début est oubliée de la même façon (horloge d'un nouveau processus : bien plus tard).
+        val c = banc({ muet() })
+        c.pilote.demarrer(demande, manuelle)
+        val c2 = Banc(Env(), stock = c.stock).also { it.t = 13 * 3600_000L }
+        assertEquals("inactive", c2.pilote.etat()["phase"])
     }
 
     @Test fun tropTardRienNEstEcritEtLaNotificationLeDit() {

@@ -1219,8 +1219,10 @@ attente_commencer "S21"
 adb shell input keyevent KEYCODE_SLEEP
 sleep 5
 service_au_premier_plan "$SORTIE/attente-services-s21.txt" || echec "S21 : service d'attente absent ou pas au premier plan, écran éteint"
+ECR_AVANT="$(ecritures_log)"
 sleep 325
 ligne_vue page-programmer && echec "S21 : envoi parti sans Wi-Fi"
+[ "$(ecritures_log)" = "$ECR_AVANT" ] || echec "S21 : une écriture est arrivée au faux câble avant le retour du Wi-Fi"
 ECRAN_S21="$(adb shell dumpsys power | tr -d '\015' | grep -m1 -o 'mWakefulness=[A-Za-z]*' || true)"
 T0=$(date +%s)
 adb shell svc wifi enable
@@ -1233,6 +1235,12 @@ if [ -z "$DELAI_NOTIF" ] && [ "$S21_ATTENDU_ECHEC" = 1 ]; then
 else
 [ -n "$DELAI_NOTIF" ] || echec "S21 : notification « Charge programmée » absente 180 s après le retour du Wi-Fi"
 T1=$(date +%s)
+# L'écran doit être resté éteint jusqu'à l'envoi : c'est le pilote natif qui a envoyé, pas une page réveillée.
+ECRAN_ENVOI="$(adb shell dumpsys power | tr -d '\015' | grep -m1 -o 'mWakefulness=[A-Za-z]*' || true)"
+case "$ECRAN_ENVOI" in
+  mWakefulness=Asleep|mWakefulness=Dozing) ;;
+  *) echec "S21 : l'écran n'était plus éteint au moment de l'envoi ($ECRAN_ENVOI)" ;;
+esac
 [ $(( T1 - T0 )) -le 120 ] || echec "S21 : notification publiée $(( T1 - T0 )) s après le retour du Wi-Fi (critère : 2 min au plus)"
 echo "S21 : notification $(( T1 - T0 )) s après le retour du Wi-Fi, écran éteint et verrouillé depuis 330 s ($ECRAN_S21)" | tee -a "$ATTENTE_RESUME"
 adb shell dumpsys notification --noredact 2> /dev/null | tr -d '\015' | grep -E "android\.(title|text)=" | grep -v "^ *$" > "$SORTIE/attente-notifications-s21.txt" || true
@@ -1249,8 +1257,8 @@ echo "OK  S21 attente écran verrouillé 330 s, notification au plus 2 min aprè
 fi
 
 etape "S-I2 Écran éteint 10 min avec l'économiseur de batterie : le service survit, l'envoi part au retour du Wi-Fi"
-# Attente de 540 s (réglable : S_I2_ATTENTE_S) puis retour du Wi-Fi, dans la fenêtre de 10 min.
-S_I2_ATTENTE_S="${S_I2_ATTENTE_S:-540}"
+# Attente de 500 s (réglable : S_I2_ATTENTE_S) puis retour du Wi-Fi, avec de la marge sur la fenêtre de 10 min.
+S_I2_ATTENTE_S="${S_I2_ATTENTE_S:-500}"
 lancer_faux
 adb shell locksettings set-pin "$PIN_E0" > /dev/null
 E0_PIN_POSE=1

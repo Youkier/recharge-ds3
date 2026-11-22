@@ -127,6 +127,8 @@ class MainActivity : Activity() {
     override fun onStop() {
         visible = false
         AttenteWifi.activiteVisible = false
+        // Résultat arrivé appli visible puis appli quittée avant que la page l'ait acquitté : la notification n'avait pas été publiée.
+        pilote.resultatANotifier()?.let { AttenteWifi.publierResultat(applicationContext, it.first, it.second, it.third) }
         pont.fermerToutAsync()
         wifi.arreter()
         super.onStop()

@@ -97,7 +97,7 @@ test('pont : opérations d\'attente en version publiée, revalidées côté nati
   assert.match(pont, /"saisirCle" -> \{ Thread \{ pilote\.arreterPourCle\(\) \}\.start\(\); surSaisirCle\(\)/);
   const act = sansCommentaires(lire(KT + 'MainActivity.kt'));
   assert.ok(!/pauseTimers/.test(act));
-  assert.match(act, /override fun onStop\(\) \{\s*visible = false\s*AttenteWifi\.activiteVisible = false\s*pont\.fermerToutAsync\(\)\s*wifi\.arreter\(\)/);
+  assert.match(act, /override fun onStop\(\) \{\s*visible = false\s*AttenteWifi\.activiteVisible = false\s*pilote\.resultatANotifier\(\)\?\.let \{ AttenteWifi\.publierResultat\(applicationContext, it\.first, it\.second, it\.third\) \}\s*pont\.fermerToutAsync\(\)\s*wifi\.arreter\(\)/);
   assert.equal((act.match(/pilote\.arreterPourCle\(\)/g) || []).length, 2, 'nouvelle clé et « Oublier le câble » arrêtent l\'attente');
   assert.ok(!/abandonnerAttente|essaiArrierePlan|demarrerAttente/.test(act), 'l\'activité ne pilote plus l\'attente');
   // Le contrat est décrit dans le client JS du pont.

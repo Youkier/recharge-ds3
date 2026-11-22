@@ -86,6 +86,8 @@ class PiloteAttente(
     private var debutMs = 0L
     private var etape = "wifi"
     private var resultat: Map<String, Any?>? = null
+    private var termineMs = 0L // instant de la fin : un résultat de plus de 12 h n'est plus le résultat « du soir »
+    private var aNotifier: Triple<Issue, String?, String?>? = null // dernier résultat, pour la notification de la sortie de l'appli
     private var session = 0
 
     init {
@@ -102,7 +104,11 @@ class PiloteAttente(
     /** Début à régler à la main donné au toucher (texte de la notification continue). */
     fun debutManuel(): String? = synchronized(verrou) { manuel?.debut }
 
+    /** Résultat non acquitté et ses heures, pour que l'activité le notifie en quittant l'écran (page fermée avant de l'avoir vu). */
+    fun resultatANotifier(): Triple<Issue, String?, String?>? = synchronized(verrou) { if (phase == Phase.TERMINEE) aNotifier else null }
+
     fun etat(): Map<String, Any?> = synchronized(verrou) {
+        oublierSiPerime()
         val m = LinkedHashMap<String, Any?>()
         m["ok"] = true
         m["phase"] = phase.code
@@ -119,6 +125,17 @@ class PiloteAttente(
         if (phase == Phase.ENVOI) m["etape"] = "envoi"
         if (phase == Phase.TERMINEE) resultat?.let { m["resultat"] = it }
         m
+    }
+
+    /** Un résultat resté plus de 12 h sans être vu est oublié : il ne se montre jamais comme celui du soir, et ses heures ne sont jamais recalculées. */
+    private fun oublierSiPerime() { // sous verrou
+        if (phase != Phase.TERMINEE) return
+        val age = horloge() - termineMs
+        if (age >= PEREMPTION_MS || age < 0) {
+            phase = Phase.INACTIVE
+            action = null; manuel = null; resultat = null; aNotifier = null
+            persister()
+        }
     }
 
     // --- Démarrage, annulation, fin ---
@@ -189,7 +206,7 @@ class PiloteAttente(
         synchronized(verrou) {
             if (phase != Phase.TERMINEE) return
             phase = Phase.INACTIVE
-            action = null; manuel = null; resultat = null
+            action = null; manuel = null; resultat = null; aNotifier = null
             persister()
         }
     }
@@ -287,11 +304,13 @@ class PiloteAttente(
             if (avantEnvoiSeulement && phase != Phase.ATTENTE) return false
             phase = Phase.TERMINEE
             resultat = res.filterValues { it != null }
+            termineMs = horloge()
             persister()
             Pair(action!!, manuel!!)
         }
         operations.oublierMemoire() // dans tous les cas : la clé ne survit pas à l'attente
         val (debut, fin) = heuresDeLaNotification(issue, a, h, res)
+        synchronized(verrou) { if (session == s) aNotifier = Triple(issue, debut, fin) }
         ecouteur?.termine(issue, debut, fin)
         return true
     }
@@ -350,7 +369,7 @@ class PiloteAttente(
         try {
             if (phase == Phase.INACTIVE) { stockage.ecrire(null); return }
             val m = linkedMapOf<String, Any?>(
-                "v" to 1L, "phase" to phase.code, "debut" to debutMs,
+                "v" to 1L, "phase" to phase.code, "debut" to debutMs, "termine_ms" to termineMs,
                 "demande" to actionEnMap(action!!),
                 "manuelle" to linkedMapOf<String, Any?>("debut" to manuel!!.debut, "fin" to manuel!!.fin),
             )
@@ -377,6 +396,7 @@ class PiloteAttente(
         action = a
         manuel = h
         debutMs = (m["debut"] as? Long) ?: 0L
+        termineMs = (m["termine_ms"] as? Long) ?: debutMs // attente perdue : datée de son début
         phase = Phase.TERMINEE
         // Un résultat déjà là (page qui ne l'a pas encore vu) est gardé ; une attente en cours est perdue : suivi perdu.
         resultat = (if (p == Phase.TERMINEE) JsonStrict.objet(m["resultat"]) else null) ?: erreur("non_suivie")
@@ -391,5 +411,6 @@ class PiloteAttente(
         const val DELAI_LECTURE_MS = 4_000L
         const val DELAI_ENVOI_MS = 20_000L
         const val REFUS_CLE_MAX = 2
+        const val PEREMPTION_MS = 12L * 3600_000L
     }
 }

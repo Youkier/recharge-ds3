@@ -770,7 +770,7 @@ import { confirmationValable, confirmationAEnregistrer, confirmationRestauree, C
     var d = demande, finHC = fmt(hm(cur.hcEnd));
     var h = heureManuelleDe(d, finHC, new Date());
     var a = att = { d: d, finHC: finHC, heure: h, etape: sr === "oui" ? "cable" : "wifi", restantMs: ATTENTE_MAX_MS, envoi: false,
-      demarre: false, annulee: false, annulation: false, enSonde: false, timer: null, info: "", reprise: false };
+      demarre: false, envoye: false, annulee: false, annulation: false, enSonde: false, timer: null, info: "", reprise: false };
     hideAlert();
     $("attenteLive").textContent = LIBELLES_ATTENTE.annonce;
     journal({ action: "page-attente-wifi", etat: "debut" });
@@ -778,27 +778,54 @@ import { confirmationValable, confirmationAEnregistrer, confirmationRestauree, C
     updateSend();
     notificationsDabord(a).then(function () {
       if (a.annulee) return null; // annulée pendant la demande de permission : le natif n'a rien reçu
+      a.envoye = true; // dès maintenant, le natif a peut-être démarré : une annulation passe par lui
       return appelPont("attenteDebut", { demande: d, heureManuelle: h }, 15000);
     }).then(function (r) {
       if (!r) return;
       if (!r.ok) {
+        journal({ action: "page-attente-wifi", etat: "refusee", erreur: r.erreur });
+        var definitive = r.erreur === "requete_invalide" || r.erreur === "pas_de_cle" || r.erreur === "service";
+        if (!definitive) {
+          // Réponse ambiguë (pont muet, délai de 15 s, occupé) : le natif a peut-être démarré. On relit son état avant de conclure.
+          if (att === a) sortirAttente();
+          return reprendreAttente().then(function (trouve) {
+            if (trouve) return;
+            if (a.annulee) koAttente(a, a.codeAnnul, a.titreAnnul);
+            else koAttente(a, "local_format", "Programmation non confirmée");
+          });
+        }
         if (att !== a) return;
         sortirAttente();
-        journal({ action: "page-attente-wifi", etat: "refusee", erreur: r.erreur });
-        if (r.erreur === "occupe") { reprendreAttente(); return; } // une attente tourne déjà côté natif : on la suit
-        var code = r.erreur === "pas_de_cle" ? "local_pas_de_cle" : r.erreur === "service" ? "local_attente_refusee" : r.erreur === "requete_invalide" ? "requete_invalide" : "local_format";
+        var code = r.erreur === "pas_de_cle" ? "local_pas_de_cle" : r.erreur === "service" ? "local_attente_refusee" : "requete_invalide";
         koAttente(a, code, "Programmation non envoyée");
         if (code === "local_pas_de_cle") majEtatCable();
         return;
       }
       a.demarre = true;
-      if (a.annulee) { // « Annuler » touché pendant le démarrage : le natif l'a reçue, on la lui retire
-        appelPont("attenteAnnuler").then(function () { return appelPont("attenteAcquitter"); });
+      if (a.annulee) { confirmerAnnulation(a); return; } // « Annuler » touché pendant le démarrage : c'est le natif qui décide
+      if (att !== a) return;
+      suivreAttente(a);
+    });
+  }
+  function suivreAttente(a) {
+    if (!a.timer) a.timer = setInterval(sonderAttente, ATTENTE_SONDE_MS);
+    sonderAttente();
+  }
+  // Annulation demandée pendant le démarrage : le pilote a pu passer en phase envoi entre-temps. La carte « rien n'a été envoyé »
+  // n'est affichée que si le natif confirme l'annulation (annulee:true) ; sinon l'attente continue jusqu'au résultat.
+  function confirmerAnnulation(a) {
+    appelPont("attenteAnnuler").then(function (r) {
+      if (r && r.ok && r.annulee === true) {
+        if (att === a) sortirAttente();
+        journal({ action: "page-attente-wifi", etat: "annulee" });
+        koAttente(a, a.codeAnnul, a.titreAnnul);
+        appelPont("attenteAcquitter");
         return;
       }
-      if (att !== a) return;
-      a.timer = setInterval(sonderAttente, ATTENTE_SONDE_MS);
-      sonderAttente();
+      a.annulee = false; a.annulation = false;
+      if (att !== a) { reprendreAttente(); return; }
+      a.envoi = !!(r && r.ok); a.info = "L'envoi a commencé : il ne peut plus être annulé.";
+      updateSend(); suivreAttente(a);
     });
   }
 
@@ -844,20 +871,27 @@ import { confirmationValable, confirmationAEnregistrer, confirmationRestauree, C
   }
 
   // Page (re)chargée ou rouverte : une attente peut tourner côté natif, ou avoir fini en notre absence (résultat à montrer une fois).
+  var repriseEnVol = null; // une seule reprise à la fois : évite une double carte et un double page-programmer
   function reprendreAttente() {
-    if (!pontOk || att) return Promise.resolve();
-    return appelPont("attenteEtat", {}, 5000).then(function (e) {
+    if (!pontOk) return Promise.resolve(false);
+    if (att) return Promise.resolve(true);
+    if (repriseEnVol) return repriseEnVol;
+    var p = appelPont("attenteEtat", {}, 5000).then(function (e) {
       var s = lireEtatAttente(e);
-      if (att || (s.action !== "suivre" && s.action !== "finir")) return;
+      if (att) return true;
+      if (s.action !== "suivre" && s.action !== "finir") return false;
       var a = { d: s.demande, finHC: fmt(hm(cur.hcEnd)), heure: s.heureManuelle, etape: s.etape, restantMs: s.restantMs, envoi: !!s.envoi,
-        demarre: true, annulee: false, annulation: false, enSonde: false, timer: null, info: "", reprise: true };
-      if (s.action === "finir") { finirAttente(a, s); return; }
+        demarre: true, envoye: true, annulee: false, annulation: false, enSonde: false, timer: null, info: "", reprise: true };
+      if (s.action === "finir") { finirAttente(a, s); return true; }
       att = a;
       a.timer = setInterval(sonderAttente, ATTENTE_SONDE_MS);
       $("attenteLive").textContent = LIBELLES_ATTENTE.annonce;
       journal({ action: "page-attente-wifi", etat: "reprise", phase: a.envoi ? "envoi" : "attente" });
       updateSend();
-    });
+      return true;
+    }).then(function (r) { repriseEnVol = null; return r; }, function () { repriseEnVol = null; return false; });
+    repriseEnVol = p;
+    return p;
   }
 
   // Annulation voulue (bouton, ou saisie modifiée). Avant le démarrage du natif, on s'arrête ici ; ensuite, c'est le natif qui décide :
@@ -866,9 +900,16 @@ import { confirmationValable, confirmationAEnregistrer, confirmationRestauree, C
     var a = att;
     if (!a || a.annulation) return;
     if (!a.demarre) {
-      a.annulee = true; sortirAttente();
-      journal({ action: "page-attente-wifi", etat: "annulee" });
-      koAttente(a, code, titre);
+      a.annulee = true;
+      if (!a.envoye) { // le natif n'a encore rien reçu : on s'arrête ici
+        sortirAttente();
+        journal({ action: "page-attente-wifi", etat: "annulee" });
+        koAttente(a, code, titre);
+        return;
+      }
+      // Le natif a peut-être démarré (et peut être passé à l'envoi) : à sa réponse, on lui demande d'annuler ; rien n'est affiché avant.
+      a.codeAnnul = code; a.titreAnnul = titre; a.info = "Annulation en cours…";
+      updateSend();
       return;
     }
     a.annulation = true;
