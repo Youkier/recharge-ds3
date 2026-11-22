@@ -239,6 +239,14 @@ OUVERTES_AVANT_TOUT="$(connexions_ouvertes_log)"
 etape "S1 Lecture par l'adresse 10.0.2.2"
 demarrer lire 10.0.2.2
 L="$(attendre_essai lire 60)"
+# Premier contact juste après le démarrage de l'émulateur : le réseau vers 10.0.2.2 peut ne pas être encore prêt
+# (« hors_ligne » vu une fois sur API 35 le 22/11, jamais ensuite). Une seule nouvelle tentative, après 10 s.
+if LIGNE="$L" node -e 'process.exit(JSON.parse(process.env.LIGNE).erreur === "hors_ligne" ? 0 : 1)'; then
+  echo "S1 : premier contact hors_ligne, nouvelle tentative dans 10 s"
+  sleep 10
+  demarrer lire 10.0.2.2
+  L="$(attendre_essai lire 60)"
+fi
 verifier "S1 lecture" "$L" 'l.ok === true && l.debut === "03:30" && l.fin === "06:00" && l.ip === "10.0.2.2"'
 
 etape "S2 Recherche sans adresse"
@@ -969,6 +977,10 @@ g_tardif() { # g_tardif <thème>
 }
 g_pas_de_charge() { # g_pas_de_charge <thème>
   lancer_faux
+  # Le faux câble repart avec sa plage par défaut : la page doit la relire (sinon elle garde « pas de charge » lu au passage
+  # précédent et affiche à raison « Déjà réglé »). Relance de l'appli = lecture à l'ouverture.
+  demarrer_page
+  page_prete "S-G pas de charge ($1)"
   regler_soc 84
   attendre_texte_page "Pas de charge ce soir" 20
   adb logcat -c
