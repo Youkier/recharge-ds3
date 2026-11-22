@@ -47,7 +47,7 @@ for f in $fichiers; do
 done
 
 # 3. Valeurs réelles des secrets dans les changements indexés
-liste=${SECRETS_FILES:-"tools/.env worker/.dev.vars"}
+liste=${SECRETS_FILES:-"tools/.env tools/.env.bak worker/.dev.vars"}
 diff_indexe=$(git diff --cached -U0 --no-color --diff-filter=ACMR)
 for src in $liste; do
   [ -f "$src" ] || continue

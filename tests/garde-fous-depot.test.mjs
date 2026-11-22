@@ -38,6 +38,27 @@ test('tests/ et local/ : ni secrets, ni réseau, ni processus hors exceptions', 
   assert.deepEqual(fautes, []);
 });
 
+// Écriture vers un fichier de sécurité : `node --test` et quelques outils se lancent sans demande, alors que
+// modifier .claude/, tools/hooks/, .github/, .gitignore, CLAUDE.md ou SECURITE.md en demande une.
+// Fil d'alarme : un fichier qui écrit ou supprime ET cite un de ces chemins est signalé.
+const ECRITURE = /writeFile|appendFile|createWriteStream|\brmSync\b|\bunlink|\brename(Sync)?\(|copyFile|\bcpSync\b|open\([^)]*['"][wax]\+?['"]/;
+const PROTEGES = /\.claude\b|tools[\\/]+hooks|\.github\b|\.gitignore|CLAUDE\.md|SECURITE\.md|hooksPath/;
+const ECRITURE_PERMIS = [
+  'tests/assets-apk.test.mjs', // écrit et supprime dans un dossier temporaire ; .claude et .github n'y sont que dans une assertion de refus
+  'tools/capture.mjs', // supprime une capture et un profil jetable dans dist/ ; CLAUDE.md n'est cité que dans un message
+];
+const OUTILS_SANS_DEMANDE = ['tools/build-public.mjs', 'tools/capture.mjs', 'tools/gen-icons.mjs'];
+
+test('tests/, local/ et outils lancés sans demande : aucune écriture vers un fichier de sécurité', () => {
+  const fautes = [];
+  for (const f of [...fichiers('tests'), ...fichiers('local'), ...OUTILS_SANS_DEMANDE]) {
+    if (f === CE_FICHIER || ECRITURE_PERMIS.includes(f)) continue;
+    const src = readFileSync(join(RACINE, f), 'utf8');
+    if (ECRITURE.test(src) && PROTEGES.test(src)) fautes.push(f);
+  }
+  assert.deepEqual(fautes, []);
+});
+
 test('exception child_process : seulement `git status` en lecture', () => {
   const src = readFileSync(join(RACINE, 'tests/public-build.test.mjs'), 'utf8');
   const appels = src.match(/execFileSync\(\s*["'][^"']+["']/g) || [];
