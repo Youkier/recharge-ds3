@@ -92,7 +92,7 @@ const CAUSES = {
   // Mode « Local » de l'appli Android (site/local.js) : le câble est joint directement sur le Wi-Fi de la maison.
   local_muet: { message: 'Le câble ne répond pas. Est-il branché à la prise murale ? Rien n\'a été modifié.' + FERMER_SMART_LIFE, incertain: false },
   local_delai: { message: 'Le câble n\'a pas répondu à temps.' + FERMER_SMART_LIFE, incertain: true },
-  local_cle: { message: 'Le câble refuse la clé : elle a peut-être changé dans Smart Life. Rien n\'a été modifié.', incertain: false },
+  local_cle: { message: 'Le câble refuse la clé : elle change quand le câble est réappairé dans Smart Life. Rien n\'a été modifié. Collez la nouvelle clé depuis votre gestionnaire de mots de passe (« Relier le câble »).', incertain: false },
   local_hors_wifi: { message: 'Le téléphone n\'est pas sur le Wi-Fi de la maison : rien n\'a été envoyé.', incertain: false },
   // Attente du Wi-Fi (site/app.js) : rien n'a été envoyé.
   local_attente_expiree: { message: "Le téléphone n'a pas rejoint le Wi-Fi de la maison : rien n'a été envoyé.", incertain: false },

@@ -40,7 +40,7 @@ export function pastille(etat) {
   switch (etat) {
     case 'pret': return { texte: 'Câble prêt', ton: 'ok', action: null, aide: null };
     case 'a_relier': return { texte: 'Câble non relié : relier', ton: 'warn', action: 'relier', aide: "L'application n'est pas encore reliée au câble. Il faut saisir sa clé une fois." };
-    case 'cle': return { texte: 'Clé refusée : saisir la clé', ton: 'bad', action: 'relier', aide: 'Le câble refuse la clé : elle a peut-être changé dans Smart Life.' };
+    case 'cle': return { texte: 'Clé refusée : saisir la clé', ton: 'bad', action: 'relier', aide: 'Le câble refuse la clé : elle change quand le câble est réappairé dans Smart Life. Collez la nouvelle clé depuis votre gestionnaire de mots de passe (« Relier le câble »).' };
     case 'sans_adresse': return { texte: 'Câble non localisé : chercher', ton: 'warn', action: 'chercher', aide: "L'application ne connaît pas encore l'emplacement du câble sur le Wi-Fi." };
     case 'muet': return { texte: 'Câble introuvable : chercher', ton: 'bad', action: 'chercher', aide: 'Le câble ne répond pas. Est-il branché à la prise murale ?' };
     case 'hors_wifi': return { texte: 'Hors Wi-Fi maison : réessayer', ton: 'warn', action: 'reessayer', aide: 'Connectez le téléphone au Wi-Fi de la maison, puis réessayez.' };
