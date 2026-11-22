@@ -1,5 +1,5 @@
 // Tests de tools/assets-apk.mjs (lot C3.1) : la liste blanche des fichiers embarqués dans l'APK.
-// Rien d'autre que site/** (sauf sw.js), local/tuya-local.js, local/recherche.js, android/essai/** ; fichiers identiques
+// Rien d'autre que site/** (sauf sw.js), android/essai/** (plus aucun fichier de local/ depuis le lot E2) ; fichiers identiques
 // à la source (empreintes) ; sortie déterministe ; refus d'un fichier inattendu.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -26,7 +26,6 @@ const temp = () => mkdtempSync(join(tmpdir(), 'assets-apk-'));
 test('la liste est exactement la liste blanche, calculée indépendamment', () => {
   const attendu = [
     ...tous(join(RACINE, 'site')).filter((f) => f !== 'sw.js').map((f) => `site/${f}`),
-    'local/tuya-local.js', 'local/recherche.js',
     ...tous(join(RACINE, 'android', 'essai')).map((f) => `android/essai/${f}`),
   ].sort();
   assert.deepEqual(listerFichiers(RACINE), attendu);
@@ -36,9 +35,9 @@ test('la liste est exactement la liste blanche, calculée indépendamment', () =
 test('rien d\'autre : ni sw.js, ni transport Node, ni outils, tests, worker, .claude, secrets', () => {
   const liste = listerFichiers(RACINE);
   assert.ok(!liste.includes('site/sw.js'));
-  assert.ok(!liste.includes('local/transport-node.mjs'));
+  assert.ok(!liste.some((f) => f.startsWith('local/')), "le protocole local n'est plus embarqué : il est en Kotlin");
   for (const f of liste) {
-    assert.match(f, /^(site\/|android\/essai\/|local\/(tuya-local|recherche)\.js$)/, f);
+    assert.match(f, /^(site\/|android\/essai\/)/, f);
     assert.ok(!/^(tools|tests|worker|\.claude|\.github|docs|public|dist|android\/(ci|src))\//.test(f), f);
     assert.ok(!/(^|\/)\.[^/]+/.test(f), `fichier caché : ${f}`);
     assert.ok(!/dev\.vars|\.pem$|\.jks$|\.keystore$|\.p12$/i.test(f), f);
@@ -86,7 +85,7 @@ function fauxDepot(extra = {}) {
 test('faux dépôt : seuls les fichiers de la liste blanche sont retenus', () => {
   const t = fauxDepot();
   try {
-    assert.deepEqual(listerFichiers(t), ['android/essai/index.html', 'local/recherche.js', 'local/tuya-local.js', 'site/index.html']);
+    assert.deepEqual(listerFichiers(t), ['android/essai/index.html', 'site/index.html']);
   } finally { rmSync(t, { recursive: true, force: true }); }
 });
 
@@ -100,9 +99,9 @@ test('un fichier inattendu dans site/ ou android/essai/ fait échouer la copie (
   }
 });
 
-test('un fichier de la liste absent fait échouer', () => {
+test('un dossier de la liste absent fait échouer', () => {
   const t = fauxDepot();
-  rmSync(join(t, 'local', 'recherche.js'));
+  rmSync(join(t, 'android', 'essai'), { recursive: true });
   try { assert.throws(() => listerFichiers(t), /absent/); } finally { rmSync(t, { recursive: true, force: true }); }
 });
 

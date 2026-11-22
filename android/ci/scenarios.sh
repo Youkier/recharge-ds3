@@ -237,7 +237,7 @@ demarrer lire 10.0.2.2 "" "$CLE_KO"
 L="$(attendre_essai lire 60)"
 verifier "S4 clé fausse" "$L" 'l.ok === false && l.erreur === "cle"'
 
-etape "S5 Filtre du pont : 10.0.2.2:6669, 127.0.0.1, 010.0.0.1, adresse publique, sondes interdites, sw.js en 404"
+etape "S5 Filtre du pont : aucune route générique (ouvrir, envoyer, recevoir, sonder…), transport natif limité à IPv4 privée:6668 (10.0.2.2:6669, 127.0.0.1, 010.0.0.1, adresse publique, lien local, nom refusés), opérations qui refusent adresse ou heure invalide, sw.js en 404"
 AVANT_FILTRE="$(connexions_ouvertes_log)"
 demarrer filtre
 L="$(attendre_essai filtre 60)"

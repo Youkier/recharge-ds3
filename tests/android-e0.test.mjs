@@ -66,7 +66,9 @@ test('textes : fixes, dans strings.xml, apostrophes échappées ; la page ne fou
 test('pont : opérations d\'attente en version publiée, essaiArrierePlan réservée à la mise au point', () => {
   const pont = sansCommentaires(lire(KT + 'PontLocal.kt'));
   assert.match(pont, /"essaiArrierePlan" -> rep\(if \(estDebug\)/);
-  assert.match(pont, /"notifications", "demanderNotifications", "attenteDebut", "attenteEtat", "attenteFin" -> attente\(op, q, rep\)/);
+  assert.match(pont, /"notifications", "demanderNotifications", "attenteDebut", "attenteEtat" -> attente\(op, q, rep\)/);
+  // attenteFin : la configuration gardée côté natif pour l'attente est effacée, puis l'activité traite la fin.
+  assert.match(pont, /"attenteFin" -> \{\s*operations\.oublierMemoire\(\)[^\n]*\n\s*attente\(op, q, rep\)/);
   const act = sansCommentaires(lire(KT + 'MainActivity.kt'));
   assert.ok(!/pauseTimers/.test(act));
   assert.match(act, /if \(!AttenteWifi\.actif\) \{\s*pont\.fermerToutAsync\(\)\s*wifi\.arreter\(\)/);
@@ -89,15 +91,19 @@ test('workflow : sept permissions exigées, service contrôlé dans le manifeste
   assert.ok(!/\*debug\*\) PERMISES/.test(w), 'même liste pour les deux APK');
 });
 
-test('page d\'essai : configuration lue avant l\'attente, effacée à 15 min au plus et en fin d\'essai', () => {
+test('page d\'essai : configuration gardée par le natif avant l\'attente, effacée en fin d\'essai, jamais lue par la page', () => {
   const src = lire('../android/essai/essai.js');
-  const corps = src.slice(src.indexOf('async function actionArrierePlan'), src.indexOf('// Vérifie que le pont natif refuse'));
+  const corps = src.slice(src.indexOf('async function actionArrierePlan'), src.indexOf('async function actionFiltre'));
   assert.ok(corps.length > 100);
-  const iCable = corps.indexOf('client.cable()');
+  const iMemoire = corps.indexOf('client.memoriser()');
   const iAttente = corps.indexOf('await patienter(');
-  assert.ok(iCable > 0 && iAttente > iCable, 'la clé est lue avant l\'attente (téléphone encore déverrouillé)');
+  assert.ok(iMemoire > 0 && iAttente > iMemoire, 'la configuration est gardée avant l\'attente (téléphone encore déverrouillé)');
   assert.match(src, /const ATTENTE_MAX_S = 900;/);
-  assert.match(corps, /setTimeout\(oublierMemoire, ATTENTE_MAX_S \* 1000\)/);
-  assert.match(corps, /finally \{\s*oublierMemoire\(\);\s*await client\.appeler\('essaiArrierePlan', \{ quoi: 'fin' \}\);/);
+  assert.match(corps, /finally \{\s*await client\.oublierMemoire\(\);\s*await client\.appeler\('essaiArrierePlan', \{ quoi: 'fin' \}\);/);
+  assert.ok(!/\.cle\b|cleLocale|deviceId/.test(corps), 'la page ne manipule ni clé ni identifiant');
   assert.match(src, /action === 'arriere-plan' && variante === 'debug'/);
+  // Côté natif : 15 min au plus, octets mis à zéro.
+  const ops = sansCommentaires(lire(KT + 'OperationsCable.kt'));
+  assert.match(ops, /dureeMemoireMs: Long = 15 \* 60_000L/);
+  assert.match(ops, /memoire\?\.cle\?\.fill\(0\)/);
 });

@@ -1,14 +1,11 @@
-// Page d'essai de la coque Android (lot C3) : « Lire l'état », « Chercher le câble » et, dans la version de mise au
-// point seulement, « Programmer » et « Vérifier le filtre du pont ». Aucune modification de local/tuya-local.js ni de
-// local/recherche.js : on leur fournit un transport et une sonde qui passent par le pont natif (transport-pont.js).
+// Page d'essai de la coque Android : « Lire l'état », « Chercher le câble » et, dans la version de mise au point
+// seulement, « Programmer » et « Vérifier le filtre du pont ». Depuis le lot E2, le protocole local tourne dans le code
+// natif : cette page demande des opérations de haut niveau (lire, programmer, chercher) par transport-pont.js.
 //
-// Clé du câble : saisie dans l'écran natif, jamais ici. Elle est demandée au pont au moment de chaque action
-// (op « cable »), tenue dans une variable locale le temps de l'appel, puis abandonnée : jamais dans le DOM, une URL,
-// localStorage ou un journal. Après chaque action, UNE ligne « ESSAI {json} » (action, ok, erreur, debut, fin, ip) est
-// écrite dans la console, que la version de mise au point relaie dans logcat : jamais de clé ni de trame.
+// Clé du câble : saisie dans l'écran natif, jamais ici ; la page ne la reçoit jamais (ni l'identifiant). Après chaque
+// action, UNE ligne « ESSAI {json} » (action, ok, erreur, debut, fin, ip) est écrite dans la console, que la version de
+// mise au point relaie dans logcat : jamais de clé ni de trame.
 
-import { lireEtat, programmer } from '../../local/tuya-local.js';
-import { localiserCable, adressePrivee } from '../../local/recherche.js';
 import { creerClientPont } from './transport-pont.js';
 
 const $ = (id) => document.getElementById(id);
@@ -20,7 +17,8 @@ const MESSAGES = {
   adresse_invalide: 'Adresse invalide : saisissez une adresse du réseau de la maison (par exemple 192.168.1.48), ou touchez « Chercher le câble ».',
   adresse_vide: 'Aucune adresse : saisissez celle du câble, ou touchez « Chercher le câble ».',
   hors_ligne: 'Aucun câble ne répond à cette adresse. Vérifiez que le câble est branché et sur le même Wi-Fi.',
-  hors_ligne_recherche: 'Aucun câble trouvé sur le Wi-Fi. Vérifiez que le câble est branché, puis fermez Smart Life s\'il est ouvert et recommencez.',
+  sans_adresse: 'Aucune adresse : saisissez celle du câble, ou touchez « Chercher le câble ».',
+  introuvable: 'Aucun câble trouvé sur le Wi-Fi. Vérifiez que le câble est branché, puis fermez Smart Life s\'il est ouvert et recommencez.',
   refuse: 'L\'application refuse cette adresse : seule une adresse du réseau de la maison est permise.',
   occupe: 'L\'application est déjà en train de parler au câble : attendez quelques secondes puis recommencez.',
   cle: 'La clé n\'est pas acceptée par le câble. Ressaisissez-la. Si le problème persiste, le câble a peut-être été reconfiguré dans Smart Life.',
@@ -62,31 +60,27 @@ const plageTexte = (r) => `de ${r.debut} à ${r.fin} (${r.plage_active ? 'activ�
 function principal(id) { for (const b of ['lire', 'cle']) $(b).classList.toggle('principal', b === id); }
 function montrerResultat() { $('resultat').scrollIntoView({ block: 'nearest' }); }
 
-// --- Préparation commune : clé, Wi-Fi, adresse ---
+// --- Préparation commune : clé enregistrée ? adresse saisie ? (la clé elle-même reste dans le natif) ---
 async function preparer({ adresse }) {
   const c = await client.cable();
   if (!c.ok) return { erreur: c.erreur === 'pont_muet' ? 'pont_muet' : 'pas_de_cle' };
-  if (!c.configure || typeof c.cle !== 'string' || typeof c.deviceId !== 'string') return { erreur: 'pas_de_cle' };
-  const w = await client.prefixeWifi();
-  if (!w.ok) return { erreur: w.erreur === 'pas_wifi' ? 'pas_wifi' : (w.erreur ?? 'pas_wifi') };
+  if (!c.configure) return { erreur: 'pas_de_cle' };
   let ip = null;
   if (adresse) {
     ip = $('ip').value.trim().replace(',', '.');
     if (!ip) return { erreur: 'adresse_vide' };
     if (!adressePrivee(ip)) return { erreur: 'adresse_invalide', ip };
   }
-  // La clé n'existe que dans cet objet, le temps de l'appel.
-  return { cfg: { deviceId: c.deviceId, cleLocale: c.cle, version: '3.5' }, prefixe: w.prefixe, ip };
+  return { ip };
 }
 
-function erreurFinale(r, { recherche = false } = {}) {
-  if (r.erreur === 'hors_ligne') {
-    if (client.dernierMotif === 'pas_wifi') return 'pas_wifi';
-    if (client.dernierMotif === 'refuse') return 'refuse';
-    if (client.dernierMotif === 'occupe') return 'occupe';
-    return recherche || r.recherche ? 'hors_ligne_recherche' : 'hors_ligne';
-  }
-  return r.erreur;
+// Adresse IPv4 privée en notation décimale stricte (le natif la revalide).
+function adressePrivee(ip) {
+  const m = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(ip);
+  if (!m) return false;
+  const o = m.slice(1).map(Number);
+  if (o.some((n, i) => n > 255 || String(n) !== m[i + 1])) return false;
+  return o[0] === 10 || (o[0] === 172 && o[1] >= 16 && o[1] <= 31) || (o[0] === 192 && o[1] === 168);
 }
 
 // --- Actions ---
@@ -94,35 +88,24 @@ async function actionLire() {
   const p = await preparer({ adresse: true });
   if (p.erreur) return { r: { ok: false, erreur: p.erreur }, ip: p.ip, texte: msg(p.erreur) };
   etat('Lecture du câble…');
-  client.dernierMotif = null;
-  const r = await lireEtat({ ...p.cfg, ip: p.ip }, client.creerTransport());
+  const r = await client.lire({ ip: p.ip });
   if (r.ok) return { r, ip: p.ip, texte: `Câble connecté. Charge programmée ${plageTexte(r)}.` };
-  const e = erreurFinale(r);
-  return { r: { ...r, erreur: e }, ip: p.ip, texte: msg(e) };
+  return { r, ip: p.ip, texte: msg(r.erreur) };
 }
 
 async function actionChercher() {
   const p = await preparer({ adresse: false });
   if (p.erreur) return { r: { ok: false, erreur: p.erreur }, texte: msg(p.erreur) };
   const depart = $('ip').value.trim().replace(',', '.');
-  const departs = depart && adressePrivee(depart) ? [depart] : [];
-  etat(departs.length ? 'Connexion au câble…' : 'Recherche du câble sur le Wi-Fi… (jusqu\'à 30 s)');
-  client.dernierMotif = null;
-  const res = await localiserCable({
-    cfg: p.cfg,
-    departs,
-    interfaces: [`${p.prefixe}.1`],
-    creerTransport: client.creerTransport,
-    sonder: client.sonder,
-    surRecherche: () => etat('Recherche du câble sur le Wi-Fi… (jusqu\'à 30 s)'),
-  });
+  const params = depart && adressePrivee(depart) ? { ip: depart } : {};
+  etat(params.ip ? 'Connexion au câble…' : 'Recherche du câble sur le Wi-Fi… (jusqu\'à 30 s)');
+  const res = await client.chercher(params, (p2) => { if (p2.etape) etat('Recherche du câble sur le Wi-Fi… (jusqu\'à 30 s)'); });
   if (res.ok) {
     $('ip').value = res.ip;
     const nouveau = res.trouve ? ` (adresse à noter : rien n'est enregistré)` : '';
-    return { r: { ...res.etat, ok: true }, ip: res.ip, texte: `Câble trouvé à ${res.ip}${nouveau}. Charge programmée ${plageTexte(res.etat)}.` };
+    return { r: { ...res, ok: true }, ip: res.ip, texte: `Câble trouvé à ${res.ip}${nouveau}. Charge programmée ${plageTexte(res)}.` };
   }
-  const e = erreurFinale(res, { recherche: res.recherche === true });
-  return { r: { ok: false, erreur: e }, ip: departs[0], texte: msg(e) };
+  return { r: { ok: false, erreur: res.erreur }, ip: params.ip, texte: msg(res.erreur) };
 }
 
 async function actionProgrammer(heure) {
@@ -131,33 +114,24 @@ async function actionProgrammer(heure) {
   const h = (heure ?? $('heure').value ?? '').trim();
   if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(h)) return { r: { ok: false, erreur: 'requete_invalide' }, ip: p.ip, texte: 'Heure invalide : choisissez une heure au format HH:MM.' };
   etat('Programmation du câble…');
-  client.dernierMotif = null;
-  const r = await programmer({ ...p.cfg, ip: p.ip }, client.creerTransport(), { allumage: h });
+  const r = await client.programmer({ allumage: h }, { ip: p.ip });
   if (r.ok) {
     const note = r.immediat ? ' (l\'heure était déjà passée : démarrage immédiat)' : '';
     return { r, ip: p.ip, texte: `Câble programmé et relu. Charge ${plageTexte(r)}${note}.` };
   }
-  const e = erreurFinale(r);
-  const suite = e === 'delai' ? ' Résultat incertain : vérifiez la plage de charge dans Smart Life.' : '';
-  return { r: { ...r, erreur: e }, ip: p.ip, texte: msg(e) + suite };
+  const suite = r.erreur === 'delai' ? ' Résultat incertain : vérifiez la plage de charge dans Smart Life.' : '';
+  return { r, ip: p.ip, texte: msg(r.erreur) + suite };
 }
 
 // --- Essai E0 : envoi différé en arrière-plan (version de mise au point seulement) ---
-// Question : le JS de la WebView peut-il lire, écrire et relire le câble pendant que l'activité est en arrière-plan,
-// écran éteint et téléphone verrouillé, si un service de premier plan `connectedDevice` garde le processus ?
-// Déroulé : configuration du câble lue MAINTENANT (téléphone déverrouillé : la clé du magasin est illisible une fois
-// verrouillé, setUnlockedDeviceRequired), gardée en mémoire 15 min au plus puis effacée (décision du 2026-11-21) ;
+// Question : le code natif peut-il lire, écrire et relire le câble pendant que l'activité est en arrière-plan, écran éteint
+// et téléphone verrouillé, si un service de premier plan `connectedDevice` garde le processus ?
+// Déroulé : la configuration du câble est gardée MAINTENANT par le natif (téléphone déverrouillé : la clé du magasin est
+// illisible une fois verrouillé, setUnlockedDeviceRequired), 15 min au plus puis effacée (décision du 2026-11-21) ;
 // service démarré ; ligne « arriere-plan-pret » (le script éteint alors l'écran) ; attente de `delai` secondes ; même
-// programmation que « Programmer » ; service arrêté dans tous les cas.
+// programmation que « Programmer » ; service arrêté et mémoire effacée dans tous les cas. La page ne voit jamais la clé.
 const ATTENTE_MAX_S = 900;
-let memoire = null; // { cfg, minuteur } : seule copie de la configuration pendant l'attente
 
-function oublierMemoire() {
-  if (!memoire) return;
-  clearTimeout(memoire.minuteur);
-  memoire.cfg = null;
-  memoire = null;
-}
 const patienter = (ms) => new Promise((r) => setTimeout(r, ms));
 const ecranTexte = (e) => (e && e.ok ? `${e.interactif ? 'allume' : 'eteint'}${e.verrouille ? '-verrouille' : ''}` : 'inconnu');
 
@@ -168,19 +142,17 @@ async function actionArrierePlan(params) {
   if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(h) || !adressePrivee(ip)) {
     return { r: { ok: false, erreur: 'requete_invalide' }, ip, texte: msg('requete_invalide') };
   }
-  oublierMemoire();
-  const c = await client.cable();
-  if (!c.ok || !c.configure || typeof c.cle !== 'string' || typeof c.deviceId !== 'string') {
+  const m = await client.memoriser();
+  if (!m.ok) {
     const e = await client.appeler('essaiArrierePlan', { quoi: 'etat' });
     ecrireLigne({ action: 'arriere-plan-pret', ok: false, erreur: 'pas_de_cle', ecran: ecranTexte(e) });
     return { r: { ok: false, erreur: 'pas_de_cle' }, ip, texte: msg('pas_de_cle') };
   }
-  memoire = { cfg: { deviceId: c.deviceId, cleLocale: c.cle, version: '3.5' }, minuteur: setTimeout(oublierMemoire, ATTENTE_MAX_S * 1000) };
   const d = await client.appeler('essaiArrierePlan', { quoi: 'debut' });
   ecrireLigne({ action: 'arriere-plan-pret', ok: d.ok === true, erreur: d.ok ? undefined : d.erreur, ecran: ecranTexte(d), delai_s: delaiS });
   if (!d.ok) {
-    oublierMemoire();
-    return { r: { ok: false, erreur: d.erreur ?? 'service' }, ip, texte: 'Le service d\'attente n\'a pas démarré.' };
+    await client.oublierMemoire();
+    return { r: { ok: false, erreur: d.erreur ?? 'service' }, ip, texte: "Le service d'attente n'a pas démarré." };
   }
   etat(`Attente de ${delaiS} s, puis programmation du câble…`);
   try {
@@ -189,41 +161,48 @@ async function actionArrierePlan(params) {
     const retard = Date.now() - t0 - delaiS * 1000; // retard du minuteur : mesure de la mise en sommeil de la page
     const e = await client.appeler('essaiArrierePlan', { quoi: 'etat' });
     const mesures = { ecran: ecranTexte(e), visibilite: document.visibilityState, retard_ms: retard };
-    if (!memoire) return { r: { ok: false, erreur: 'memoire_effacee' }, ip, texte: 'Attente trop longue : configuration effacée.', mesures };
     const debut = Date.now();
-    client.dernierMotif = null;
-    const r = await programmer({ ...memoire.cfg, ip }, client.creerTransport(), { allumage: h });
+    const r = await client.programmer({ allumage: h }, { ip });
     mesures.duree_ms = Date.now() - debut; // lecture + écriture + relecture
     if (r.ok) return { r, ip, texte: `Câble programmé et relu en arrière-plan. Charge ${plageTexte(r)}.`, mesures };
-    const err = erreurFinale(r);
-    return { r: { ...r, erreur: err }, ip, texte: msg(err), mesures };
+    return { r, ip, texte: msg(r.erreur), mesures };
   } finally {
-    oublierMemoire();
+    await client.oublierMemoire();
     await client.appeler('essaiArrierePlan', { quoi: 'fin' });
   }
 }
 
-// Vérifie que le pont natif refuse ce qu'il doit refuser, sans qu'aucun octet ne parte, et que sw.js est en 404.
+// Vérifie qu'aucune route générique n'existe (ouvrir, envoyer, recevoir, fermer, sonder : « operation_inconnue »), que le
+// transport natif refuse tout sauf IPv4 privée:6668 sans qu'aucun octet ne parte (op « essaiFiltre », version de mise au
+// point), que les opérations refusent une adresse hors filtre ou une heure invalide, et que sw.js est en 404.
 async function actionFiltre() {
-  const essais = [
-    ['port6669', 'ouvrir', { ip: '10.0.2.2', port: 6669, delai: 1000 }],
-    ['loopback', 'ouvrir', { ip: '127.0.0.1', port: 6668, delai: 1000 }],
-    ['zeroDeTete', 'ouvrir', { ip: '010.0.0.1', port: 6668, delai: 1000 }],
-    ['publique', 'ouvrir', { ip: '8.8.8.8', port: 6668, delai: 1000 }],
-    ['sondeLoopback', 'sonder', { ip: '127.0.0.1', delai: 400 }],
-    ['sondeLienLocal', 'sonder', { ip: '169.254.1.1', delai: 400 }],
-  ];
   const echecs = [];
-  for (const [nom, op, params] of essais) {
-    const r = await client.appeler(op, params, params.delai);
-    if (r.ok || r.erreur !== 'refuse') { echecs.push(nom); if (r.ok && r.cx) await client.appeler('fermer', { cx: r.cx }); }
+  for (const op of ['ouvrir', 'envoyer', 'recevoir', 'fermer', 'sonder', 'retenirAdresse']) {
+    const r = await client.appeler(op, { ip: '10.0.2.2', port: 6668, cx: 1, d: 'AA==', delai: 400 }, 400);
+    if (r.ok || r.erreur !== 'operation_inconnue') echecs.push(`route:${op}`);
+  }
+  const f = await client.appeler('essaiFiltre', {}, 10000);
+  if (!f.ok || f.conforme !== true) echecs.push(`transport:${Array.isArray(f.echecs) ? f.echecs.join('+') : (f.erreur ?? 'inconnu')}`);
+  for (const ip of ['8.8.8.8', '127.0.0.1', '010.0.0.1', '169.254.1.1']) {
+    const r = await client.lire({ ip }, 1000);
+    if (r.ok || r.erreur !== 'refuse') echecs.push(`lire:${ip}`);
+    const c = await client.chercher({ ip }, null, 1000);
+    if (c.ok || c.erreur !== 'refuse') echecs.push(`chercher:${ip}`);
+  }
+  for (const h of ['25:00', '5:00', '05:60']) {
+    const r = await client.programmer({ allumage: h }, { ip: '10.0.2.2' }, 1000);
+    if (r.ok || r.erreur !== 'requete_invalide') echecs.push(`heure:${h}`);
+  }
+  for (const action of [{}, { allumage: '05:00', desactiver: true }, { desactiver: false }]) {
+    const r = await client.programmer(action, { ip: '10.0.2.2' }, 1000);
+    if (r.ok || r.erreur !== 'requete_invalide') echecs.push(`action:${JSON.stringify(action)}`);
   }
   try {
     const sw = await fetch('../../site/sw.js', { cache: 'no-store' });
     if (sw.status !== 404) echecs.push(`sw.js:${sw.status}`);
   } catch { echecs.push('sw.js:erreur'); }
   const ok = echecs.length === 0;
-  return { r: { ok, erreur: ok ? undefined : `filtre:${echecs.join(',')}` }, texte: ok ? 'Filtre du pont conforme : tout ce qui devait être refusé l\'est, sw.js est en 404.' : `Filtre non conforme : ${echecs.join(', ')}.` };
+  return { r: { ok, erreur: ok ? undefined : `filtre:${echecs.join(',')}` }, texte: ok ? 'Filtre du pont conforme : aucune route générique, le transport natif refuse tout sauf IPv4 privée:6668, sw.js est en 404.' : `Filtre non conforme : ${echecs.join(', ')}.` };
 }
 
 async function lancer(action, params = {}) {
@@ -239,10 +218,7 @@ async function lancer(action, params = {}) {
     else return;
     etat(res.texte, res.r.ok ? 'ok' : 'ko');
     principal(res.r.erreur === 'cle' || res.r.erreur === 'pas_de_cle' ? 'cle' : 'lire');
-    // Adresse retenue par le téléphone seulement après une lecture ou une écriture réussie avec la bonne clé.
-    if (res.r.ok && res.ip && (action === 'lire' || action === 'chercher' || action === 'programmer')) {
-      await client.appeler('retenirAdresse', { ip: res.ip });
-    }
+    // L'adresse est retenue par le code natif, seulement après une lecture, une écriture ou une recherche réussie.
     journaliser(action, res.r, res.ip, res.mesures);
   } catch (e) {
     const r = { ok: false, erreur: 'format' };

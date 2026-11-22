@@ -738,10 +738,12 @@ import { confirmationValable, blocageCable, plageRelue, sousLigneBouton, socVali
       if (a.prepaFinie) return null; // abandon entre-temps : on ne démarre pas de service
       a.info = "";
       return c.lireConfigurationCable(c.client).then(function (conf) {
-        if (!conf || conf.erreur) return null;
+        if (!conf || conf.erreur) { c.client.oublierMemoire(); return null; } // rien ne doit rester gardé côté natif
         var h = heureNotification({ demande: a.d, finHC: a.finHC });
         return c.client.appeler("attenteDebut", h ? { heure: h } : {}).then(function (r) {
-          return r && r.ok ? { conf: conf, luLe: Date.now() } : null;
+          if (r && r.ok) return { conf: conf, luLe: Date.now() };
+          c.client.oublierMemoire(); // service non démarré : le natif n'a plus à garder la configuration
+          return null;
         });
       });
     }).catch(function () { return null; });
@@ -914,15 +916,16 @@ import { confirmationValable, blocageCable, plageRelue, sousLigneBouton, socVali
   function localPret() {
     if (!localCache) {
       localCache = Promise.all([
-        import("./local.js"), import("../local/tuya-local.js"), import("../local/recherche.js"), import("../android/essai/transport-pont.js"),
+        import("./local.js"), import("../android/essai/transport-pont.js"),
       ]).then(function (mods) {
-        var client = mods[3].creerClientPont(globalThis.PontLocal);
+        // Le protocole local tourne dans le code natif : la page ne reçoit ni la clé ni l'identifiant du câble.
+        var client = mods[1].creerClientPont(globalThis.PontLocal);
         return client.demarrage().then(function (dem) {
           debugPont = !!(dem && dem.ok && dem.variante === "debug");
           return {
             programmerLocal: mods[0].programmerLocal, surLeReseauDeLaMaison: mods[0].surLeReseauDeLaMaison, etatCable: mods[0].etatCable, chercherCable: mods[0].chercherCable, lireConfigurationCable: mods[0].lireConfigurationCable,
             client: client,
-            deps: { client: client, lireEtat: mods[1].lireEtat, programmer: mods[1].programmer, localiserCable: mods[2].localiserCable },
+            deps: { client: client },
           };
         });
       });

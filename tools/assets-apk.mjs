@@ -4,7 +4,7 @@
 //
 // LISTE BLANCHE EXPLICITE (décision du 2026-11-18 : jamais la racine du dépôt, elle contient tools/.env) :
 //   - site/**, sauf site/sw.js (pas de service worker dans l'APK : risque d'ancien code en cache) ;
-//   - local/tuya-local.js et local/recherche.js (jamais local/transport-node.mjs) ;
+//   - aucun fichier de local/ (le protocole local est en Kotlin depuis le lot E2) ;
 //   - android/essai/** (page d'essai de la coque).
 // Les chemins sont conservés tels quels : l'APK sert https://appassets.androidplatform.net/assets/<chemin>.
 //
@@ -21,7 +21,7 @@ export const SORTIE_PAR_DEFAUT = join(RACINE, "dist", "apk-assets");
 
 // Dossiers copiés en entier, fichiers copiés un à un, fichiers retirés des dossiers.
 export const DOSSIERS = ["site", "android/essai"];
-export const FICHIERS = ["local/tuya-local.js", "local/recherche.js"];
+export const FICHIERS = []; // plus de protocole en JavaScript dans l'APK depuis le lot E2 : il tourne dans le code natif
 export const EXCLUS = ["site/sw.js"];
 // Extensions que la WebView sait servir (voir PontAssets.kt : même liste, type MIME fixé par extension).
 export const EXTENSIONS = [".html", ".js", ".mjs", ".css", ".json", ".png", ".webmanifest", ".txt", ".svg", ".ico"];

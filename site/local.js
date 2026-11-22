@@ -1,14 +1,16 @@
-// Mode « Local » de la page, dans l'appli Android (coque, lot C4) : le câble est lu et programmé directement sur le
-// Wi-Fi de la maison, par le pont natif, sans cloud. Module ES pur : ses dépendances sont INJECTÉES (client du pont,
-// lireEtat / programmer de local/tuya-local.js, localiserCable de local/recherche.js), il ne charge rien lui-même.
+// Mode « Local » de la page, dans l'appli Android (coque) : le câble est lu et programmé directement sur le Wi-Fi de la
+// maison, sans cloud. Depuis le lot E2 (décision du 2026-11-21), le protocole local tourne dans le code natif (Kotlin) :
+// ce module ne fait que demander au pont natif des opérations de haut niveau (lire, programmer, chercher) et traduire leurs
+// résultats en états de la page. Il ne voit JAMAIS la clé ni l'identifiant du câble. Module ES pur : son client du pont est
+// INJECTÉ (android/essai/transport-pont.js), il ne charge rien lui-même.
 // La page ne le charge que si le pont natif est présent ; sur GitHub Pages, il n'est jamais chargé.
 //
 // Règles (CLAUDE.md, décisions du 2026-11-20) :
 // - jamais d'échec silencieux : tout échec d'écriture rend l'heure à régler à la main (service.js, resultatKo) ;
 // - un seul chemin vers « ok » : la vérification de service.js (interpreterReponse) sur le résultat relu sur le câble ;
 // - lecture directe seulement si le Wi-Fi du téléphone est sur le réseau de l'adresse retenue ; jamais de recherche
-//   sans demande ; rien n'est effacé ; l'adresse n'est retenue qu'après une lecture ou une écriture réussie ;
-// - la clé n'est tenue que le temps de l'appel ; jamais affichée, gardée ni journalisée ici.
+//   sans demande ; rien n'est effacé ; l'adresse n'est retenue (côté natif) qu'après une lecture ou une écriture réussie ;
+// - la clé reste dans le code natif : jamais lue, gardée, affichée ni journalisée ici.
 
 import { resultatKo, interpreterReponse } from './service.js';
 
@@ -17,39 +19,47 @@ export function pontPresent(g = globalThis) {
 }
 
 // Échecs de contact avec le câble qui méritent une seconde tentative (connexion refusée, lente, ou fermée pendant la
-// négociation, que le module lit comme « cle »). Jamais après une écriture.
+// négociation, que le protocole lit comme « cle »). Jamais après une écriture.
 const ECHECS_A_RETENTER = new Set(['hors_ligne', 'delai', 'cle']);
 const BUDGET_ECRITURE_MS = 27000; // sous le plafond de 30 s de site/app.js (DELAI_LOCAL_MAX_MS)
 
 const IPV4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/;
 const reseau24 = (ip) => (typeof ip === 'string' && IPV4.test(ip) ? ip.split('.').slice(0, 3).join('.') : null);
 
-// Code d'erreur du module local -> code de service.js (CAUSES).
+// Code d'erreur du pont natif -> code de service.js (CAUSES). Un code inconnu (occupe, pont_muet…) reste « incertain ».
 function codeLocal(erreur) {
   switch (erreur) {
-    case 'hors_ligne': return 'local_muet';
+    case 'hors_ligne': case 'sans_adresse': return 'local_muet';
     case 'delai': return 'local_delai';
     case 'cle': return 'local_cle';
+    case 'pas_de_cle': return 'local_pas_de_cle';
+    case 'pas_wifi': return 'local_hors_wifi';
     case 'relecture_differente': return 'relecture_differente';
     case 'requete_invalide': return 'requete_invalide';
     default: return 'local_format';
   }
 }
 
-// Configuration du câble : { cfg, adresse } ou { erreur }. Lue au moment de l'appel, sauf si l'appelant en fournit une
-// déjà lue (deps.confCable, attente en arrière-plan : la clé est illisible téléphone verrouillé). Cette configuration
-// n'est jamais copiée ni rendue ici ; seule son adresse est mise à jour quand une recherche trouve le câble ailleurs.
+// Configuration du câble : { pret:true, adresse } ou { erreur }. Seule l'adresse (non secrète) est connue de la page ; la
+// clé et l'identifiant restent dans le code natif. Lue au moment de l'appel, sauf si l'appelant en fournit une déjà lue
+// (deps.confCable, attente en arrière-plan : le natif a gardé la configuration en mémoire, la clé du magasin étant
+// illisible téléphone verrouillé). Seule l'adresse est mise à jour quand une recherche trouve le câble ailleurs.
 async function configuration(client, confCable = null) {
-  if (confCable && confCable.cfg && typeof confCable.cfg.cleLocale === 'string') return confCable;
+  if (confCable && confCable.pret === true) return confCable;
   const c = await client.cable();
   if (!c || !c.ok) return { erreur: 'local_format' };
-  if (!c.configure || typeof c.cle !== 'string' || typeof c.deviceId !== 'string') return { erreur: 'local_pas_de_cle' };
-  return { cfg: { deviceId: c.deviceId, cleLocale: c.cle, version: '3.5' }, adresse: typeof c.adresse === 'string' ? c.adresse : null };
+  if (!c.configure) return { erreur: 'local_pas_de_cle' };
+  return { pret: true, adresse: typeof c.adresse === 'string' ? c.adresse : null };
 }
 
-// Lit la configuration du câble pour la garder le temps d'une attente (voir configuration). { cfg, adresse } ou { erreur }.
+// Demande au natif de garder la configuration du câble le temps d'une attente (15 min au plus, puis effacée) et rend ce
+// que la page a le droit d'en savoir : { pret, adresse } ou { erreur }.
 export async function lireConfigurationCable(client) {
-  try { return await configuration(client); } catch (e) { return { erreur: 'local_format' }; }
+  try {
+    const m = await client.memoriser();
+    if (!m || !m.ok) return { erreur: m && m.erreur === 'pas_de_cle' ? 'local_pas_de_cle' : 'local_format' };
+    return await configuration(client);
+  } catch (e) { return { erreur: 'local_format' }; }
 }
 
 // Le téléphone est-il sur le réseau de l'adresse retenue ? 'oui' | 'non' | 'pas_wifi'.
@@ -79,7 +89,7 @@ export async function surLeReseauDeLaMaison(deps) {
  *    | { etat: 'hors_wifi' } | { etat: 'muet' } | { etat: 'cle' } | { etat: 'erreur' }
  */
 export async function etatCable(deps) {
-  const { client, lireEtat } = deps;
+  const { client } = deps;
   const conf = await configuration(client, deps.confCable);
   if (conf.erreur === 'local_pas_de_cle') return { etat: 'a_relier' };
   if (conf.erreur) return { etat: 'erreur' };
@@ -87,41 +97,42 @@ export async function etatCable(deps) {
   const reseau = await surLeReseau(client, conf.adresse);
   if (reseau !== 'oui') return { etat: 'hors_wifi' };
   // Premier contact souvent lent ou refusé (constaté au premier essai réel, 2026-11-21) : une seconde lecture, plus longue.
-  let r = await lireEtat({ ...conf.cfg, ip: conf.adresse, delaiGlobalMs: deps.delaiLectureMs ?? 4000 }, client.creerTransport());
+  let r = await client.lire({ ip: conf.adresse }, deps.delaiLectureMs ?? 4000);
   if (!(r && r.ok === true) && ECHECS_A_RETENTER.has(r && r.erreur)) {
-    r = await lireEtat({ ...conf.cfg, ip: conf.adresse, delaiGlobalMs: deps.delaiSecondeLectureMs ?? 8000 }, client.creerTransport());
+    r = await client.lire({ ip: conf.adresse }, deps.delaiSecondeLectureMs ?? 8000);
   }
-  if (r && r.ok === true) {
-    await client.appeler('retenirAdresse', { ip: conf.adresse });
-    return { etat: 'pret', plage: { debut: r.debut, fin: r.fin, plage_active: r.plage_active } };
-  }
+  if (r && r.ok === true) return { etat: 'pret', plage: { debut: r.debut, fin: r.fin, plage_active: r.plage_active } };
   const e = r && r.erreur;
+  if (e === 'pas_de_cle') return { etat: 'a_relier' };
+  if (e === 'pas_wifi') return { etat: 'hors_wifi' };
   return { etat: e === 'cle' ? 'cle' : e === 'hors_ligne' || e === 'delai' ? 'muet' : 'erreur' };
 }
 
 /**
- * Recherche du câble sur le Wi-Fi, seulement à la demande. surProgres : voir local/recherche.js (sans adresse).
+ * Recherche du câble sur le Wi-Fi, seulement à la demande. surProgres : reçoit { etape, appareils, lectures, echeance }
+ * (sans adresse) pendant la fouille du réseau.
  * -> { ok:true, plage } | { ok:false, etat: 'a_relier' | 'hors_wifi' | 'introuvable' | 'erreur' }
  */
 export async function chercherCable(deps, surProgres = null) {
-  const { client, localiserCable } = deps;
+  const { client } = deps;
   const conf = await configuration(client, deps.confCable);
   if (conf.erreur === 'local_pas_de_cle') return { ok: false, etat: 'a_relier' };
   if (conf.erreur) return { ok: false, etat: 'erreur' };
   const w = await client.prefixeWifi();
   if (!w || !w.ok) return { ok: false, etat: 'hors_wifi' };
-  const departs = conf.adresse && reseau24(conf.adresse) === w.prefixe ? [conf.adresse] : [];
-  const chercher = () => localiserCable({
-    cfg: conf.cfg, departs, interfaces: [`${w.prefixe}.1`],
-    creerTransport: client.creerTransport, sonder: client.sonder, surProgres,
-  });
+  // Le natif essaie d'abord cette adresse (si elle est sur le réseau du Wi-Fi), puis fouille le /24 du Wi-Fi.
+  const params = conf.adresse && reseau24(conf.adresse) === w.prefixe ? { ip: conf.adresse } : {};
   // Premier essai réel : « introuvable » puis trouvé au second passage. Un second passage automatique.
-  let res = await chercher();
-  if (!res || res.ok !== true) res = await chercher();
-  if (!res || res.ok !== true) return { ok: false, etat: 'introuvable' };
-  if (deps.confCable) deps.confCable.adresse = res.ip; // la suite de l'attente lit la nouvelle adresse
-  await client.appeler('retenirAdresse', { ip: res.ip });
-  return { ok: true, plage: { debut: res.etat.debut, fin: res.etat.fin, plage_active: res.etat.plage_active } };
+  let res = await client.chercher(params, surProgres);
+  if (!(res && res.ok === true) && res && res.erreur === 'introuvable') res = await client.chercher(params, surProgres);
+  if (res && res.ok === true) {
+    if (deps.confCable) deps.confCable.adresse = res.ip; // la suite de l'attente lit la nouvelle adresse
+    return { ok: true, plage: { debut: res.debut, fin: res.fin, plage_active: res.plage_active } };
+  }
+  const e = res && res.erreur;
+  if (e === 'pas_wifi') return { ok: false, etat: 'hors_wifi' };
+  if (e === 'pas_de_cle') return { ok: false, etat: 'a_relier' };
+  return { ok: false, etat: e === 'introuvable' ? 'introuvable' : 'erreur' };
 }
 
 /**
@@ -132,26 +143,26 @@ export async function programmerLocal(demande, deps, finHC) {
   const ko = (code) => resultatKo(demande, code, finHC);
   try {
     if (!demande) return ko('inattendue');
-    const { client, programmer } = deps;
+    const { client } = deps;
     const conf = await configuration(client, deps.confCable);
     if (conf.erreur) return ko(conf.erreur);
     if (!conf.adresse) return ko('local_muet');
     const reseau = await surLeReseau(client, conf.adresse);
     if (reseau !== 'oui') return ko('local_hors_wifi');
+    // Les deux seules actions du projet ; le natif les revalide.
+    const action = demande.desactiver ? { desactiver: true } : { allumage: demande.allumage };
     const debut = Date.now();
-    let r = await programmer({ ...conf.cfg, ip: conf.adresse }, client.creerTransport(), demande);
-    // Une seconde tentative SEULEMENT si le module ne signale pas d'écriture partie (pas de ecrit: true) et que l'échec
+    let r = await client.programmer(action, { ip: conf.adresse }, 20000);
+    // Une seconde tentative SEULEMENT si le natif ne signale pas d'écriture partie (pas de ecrit: true) et que l'échec
     // vient du contact avec le câble. Une écriture peut-être appliquée n'est jamais relancée (règle 2 : résultat incertain).
     // Les deux tentatives tiennent sous le plafond de 30 s de la page (app.js) : la seconde n'a que le temps restant,
     // et ne part pas s'il en reste trop peu (sinon elle pourrait écrire après l'affichage de l'échec).
     const reste = BUDGET_ECRITURE_MS - (Date.now() - debut);
     if (r && r.ok !== true && r.ecrit !== true && ECHECS_A_RETENTER.has(r.erreur) && reste >= 5000) {
-      r = await programmer({ ...conf.cfg, ip: conf.adresse, delaiGlobalMs: reste }, client.creerTransport(), demande);
+      r = await client.programmer(action, { ip: conf.adresse }, reste);
     }
     if (!r || r.ok !== true) return ko(codeLocal(r && r.erreur));
-    const res = interpreterReponse(demande, 200, r, finHC);
-    if (res.etat === 'ok') await client.appeler('retenirAdresse', { ip: conf.adresse });
-    return res;
+    return interpreterReponse(demande, 200, r, finHC);
   } catch (e) {
     return ko('local_format');
   }
