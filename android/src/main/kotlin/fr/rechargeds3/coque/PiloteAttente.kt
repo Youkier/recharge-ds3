@@ -67,11 +67,15 @@ class PiloteAttente(
     private val maintenant: () -> ZonedDateTime = { ZonedDateTime.now(Plage.PARIS) },
     /** Pause injectée par les tests (temps virtuel) ; absente : attente réelle, interrompue par [annuler]. */
     private val pause: ((Long) -> Unit)? = null,
-    private val dureeMaxMs: Long = DUREE_MAX_MS,
+    dureeMax: Long = DUREE_MAX_MS,
     private val silenceMs: Long = SILENCE_MS,
 ) {
     @Volatile
     var ecouteur: EcouteurAttente? = null
+
+    /** Durée d'attente au plus. 10 min ; seule la version de mise au point la raccourcit (scénario d'expiration de la CI). */
+    @Volatile
+    var dureeMaxMs: Long = dureeMax
 
     private val verrou = Any()
     private val reveil = LinkedBlockingQueue<Boolean>(1)

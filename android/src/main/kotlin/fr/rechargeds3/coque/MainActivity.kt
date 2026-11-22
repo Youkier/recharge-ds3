@@ -67,6 +67,8 @@ class MainActivity : Activity() {
         wifi = proprietaire.wifi
         coffre = proprietaire.coffre
         pilote = proprietaire.pilote
+        // Version de mise au point seulement : durée d'attente raccourcie (--es attente_max_s 40) pour tester l'expiration en CI.
+        if (estDebug) intent?.getStringExtra("attente_max_s")?.toLongOrNull()?.let { if (it in 20..600) pilote.dureeMaxMs = it * 1000 }
         pont = PontLocal(
             wifi, proprietaire.operations, pilote, estDebug,
             surSaisirCle = { afficherFormulaire() },

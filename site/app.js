@@ -832,7 +832,8 @@ import { confirmationValable, confirmationAEnregistrer, confirmationRestauree, C
     if (res.etat === "ok") majPlage(plageDuCable(res)); else if (res.incertain) majPlage(null);
     if (res.etat === "ko" && res.code === "local_attente_cle") majEtatCable().then(function () { ouvrirPanneau(true); });
     else if (res.etat === "ok" && !document.hidden) majEtatCable();
-    setDemande(demande);
+    // Pas de setDemande ici : la demande figée du natif peut différer de la saisie actuelle, et la carte du résultat ne doit pas disparaître.
+    updateSend();
   }
   // Résultat BRUT du natif -> carte (service.js, seul chemin vers « ok »). Le module local est déjà chargé : l'attente l'a demandé.
   var resultatAttenteFn = null;
