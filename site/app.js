@@ -1085,7 +1085,19 @@ import { confirmationValable, blocageCable, plageRelue, plageDuCable, ligneCable
     if (soirAffiche !== null && soirAffiche !== cleSoir() && !busy && !att) render(); // page restée ouverte d'un soir à l'autre : bandeau et calcul
     else updateSend(); // « pour cette nuit » / « démarre tout de suite » dépendent de l'heure
     if (pontOk && !busy && !att) majEtatCable();
+    else if (!pontOk && !busy) lirePlageService();
   });
+  // Mode service : la plage lue n'est jamais gardée d'une visite à l'autre (« Déjà programmé » ne doit jamais
+  // reposer sur une lecture périmée : onglet ouvert d'un soir à l'autre, autre téléphone). Elle est effacée puis relue,
+  // au plus une fois par minute (limite d'appels du service) ; au moindre échec, rien de plus n'est affiché.
+  var derniereLecturePlage = 0;
+  function lirePlageService() {
+    if (pontOk || !svc.adresse || !svc.jeton) return;
+    if (Date.now() - derniereLecturePlage < 60000) return;
+    derniereLecturePlage = Date.now();
+    majPlage(null);
+    lireEtatService(svc.adresse, svc.jeton).then(function (r) { if (r && !busy) majPlage(plageDuCable(r)); }, function () { /* sans effet */ });
+  }
   // Pastille « Hors Wi-Fi maison » : le Wi-Fi est relu toutes les 5 s (page visible seulement, rien en cours) ;
   // dès que le téléphone est sur le bon réseau, une lecture de l'état (jamais de recherche) passe la pastille à « Câble prêt ».
   var suiviEnCours = false;
@@ -1130,10 +1142,7 @@ import { confirmationValable, blocageCable, plageRelue, plageDuCable, ligneCable
   if (essai && socValide(essai.get("soc")) !== null) { $("soc").value = socValide(essai.get("soc")); socEnregistre = true; }
   loadService(); chargerVehicules(); render(); setConfirme(!!essai && essai.get("confirme") === "1" && socValide($("soc").value) !== null); route(false);
   if (pontOk) { $("svcBox").hidden = true; majEtatCable(); } // dans l'appli, le service n'est pas joignable : pas de carte service
-  else if (svc.adresse && svc.jeton) {
-    // Mode service (GitHub Pages) : une lecture de la plage, purement informative ; au moindre échec, rien de plus n'est affiché.
-    lireEtatService(svc.adresse, svc.jeton).then(function (r) { if (r && !busy) majPlage(plageDuCable(r)); }, function () { /* sans effet */ });
-  }
+  else lirePlageService(); // Mode service (GitHub Pages) : lecture de la plage au chargement, puis à chaque retour sur la page
   afficherBandeauDefauts();
   protegerStockage();
 })();
