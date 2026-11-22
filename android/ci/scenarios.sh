@@ -151,6 +151,15 @@ attendre_texte_page() { # attendre_texte_page <texte> [délai en s] ; laisse le 
   done
   echec "texte « $texte » absent de l'écran après ${delai} s"
 }
+chercher_texte_page() { # comme attendre_texte_page, mais rend 1 au lieu d'échouer
+  local texte="$1" delai="${2:-40}" i
+  for i in $(seq 1 "$delai"); do
+    DUMP="$(ui_dump || true)"
+    if contient "$DUMP" "$texte"; then return 0; fi
+    sleep 1
+  done
+  return 1
+}
 ecran_sans() { # ecran_sans <texte> <message d'échec>
   DUMP="$(ui_dump || true)"
   if contient "$DUMP" "$1"; then echec "$2"; fi
@@ -402,7 +411,7 @@ toucher_annuler_attente() {
   local bornes gauche haut droite densite taille l h
   # L'écran d'attente est affiché (la ligne ESSAI page-attente-wifi l'a déjà prouvé). Sur API 36, uiautomator n'a pas
   # remonté « Régler à la main » alors que la capture le montre (CI du 22/11) : relevé non bloquant, dump gardé pour diagnostic.
-  if ! attendre_texte_page "Régler à la main" 20; then
+  if ! chercher_texte_page "Régler à la main" 20; then
     releve "écran d'attente : « Régler à la main » absent du dump uiautomator (visible sur la capture ?)"
     printf '%s' "$DUMP" > "$SORTIE/dump-attente-$(date +%s).xml"
   fi
@@ -1078,6 +1087,7 @@ lancer_faux
 refuser_notifications # sans notification : le résultat n'est montré qu'à la réouverture
 demarrer_page
 page_prete "S-N"
+regler_soc 39 # S-G laisse 84 % (« pas de charge ») : le bouton ne serait pas « Programmer la charge »
 attente_commencer "S-N"
 service_au_premier_plan "$SORTIE/attente-services-sn.txt" || echec "S-N : service d'attente absent ou pas au premier plan"
 ECR_AVANT="$(ecritures_log)"
