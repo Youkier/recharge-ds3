@@ -205,12 +205,16 @@ class OperationsCable(
      */
     fun programmer(ip: String?, action: Action, delaiMs: Long?, reessayer: Boolean = false, origine: Origine = Origine.PAGE): Map<String, Any?> =
         exclusif(origine) { op ->
+            // Début du budget : dès l'exclusivité obtenue, déchiffrement de la clé compris (relecture du 2026-11-22).
+            val debut = horloge()
             if (action is Action.Allumage && !Plage.demandeValide(action.hhmm, action.fin, action.dureeMin, action.depart)) {
                 return@exclusif erreur("requete_invalide")
             }
             if (action is Action.Desactiver && !Plage.heureValide(action.fin)) return@exclusif erreur("requete_invalide")
-            avecConfig(ip, delaiMs) { cfg ->
-                val debut = horloge()
+            avecConfig(ip, delaiMs) { cfg0 ->
+                // Avec une seconde tentative possible, la première ne mange pas tout le budget : elle laisse de quoi en faire une
+                // seconde (sinon les 30 s permises à la page dépasseraient les 27 s annoncées).
+                val cfg = if (reessayer) avecDelai(cfg0, minOf(cfg0.delaiGlobalMs, BUDGET_ECRITURE_MS - RESTE_MINI_SECONDE_ECRITURE_MS)) else cfg0
                 val t = nouveauTransport(op) ?: return@avecConfig causeSansTransport(op)
                 var r = ClientCable.programmer(cfg, t, action, maintenant, pause)
                 if (reessayer && retentable(r) && !annule(op)) {

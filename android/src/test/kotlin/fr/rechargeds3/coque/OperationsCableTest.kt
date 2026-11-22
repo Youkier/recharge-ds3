@@ -375,6 +375,36 @@ class OperationsCableTest {
         }
     }
 
+    @Test fun programmerLeBudgetCommenceAvantLeDechiffrementDeLaCle() {
+        // Le déchiffrement de la clé dure 23 s (téléphone lent) : il reste 4 s au lieu de 27, donc pas de seconde tentative.
+        var t = 0L
+        val env = Env()
+        env.surLireCle = { t += 23_000 }
+        val s = Suite(listOf({ muet() }), { faux() })
+        env.fabrique = s.fabrique
+        val r = ops(env, horloge = { t }).programmer(null, alle("05:00"), null, reessayer = true)
+        assertEquals("hors_ligne", r["erreur"]); assertEquals(1, s.crees.get())
+    }
+
+    @Test fun programmerAnnulationEntreLesDeuxEssaisNOuvreAucuneSeconde() {
+        // L'annulation (sortie de l'activité, nouvelle clé…) tombe pendant le premier essai, qui échoue par un échec de contact :
+        // la seconde tentative ne s'ouvre pas, et rien n'est écrit.
+        for (origine in Origine.values()) {
+            lateinit var o: OperationsCable
+            val f = faux()
+            val premier = object : Transport by muet() {
+                override fun ouvrir(ip: String, port: Int, delaiMs: Int) { o.annuler(origine); throw TransportException("hors_ligne") }
+            }
+            val s = Suite(listOf({ premier }), { f })
+            o = ops(Env(fabrique = s.fabrique))
+            val r = o.programmer(null, alle("05:00"), null, reessayer = true, origine = origine)
+            assertEquals(origine.toString(), false, r["ok"])
+            assertEquals(origine.toString(), 1, s.crees.get())
+            assertEquals(0, f.ouvertures.get()); assertTrue(f.ecritures.isEmpty())
+            assertFalse(o.enCours())
+        }
+    }
+
     @Test fun chercherSecondBalayageSeulementSiDemande() {
         for ((reessayer, trouve) in listOf(false to false, true to true)) {
             val sondes = AtomicInteger()
