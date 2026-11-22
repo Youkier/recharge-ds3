@@ -5,7 +5,7 @@
 // LISTE BLANCHE EXPLICITE (décision du 2026-11-18 : jamais la racine du dépôt, elle contient tools/.env) :
 //   - site/**, sauf site/sw.js (pas de service worker dans l'APK : risque d'ancien code en cache) ;
 //   - aucun fichier de local/ (le protocole local est en Kotlin depuis le lot E2) ;
-//   - android/essai/** (page d'essai de la coque).
+//   - android/essai/** (page d'essai de la coque, mise au point ; non servie en version publiée).
 // Les chemins sont conservés tels quels : l'APK sert https://appassets.androidplatform.net/assets/<chemin>.
 //
 // Garde-fous : seules des extensions de fichiers web connues sont copiées (un fichier inattendu dans un dossier de la

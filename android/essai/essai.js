@@ -1,12 +1,12 @@
 // Page d'essai de la coque Android : « Lire l'état », « Chercher le câble » et, dans la version de mise au point
 // seulement, « Programmer » et « Vérifier le filtre du pont ». Depuis le lot E2, le protocole local tourne dans le code
-// natif : cette page demande des opérations de haut niveau (lire, programmer, chercher) par transport-pont.js.
+// natif : cette page demande des opérations de haut niveau (lire, programmer, chercher) par site/pont.js.
 //
 // Clé du câble : saisie dans l'écran natif, jamais ici ; la page ne la reçoit jamais (ni l'identifiant). Après chaque
 // action, UNE ligne « ESSAI {json} » (action, ok, erreur, debut, fin, ip) est écrite dans la console, que la version de
 // mise au point relaie dans logcat : jamais de clé ni de trame.
 
-import { creerClientPont } from './transport-pont.js';
+import { creerClientPont } from '../../site/pont.js';
 
 const $ = (id) => document.getElementById(id);
 const BOUTONS = ['lire', 'chercher', 'cle', 'programmer', 'filtre'];

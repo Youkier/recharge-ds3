@@ -2,7 +2,7 @@
 // maison, sans cloud. Depuis le lot E2 (décision du 2026-11-21), le protocole local tourne dans le code natif (Kotlin) :
 // ce module ne fait que demander au pont natif des opérations de haut niveau (lire, programmer, chercher) et traduire leurs
 // résultats en états de la page. Il ne voit JAMAIS la clé ni l'identifiant du câble. Module ES pur : son client du pont est
-// INJECTÉ (android/essai/transport-pont.js), il ne charge rien lui-même.
+// INJECTÉ (site/pont.js), il ne charge rien lui-même.
 // La page ne le charge que si le pont natif est présent ; sur GitHub Pages, il n'est jamais chargé.
 //
 // Règles (CLAUDE.md, décisions du 2026-11-20) :

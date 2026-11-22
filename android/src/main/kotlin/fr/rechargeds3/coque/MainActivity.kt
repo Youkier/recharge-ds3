@@ -142,7 +142,7 @@ class MainActivity : Activity() {
     }
 
     // --- Attente en arrière-plan (« Programmer » avant le Wi-Fi ou le câble) : opérations du pont, version publiée ---
-    // Contrat (android/essai/transport-pont.js) : notifications, demanderNotifications, attenteDebut {heure},
+    // Contrat (site/pont.js) : notifications, demanderNotifications, attenteDebut {heure},
     // attenteEtat, attenteFin {resultat, heure?, incertain?}. Aucune chaîne libre de la page n'est affichée.
 
     private var demandeNotifications: ((JSONObject) -> Unit)? = null

@@ -972,7 +972,7 @@ import { confirmationValable, blocageCable, plageRelue, plageDuCable, ligneCable
   function localPret() {
     if (!localCache) {
       localCache = Promise.all([
-        import("./local.js"), import("../android/essai/transport-pont.js"),
+        import("./local.js"), import("./pont.js"),
       ]).then(function (mods) {
         // Le protocole local tourne dans le code natif : la page ne reçoit ni la clé ni l'identifiant du câble.
         var client = mods[1].creerClientPont(globalThis.PontLocal);

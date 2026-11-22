@@ -21,7 +21,8 @@ class FiltreAssetsTest {
         assertFalse(FiltreAssets.serviEnPublication("android/essai/index.html"))
         assertFalse(FiltreAssets.serviEnPublication("android/essai/essai.js"))
         assertFalse(FiltreAssets.serviEnPublication("android/essai/essai.css"))
-        assertTrue(FiltreAssets.serviEnPublication("android/essai/transport-pont.js"))
+        assertFalse(FiltreAssets.serviEnPublication("android/essai/transport-pont.js"))
+        assertTrue(FiltreAssets.serviEnPublication("site/pont.js"))
         assertTrue(FiltreAssets.serviEnPublication("site/index.html"))
         assertTrue(FiltreAssets.serviEnPublication("local/tuya-local.js"))
     }

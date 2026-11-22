@@ -25,7 +25,7 @@ import java.util.concurrent.TimeUnit
  * Mécanisme : WebViewCompat.addWebMessageListener, asynchrone, origine https://appassets.androidplatform.net seulement
  * (developer.android.com, WebViewCompat.addWebMessageListener ; WebMessageListener.onPostMessage s'exécute sur le fil
  * principal et JavaScriptReplyProxy est @UiThread : les réponses repartent par le fil principal).
- * Le contrat des messages est décrit en tête de android/essai/transport-pont.js.
+ * Le contrat des messages est décrit en tête de site/pont.js.
  *
  * Garanties : messages de 4 Ko au plus, opérations hors du fil principal, une seule opération sur le câble à la fois
  * (« occupe » sinon), délais bornés, valeurs de la page revalidées côté natif (adresse, heure HH:MM, délai), la clé jamais

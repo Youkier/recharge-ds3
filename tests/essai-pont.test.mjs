@@ -1,11 +1,11 @@
-// Tests du client du pont de la coque (android/essai/transport-pont.js) contre un pont SIMULÉ en JavaScript qui applique le
-// contrat décrit dans l'en-tête de transport-pont.js (le vrai pont est PontLocal.kt + OperationsCable.kt, testé en JUnit et
+// Tests du client du pont de la coque (site/pont.js) contre un pont SIMULÉ en JavaScript qui applique le
+// contrat décrit dans l'en-tête de site/pont.js (le vrai pont est PontLocal.kt + OperationsCable.kt, testé en JUnit et
 // sur émulateur). Depuis le lot E2, le client n'a plus de transport ni de sonde : seulement des opérations de haut niveau.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { creerClientPont } from '../android/essai/transport-pont.js';
+import { creerClientPont } from '../site/pont.js';
 
 const lire = (rel) => readFileSync(fileURLToPath(new URL(rel, import.meta.url)), 'utf8');
 
@@ -79,11 +79,11 @@ test('configuration : cable, memoriser et oublierMemoire ne rendent jamais de cl
 });
 
 test('le client n\'a plus de route générique : ni transport, ni sonde, ni base64', async () => {
-  const mod = await import('../android/essai/transport-pont.js');
+  const mod = await import('../site/pont.js');
   assert.deepEqual(Object.keys(mod), ['creerClientPont']);
   const client = creerClientPont(faussePont({}));
   for (const nom of ['creerTransport', 'sonder', 'ouvrir', 'envoyer', 'recevoir', 'fermer']) assert.equal(client[nom], undefined, nom);
-  const src = lire('../android/essai/transport-pont.js').replace(/\/\/.*$/gm, '');
+  const src = lire('../site/pont.js').replace(/\/\/.*$/gm, '');
   assert.ok(!/btoa|atob|ouvrir|recevoir/.test(src));
 });
 
@@ -108,7 +108,7 @@ test('pont qui lève une exception à l\'envoi : pont_muet', async () => {
 });
 
 test('la page d\'essai ne garde ni ne journalise la clé : pas de stockage, une seule ligne ESSAI', () => {
-  for (const f of ['../android/essai/essai.js', '../android/essai/transport-pont.js']) {
+  for (const f of ['../android/essai/essai.js', '../site/pont.js']) {
     const src = lire(f).replace(/\/\/.*$/gm, ''); // sans les commentaires
     assert.ok(!/localStorage|sessionStorage|indexedDB|document\.cookie|location\.(hash|search)|history\./.test(src), f);
     assert.ok(!/cleLocale|deviceId|\.cle\b/.test(src), `${f} : la page ne manipule ni clé ni identifiant`);
