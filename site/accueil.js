@@ -148,10 +148,10 @@ export function contexteHoraire({ maintenant, hcStart, hcEnd, startRel, nuitChan
 }
 
 // Sous-ligne du bouton Programmer, par ordre de priorité.
-export function sousLigneBouton({ occupe, delaiS, demande, confirme, reussi, blocage, secondaire, attente, deja }) {
+export function sousLigneBouton({ occupe, delaiS, demande, confirme, reussi, blocage, secondaire, attente, deja, socVide }) {
   if (attente) return sousLigneAttente(attente);
   if (occupe) return "patientez, jusqu'à " + delaiS + " secondes";
-  if (!demande) return 'saisie à corriger';
+  if (!demande) return socVide ? 'batterie à saisir' : 'saisie à corriger'; // champ vide : rien à corriger, juste à remplir
   if (!confirme) return "confirmez la batterie ci-dessus";
   if (reussi) return reussi;
   if (deja) return 'rien à envoyer';

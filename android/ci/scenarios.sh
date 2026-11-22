@@ -736,6 +736,10 @@ etape "S-B Données effacées : réglages utilisés, puis pm clear et relance (d
 demarrer_page
 page_prete "S-B"
 regler_soc 39 # un réglage utilisé : la batterie est enregistrée
+# La WebView écrit son stockage local sur disque avec un léger délai : on passe l'appli en arrière-plan et on laisse ce
+# délai s'écouler avant la relance (qui tue l'appli). Sans cela, la valeur est perdue (premier passage CI du 22/11).
+adb shell input keyevent KEYCODE_HOME
+sleep 6
 demarrer_page # relance sans effacer : les données restent
 L="$(attendre_essai page-etat 60)"
 verifier "S-B relance : câble prêt" "$L" 'l.etat === "pret"'

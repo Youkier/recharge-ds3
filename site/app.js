@@ -633,8 +633,9 @@ import { confirmationValable, blocageCable, plageRelue, plageDuCable, ligneCable
     var deja = confirme && dejaProgramme(plageCable, demande);
     $("sendMain").textContent = att ? LIBELLES_ATTENTE.principal : occ ? "Envoi en cours…" : deja ? libelleDejaProgramme(demande) : (lab ? lab.principal : "Programmer la charge");
     var cle = demande ? JSON.stringify(demande) : null;
+    var socVide = String($("soc").value).trim() === "";
     $("sendSub").textContent = sousLigneBouton({
-      attente: att ? att.etape : null, occupe: occ, delaiS: moyen === "local" ? 30 : 25, demande: demande, confirme: confirme,
+      attente: att ? att.etape : null, occupe: occ, delaiS: moyen === "local" ? 30 : 25, demande: demande, confirme: confirme, socVide: socVide,
       reussi: reussi && reussi.cle === cle ? "programmé à " + reussi.heure + " · relu sur le câble" : null, deja: deja,
       blocage: moyen === "local" ? blocageCable(etatCable) : null,
       secondaire: lab ? lab.secondaire : "",
@@ -649,7 +650,7 @@ import { confirmationValable, blocageCable, plageRelue, plageDuCable, ligneCable
     $("attenteInfo").hidden = !(att && att.info);
     document.body.classList.toggle("en-attente", !!att);
     help.hidden = !(moyen && !demande && !occ);
-    if (!help.hidden) help.textContent = "Corrigez la saisie pour pouvoir programmer la charge.";
+    if (!help.hidden) help.textContent = socVide ? "Entrez votre batterie pour pouvoir programmer la charge." : "Corrigez la saisie pour pouvoir programmer la charge.";
     b.setAttribute("aria-busy", occ ? "true" : "false");
   }
 

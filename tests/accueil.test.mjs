@@ -141,6 +141,7 @@ describe('Plage relue et sous-ligne du bouton', () => {
     assert.equal(sousLigneBouton({ ...base, confirme: false }), 'confirmez la batterie ci-dessus');
     assert.equal(sousLigneBouton({ ...base, occupe: true }), "patientez, jusqu'à 30 secondes");
     assert.equal(sousLigneBouton({ ...base, demande: null }), 'saisie à corriger');
+    assert.equal(sousLigneBouton({ ...base, demande: null, socVide: true }), 'batterie à saisir');
     assert.equal(sousLigneBouton({ ...base, reussi: 'programmé à 00:35 · relu sur le câble' }), 'programmé à 00:35 · relu sur le câble');
     assert.equal(sousLigneBouton({ ...base, blocage: "câble à relier d'abord" }), "câble à relier d'abord");
     assert.equal(sousLigneBouton(base), 'démarrage 00:35');
