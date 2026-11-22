@@ -35,30 +35,39 @@
 //   prefixeWifi                     -> { prefixe: "10.0.2" } | erreur pas_wifi
 //   cable                           -> { configure, adresse? }   jamais l'identifiant ni la clé, et sans déchiffrer ;
 //                                      une clé illisible se voit à la lecture (erreur pas_de_cle)
-//   memoriser                       -> {} | erreur pas_de_cle   garde la configuration côté natif 15 min au plus (attente
-//                                      en arrière-plan : la clé du magasin est illisible téléphone verrouillé)
-//   oublierMemoire                  -> {}
-//   saisirCle                       -> {}   ouvre l'écran natif de saisie
-// Attente en arrière-plan (service de premier plan AttenteWifi, version publiée ; textes de notification FIXES côté
-// Kotlin, la page ne fournit qu'une heure HH:MM validée et un résultat pris dans une liste fermée) :
+//   saisirCle                       -> {}   ouvre l'écran natif de saisie ; arrête aussi l'attente en cours (nouvelle clé)
+// Attente en arrière-plan (lot E3, décisions des 2026-11-21 et 2026-11-22). Le code natif (PiloteAttente, hébergé par le service
+// de premier plan AttenteWifi) attend le Wi-Fi de la maison puis le câble, et envoie ; la page n'est qu'une vue. Balayer l'appli,
+// recharger la page ou éteindre l'écran n'annule rien. Le calcul reste en JS : le natif ne reçoit que des heures.
 //   notifications                   -> { autorise }   permission POST_NOTIFICATIONS accordée ET notifications activées
 //   demanderNotifications           -> { autorise }   demande système ; réponse quand l'utilisateur a choisi (prévoir
 //                                      un long délai d'attente), tout de suite si déjà accordée ou refus définitif ;
-//                                      erreur occupe si une demande est déjà ouverte
-//   attenteDebut { heure }          -> {}   | erreur requete_invalide, notifications, occupe, service ; notification
-//                                      continue « En attente du Wi-Fi et du câble » avec « Annuler »
-//   attenteEtat                     -> { active, annulee }   annulee : « Annuler » touché dans la notification
-//   attenteFin { resultat: "ok"|"aucune"|"tardif"|"trop_tard"|"ko"|"annulee", heure?, incertain? } -> {}   notification de résultat (heure absente :
-//                                      texte sans heure), puis arrêt du service et oubli de la configuration gardée
-// Filets côté service : 15 min sans attenteFin -> « Résultat inconnu » ; appli fermée -> « Programmation non envoyée » ;
-// 60 s après « Annuler » sans attenteFin -> « Résultat inconnu ».
-// Mise au point seulement : essaiArrierePlan { quoi }, essaiFiltre (le transport natif refuse tout sauf IPv4 privée:6668).
+//                                      erreur occupe si une demande est déjà ouverte. Facultative : refusée, l'attente tourne
+//                                      quand même et le résultat est montré à la réouverture de l'appli
+//   attenteDebut { demande, heureManuelle } -> {} | erreur requete_invalide, occupe, pas_de_cle, service
+//                                      demande = { allumage, fin, duree_min, depart } | { desactiver:true, fin } (comme programmer) ;
+//                                      heureManuelle = { debut, fin } : début et fin à régler à la main, gardés pour les messages
+//                                      d'échec. Le natif garde la configuration du câble (clé comprise) 15 min au plus, en octets,
+//                                      et la met à zéro à la fin de l'attente dans tous les cas ; elle n'est jamais rendue
+//   attenteEtat                     -> { phase: inactive|attente|envoi|terminee, demande?, heureManuelle?, etape?: wifi|cable|recherche|envoi,
+//                                      restant_ms? (attente : durée restante sur 10 min), resultat? (terminee) }
+//                                      resultat = BRUT, de la même forme que « programmer » ({ ok, debut, fin, plage_active, tardif,
+//                                      courte } ou { ok:false, erreur, ecrit? }), à interpréter avec service.js (interpreterReponse,
+//                                      resultatKo). Erreurs propres à l'attente : attente_annulee, attente_expiree (jamais sur le
+//                                      Wi-Fi), attente_cable (sur le Wi-Fi, câble muet), attente_cle (clé refusée ou câble non relié),
+//                                      sans_adresse, non_suivie (processus arrêté pendant l'attente, détecté au lancement suivant)
+//   attenteAnnuler                  -> { annulee }   seulement AVANT l'envoi de l'écriture ; annulee:false dès l'envoi commencé
+//   attenteAcquitter                -> {}   la page a vu le résultat : il n'est plus rendu, la notification de résultat est retirée
+// Mise au point seulement : essaiFiltre (le transport natif refuse tout sauf IPv4 privée:6668).
 
 const MARGE_REPONSE_MS = 3000; // attente de réponse du pont au-delà du délai demandé
 // Durées maximales côté natif quand « reessayer » est demandé (OperationsCable) : le client attend la réponse jusque-là.
 const SECONDE_LECTURE_MS = 8000;
 const BUDGET_ECRITURE_MS = 27000;
 const BALAYAGE_SUPPLEMENTAIRE_MS = 9000; // un balayage dure au plus son délai + la dernière lecture en cours
+
+const DEMANDE_NOTIFICATIONS_MS = 120000; // la fenêtre système attend l'utilisateur
+const ATTENTE_DEBUT_MS = 15000; // lecture de la clé du coffre (magasin de clés) puis démarrage du service
 
 export function creerClientPont(pont, { margeMs = MARGE_REPONSE_MS } = {}) {
   const attente = new Map();
@@ -94,8 +103,12 @@ export function creerClientPont(pont, { margeMs = MARGE_REPONSE_MS } = {}) {
   client.prefixeWifi = () => client.appeler('prefixeWifi');
   client.cable = () => client.appeler('cable');
   client.saisirCle = () => client.appeler('saisirCle');
-  client.memoriser = () => client.appeler('memoriser');
-  client.oublierMemoire = () => client.appeler('oublierMemoire');
+  client.notifications = () => client.appeler('notifications');
+  client.demanderNotifications = () => client.appeler('demanderNotifications', {}, DEMANDE_NOTIFICATIONS_MS);
+  client.attenteDebut = (demande, heureManuelle) => client.appeler('attenteDebut', { demande, heureManuelle }, ATTENTE_DEBUT_MS);
+  client.attenteEtat = () => client.appeler('attenteEtat');
+  client.attenteAnnuler = () => client.appeler('attenteAnnuler');
+  client.attenteAcquitter = () => client.appeler('attenteAcquitter');
   client.lire = (params = {}, delaiMs = 20000) =>
     client.appeler('lire', { ...params, delai: delaiMs }, delaiMs + (params.reessayer ? SECONDE_LECTURE_MS : 0));
   client.programmer = (action, params = {}, delaiMs = 20000) =>

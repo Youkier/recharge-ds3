@@ -4,7 +4,7 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { pontPresent, lireConfigurationCable, etatCable, chercherCable, programmerLocal, surLeReseauDeLaMaison } from '../site/local.js';
+import { pontPresent, etatCable, chercherCable, programmerLocal, surLeReseauDeLaMaison } from '../site/local.js';
 
 // Demande complète du contrat du 2026-11-22 : début, fin du plan, durée de charge, départ.
 const dem = (allumage, o = {}) => ({ allumage, fin: '06:00', duree_min: 300, depart: '07:30', ...o });
@@ -237,32 +237,22 @@ describe('Nouvelles tentatives : demandées au natif, jamais relancées par la p
   });
 });
 
-describe('Configuration du câble gardée par le natif (attente en arrière-plan, téléphone verrouillé)', () => {
-  test('lireConfigurationCable : { pret, adresse } sans clé ; pas de clé : erreur', async () => {
-    const r = await lireConfigurationCable(client());
-    assert.deepEqual(r, { pret: true, adresse: '192.168.1.48' });
-    assert.deepEqual(await lireConfigurationCable(client({ memoriser: { ok: false, erreur: 'pas_de_cle' } })), { erreur: 'local_pas_de_cle' });
-    assert.deepEqual(await lireConfigurationCable(client({ memoriser: { ok: false, erreur: 'occupe' } })), { erreur: 'local_format' });
-    assert.deepEqual(await lireConfigurationCable({ memoriser() { throw new Error('x'); } }), { erreur: 'local_format' });
+describe('La page ne garde plus rien de la configuration du câble (E3 : le natif la tient pour l’attente)', () => {
+  test("site/local.js ne connaît ni mémorisation ni configuration fournie par l'appelant", () => {
+    const code = readFileSync(new URL('../site/local.js', import.meta.url), 'utf8').replace(/\/\/.*$/gm, '');
+    assert.ok(!/memoriser|oublierMemoire|confCable|lireConfigurationCable/.test(code));
   });
-  test('etatCable, réseau et programmation ne rappellent plus client.cable() ; l\'adresse du câble sert', async () => {
+  test("l'adresse retenue sert à chaque appel, sans clé", async () => {
     const c = client();
-    const confCable = await lireConfigurationCable(c);
-    c.journal.cable = 0;
-    const deps = { client: c, confCable };
+    const deps = { client: c };
     assert.equal(await surLeReseauDeLaMaison(deps), 'oui');
     assert.equal((await etatCable(deps)).etat, 'pret');
     assert.equal((await programmerLocal(dem('03:30'), deps, '06:00')).etat, 'ok');
-    assert.equal(c.journal.cable, 0);
   });
-  test('recherche : trouvé à une autre adresse, la configuration gardée est mise à jour', async () => {
-    const c = client({ chercher: { ok: true, ip: '192.168.1.77', trouve: true, debut: '03:30', fin: '06:00', plage_active: true } });
-    const confCable = await lireConfigurationCable(c);
-    const r = await chercherCable({ client: c, confCable });
-    assert.equal(r.ok, true);
-    assert.equal(confCable.adresse, '192.168.1.77');
-    const p = await programmerLocal(dem('03:30'), { client: c, confCable }, '06:00');
-    assert.equal(p.etat, 'ok');
-    assert.deepEqual(c.journal.programmes.at(-1).params, { ip: '192.168.1.77', reessayer: true });
+  test("une écriture partie n'est jamais dite « rien n'a été modifié »", async () => {
+    const c = client({ programmer: { ok: false, erreur: 'hors_ligne', ecrit: true } });
+    const p = await programmerLocal(dem('03:30'), { client: c }, '06:00');
+    assert.equal(p.etat, 'ko');
+    assert.equal(p.incertain, true);
   });
 });

@@ -126,55 +126,6 @@ async function actionProgrammer(heure) {
   return { r, ip: p.ip, texte: msg(r.erreur) + suite };
 }
 
-// --- Essai E0 : envoi différé en arrière-plan (version de mise au point seulement) ---
-// Question : le code natif peut-il lire, écrire et relire le câble pendant que l'activité est en arrière-plan, écran éteint
-// et téléphone verrouillé, si un service de premier plan `connectedDevice` garde le processus ?
-// Déroulé : la configuration du câble est gardée MAINTENANT par le natif (téléphone déverrouillé : la clé du magasin est
-// illisible une fois verrouillé, setUnlockedDeviceRequired), 15 min au plus puis effacée (décision du 2026-11-21) ;
-// service démarré ; ligne « arriere-plan-pret » (le script éteint alors l'écran) ; attente de `delai` secondes ; même
-// programmation que « Programmer » ; service arrêté et mémoire effacée dans tous les cas. La page ne voit jamais la clé.
-const ATTENTE_MAX_S = 900;
-
-const patienter = (ms) => new Promise((r) => setTimeout(r, ms));
-const ecranTexte = (e) => (e && e.ok ? `${e.interactif ? 'allume' : 'eteint'}${e.verrouille ? '-verrouille' : ''}` : 'inconnu');
-
-async function actionArrierePlan(params) {
-  const delaiS = Number.isInteger(params.delai) ? Math.min(Math.max(params.delai, 0), ATTENTE_MAX_S) : 20;
-  const h = (params.heure ?? '').trim();
-  const ip = $('ip').value.trim();
-  if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(h) || !adressePrivee(ip)) {
-    return { r: { ok: false, erreur: 'requete_invalide' }, ip, texte: msg('requete_invalide') };
-  }
-  const m = await client.memoriser();
-  if (!m.ok) {
-    const e = await client.appeler('essaiArrierePlan', { quoi: 'etat' });
-    ecrireLigne({ action: 'arriere-plan-pret', ok: false, erreur: 'pas_de_cle', ecran: ecranTexte(e) });
-    return { r: { ok: false, erreur: 'pas_de_cle' }, ip, texte: msg('pas_de_cle') };
-  }
-  const d = await client.appeler('essaiArrierePlan', { quoi: 'debut' });
-  ecrireLigne({ action: 'arriere-plan-pret', ok: d.ok === true, erreur: d.ok ? undefined : d.erreur, ecran: ecranTexte(d), delai_s: delaiS });
-  if (!d.ok) {
-    await client.oublierMemoire();
-    return { r: { ok: false, erreur: d.erreur ?? 'service' }, ip, texte: "Le service d'attente n'a pas démarré." };
-  }
-  etat(`Attente de ${delaiS} s, puis programmation du câble…`);
-  try {
-    const t0 = Date.now();
-    await patienter(delaiS * 1000);
-    const retard = Date.now() - t0 - delaiS * 1000; // retard du minuteur : mesure de la mise en sommeil de la page
-    const e = await client.appeler('essaiArrierePlan', { quoi: 'etat' });
-    const mesures = { ecran: ecranTexte(e), visibilite: document.visibilityState, retard_ms: retard };
-    const debut = Date.now();
-    const r = await client.programmer(demande(h), { ip });
-    mesures.duree_ms = Date.now() - debut; // lecture + écriture + relecture
-    if (r.ok) return { r, ip, texte: `Câble programmé et relu en arrière-plan. Charge ${plageTexte(r)}.`, mesures };
-    return { r, ip, texte: msg(r.erreur), mesures };
-  } finally {
-    await client.oublierMemoire();
-    await client.appeler('essaiArrierePlan', { quoi: 'fin' });
-  }
-}
-
 // Vérifie qu'aucune route générique n'existe (ouvrir, envoyer, recevoir, fermer, sonder : « operation_inconnue »), que le
 // transport natif refuse tout sauf IPv4 privée:6668 sans qu'aucun octet ne parte (op « essaiFiltre », version de mise au
 // point), que les opérations refusent une adresse hors filtre ou une heure invalide, et que sw.js est en 404.
@@ -217,7 +168,6 @@ async function lancer(action, params = {}) {
     else if (action === 'chercher') res = await actionChercher();
     else if (action === 'programmer' && variante === 'debug') res = await actionProgrammer(params.heure);
     else if (action === 'filtre' && variante === 'debug') res = await actionFiltre();
-    else if (action === 'arriere-plan' && variante === 'debug') res = await actionArrierePlan(params);
     else return;
     etat(res.texte, res.r.ok ? 'ok' : 'ko');
     principal(res.r.erreur === 'cle' || res.r.erreur === 'pas_de_cle' ? 'cle' : 'lire');

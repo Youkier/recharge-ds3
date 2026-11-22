@@ -6,8 +6,8 @@ import {
   socValide, moyenEnvoi, boutonActif,
   programmerSelonMoyen, pastille, secondesRestantes,
   confirmationValable, blocageCable, plageRelue, sousLigneBouton, rechercheAutomatique,
-  decisionEnvoi, attenteExpiree, suiviWifiActif, LIBELLES_ATTENTE, ATTENTE_MAX_MS,
-  etapeAttente, lectureDue, quitterSiCache, confValable, plafondDepasse, PREPARATION_MAX_MS, ENVOI_PLAFOND_MS, resultatNotification, heureNotification, CLE_EN_MEMOIRE_MAX_MS, suiteLecture, codeEcheance, sousLigneAttente,
+  decisionEnvoi, suiviWifiActif, LIBELLES_ATTENTE, ATTENTE_MAX_MS,
+  plafondDepasse, ENVOI_PLAFOND_MS, sousLigneAttente, enteteAttente, memeDemande, titreAttente, lireEtatAttente,
 } from '../site/accueil.js';
 import { resultatKo } from '../site/service.js';
 
@@ -184,12 +184,11 @@ describe('Attente du Wi-Fi de la maison', () => {
       assert.equal(decisionEnvoi({ etat, surReseau: 'inconnu' }), 'envoyer', etat); // l'échec propre reste affiché, avec l'heure manuelle
     }
   });
-  test('attente expirée à 10 min pile ; horloge incohérente : pas d attente', () => {
+  test('l\'attente dure 10 min au plus, tenue par le natif', () => {
     assert.equal(ATTENTE_MAX_MS, 600000);
-    assert.equal(attenteExpiree(1000, 1000 + 599999), false);
-    assert.equal(attenteExpiree(1000, 1000 + 600000), true);
-    assert.equal(attenteExpiree(1000, 500), true);
-    assert.equal(attenteExpiree(NaN, 1000), true);
+    assert.equal(enteteAttente('00:35'), 'Programmation de 00:35 dès que le câble répond (10 min au plus)');
+    assert.equal(enteteAttente(undefined), 'Programmation de --:-- dès que le câble répond (10 min au plus)');
+    assert.equal(enteteAttente('25:00'), 'Programmation de --:-- dès que le câble répond (10 min au plus)');
   });
   test('suivi de la pastille : hors Wi-Fi, page visible, rien en cours', () => {
     assert.equal(suiviWifiActif({ etat: 'hors_wifi', visible: true, occupe: false }), true);
@@ -199,100 +198,83 @@ describe('Attente du Wi-Fi de la maison', () => {
   });
   test('libellés et sous-ligne du bouton pendant attente', () => {
     assert.equal(LIBELLES_ATTENTE.principal, 'En attente du Wi-Fi et du câble…');
-    const sl = (attente) => sousLigneBouton({ attente, occupe: true, delaiS: 30, demande: { allumage: '23:00' }, confirme: true });
-    assert.equal(sl('wifi'), 'téléphone pas encore sur le Wi-Fi · au plus 10 min');
-    assert.equal(sl('cable'), 'câble pas encore joignable · au plus 10 min');
-    assert.equal(sl('recherche'), 'recherche du câble…');
-    assert.equal(sl(true), 'téléphone pas encore sur le Wi-Fi · au plus 10 min');
-    assert.equal(sousLigneAttente('cable'), 'câble pas encore joignable · au plus 10 min');
+    assert.equal(LIBELLES_ATTENTE.regler, 'Régler à la main');
+    const sl = (attente, attenteRestantMs) => sousLigneBouton({ attente, attenteRestantMs, occupe: true, delaiS: 30, demande: { allumage: '23:00' }, confirme: true });
+    assert.equal(sl('wifi'), 'téléphone pas encore sur le Wi-Fi');
+    assert.equal(sl('cable', 540000), 'câble pas encore joignable · encore 9 min');
+    assert.equal(sl('recherche', 59000), 'recherche du câble… · encore 1 min');
+    assert.equal(sl('envoi', 300000), "l'envoi ne peut plus être annulé");
+    assert.equal(sl(true), 'téléphone pas encore sur le Wi-Fi');
+    assert.equal(sousLigneAttente('cable', 600000), 'câble pas encore joignable · encore 10 min');
   });
-  test('étape de l attente : Wi-Fi, câble, une seule recherche après 60 s de silence', () => {
-    const e = (surReseau, cableDepuis, maintenant, rechercheFaite = false) => etapeAttente({ surReseau, cableDepuis, maintenant, rechercheFaite });
-    for (const sr of ['non', 'pas_wifi', 'inconnu']) assert.equal(e(sr, null, 5000), 'wifi', sr);
-    assert.equal(e('non', 0, 999999), 'wifi'); // Wi-Fi perdu : retour à l'étape du Wi-Fi
-    assert.equal(e('oui', 1000, 1000), 'cable');
-    assert.equal(e('oui', 1000, 1000 + 59999), 'cable');
-    assert.equal(e('oui', 1000, 1000 + 60000), 'recherche');
-    assert.equal(e('oui', 1000, 1000 + 120000, true), 'cable'); // déjà faite : on relit l'adresse
-    assert.equal(e('oui', null, 1000), 'cable');
+  test('deux demandes identiques quel que soit l\'ordre des clés', () => {
+    const d = { allumage: '00:35', fin: '06:00', duree_min: 300, depart: '07:30' };
+    assert.equal(memeDemande(d, { depart: '07:30', duree_min: 300, fin: '06:00', allumage: '00:35' }), true);
+    assert.equal(memeDemande(d, { ...d, duree_min: 301 }), false);
+    assert.equal(memeDemande(d, { ...d, allumage: '00:36' }), false);
+    assert.equal(memeDemande({ desactiver: true, fin: '06:00' }, { fin: '06:00', desactiver: true }), true);
+    assert.equal(memeDemande({ desactiver: true, fin: '06:00' }, d), false);
+    assert.equal(memeDemande(null, d), false);
   });
-  test('lecture du câble : toutes les 5 s, une suite par état', () => {
-    assert.equal(lectureDue(null, 1000), true);
-    assert.equal(lectureDue(1000, 1000 + 4999), false);
-    assert.equal(lectureDue(1000, 1000 + 5000), true);
-    assert.equal(lectureDue(5000, 1000), true);
-    assert.equal(suiteLecture('pret'), 'envoyer');
-    for (const x of ['cle', 'a_relier']) assert.equal(suiteLecture(x), 'relier', x);
-    for (const x of ['muet', 'hors_wifi', 'erreur', 'sans_adresse', undefined]) assert.equal(suiteLecture(x), 'continuer', String(x));
+  test('lecture de l\'état du natif : suivre, finir ou rien', () => {
+    assert.deepEqual(lireEtatAttente(null), { action: 'aucune' });
+    assert.deepEqual(lireEtatAttente({ ok: false }), { action: 'aucune' });
+    assert.deepEqual(lireEtatAttente({ ok: true, phase: 'inactive' }), { action: 'aucune' });
+    const demande = { allumage: '00:35', fin: '06:00', duree_min: 300, depart: '07:30' };
+    const h = { debut: '00:35', fin: '06:00' };
+    assert.deepEqual(lireEtatAttente({ ok: true, phase: 'attente', etape: 'cable', restant_ms: 500000, demande, heureManuelle: h }),
+      { action: 'suivre', envoi: false, etape: 'cable', restantMs: 500000, demande, heureManuelle: h });
+    assert.deepEqual(lireEtatAttente({ ok: true, phase: 'envoi', etape: 'envoi', demande, heureManuelle: h }),
+      { action: 'suivre', envoi: true, etape: 'envoi', restantMs: undefined, demande, heureManuelle: h });
+    const resultat = { ok: false, erreur: 'non_suivie' };
+    assert.deepEqual(lireEtatAttente({ ok: true, phase: 'terminee', resultat, demande, heureManuelle: h }), { action: 'finir', resultat, demande, heureManuelle: h });
   });
-  test('carte KO d échéance : câble muet sur le Wi-Fi, ou téléphone jamais arrivé', () => {
-    assert.equal(codeEcheance(1000), 'local_attente_cable');
-    assert.equal(codeEcheance(null), 'local_attente_expiree');
-    const r = resultatKo({ allumage: '23:15' }, 'local_attente_cable', '06:00');
-    assert.equal(r.message, "Le câble n'a pas répondu sur le Wi-Fi de la maison : rien n'a été envoyé.");
-    assert.match(r.manuel, /23:15/);
+  test('titres des cartes d\'attente sans envoi', () => {
+    assert.equal(titreAttente('local_attente_annulee'), 'Programmation annulée');
+    assert.equal(titreAttente('local_non_suivie'), 'Programmation non suivie');
+    for (const c of ['local_attente_expiree', 'local_attente_cable', 'local_attente_cle', 'local_attente_refusee']) assert.equal(titreAttente(c), 'Programmation non envoyée', c);
+    assert.equal(titreAttente('local_delai'), undefined);
   });
-  test('fins d attente sans envoi : carte KO avec heure manuelle', () => {
-    for (const code of ['local_attente_expiree', 'local_attente_cable', 'local_attente_cle', 'local_attente_annulee', 'local_attente_quittee', 'local_attente_confirmation']) {
-      const r = resultatKo({ allumage: '23:15' }, code, '06:00');
+  test('fins d\'attente sans envoi : carte KO avec heure manuelle', () => {
+    for (const code of ['local_attente_expiree', 'local_attente_cable', 'local_attente_cle', 'local_attente_annulee', 'local_attente_quittee', 'local_attente_refusee']) {
+      const r = resultatKo({ allumage: '23:15', fin: '06:00', duree_min: 300, depart: '07:30' }, code, '06:00', new Date('2026-11-16T12:00:00Z'));
       assert.equal(r.code, code);
       assert.match(r.message, /rien n.a été envoyé/);
-      assert.match(r.manuel, /23:15/);
+      assert.match(r.manuel, /début 23:15, fin 06:00/);
       assert.equal(r.incertain, false);
     }
   });
-  test('arrière-plan : la page cachée ne quitte que l attente en mode appli ouverte', () => {
-    assert.equal(quitterSiCache({ cache: true, arriere: false, prepa: false }), true);
-    assert.equal(quitterSiCache({ cache: true, arriere: true, prepa: false }), false);
-    assert.equal(quitterSiCache({ cache: true, arriere: false, prepa: true }), false); // fenêtre système de permission
-    assert.equal(quitterSiCache({ cache: false, arriere: false, prepa: false }), false);
-  });
-  test('configuration du câble gardée 15 min au plus, horloge cohérente', () => {
-    assert.equal(CLE_EN_MEMOIRE_MAX_MS, 900000);
-    assert.equal(confValable(1000, 1000 + 899999), true);
-    assert.equal(confValable(1000, 1000 + 900000), false);
-    assert.equal(confValable(1000, 500), false);
-    assert.equal(confValable(null, 500), false);
-  });
-  test('notification de fin : résultat et heure', () => {
-    assert.equal(resultatNotification({ code: 'local_attente_annulee' }), 'annulee');
-    assert.equal(resultatNotification({ code: 'local_attente_expiree' }), 'ko');
-    assert.equal(resultatNotification({ res: { etat: 'ok' } }), 'ok');
-    assert.equal(resultatNotification({ res: { etat: 'ko' } }), 'ko');
-    assert.equal(heureNotification({ demande: { allumage: '23:15' }, finHC: '06:00', debutRelu: '23:20' }), '23:20');
-    assert.equal(heureNotification({ demande: { allumage: '23:15' }, finHC: '06:00' }), '23:15');
-    assert.equal(heureNotification({ demande: { desactiver: true }, finHC: '06:00' }), '05:59');
-    assert.equal(heureNotification({ demande: { desactiver: true }, finHC: '00:00' }), '23:59');
-    assert.equal(heureNotification({ demande: null, finHC: 'x' }), null);
-    assert.equal(LIBELLES_ATTENTE.autoriser, 'Autorisez les notifications pour être prévenu écran éteint');
-    assert.equal(LIBELLES_ATTENTE.sansNotifications, "Sans notifications, gardez l'application ouverte");
-  });
-  test('plafonds : envoi 30 s, préparation 125 s, horloge incohérente = dépassé', () => {
+  test('plafonds : envoi direct 30 s, horloge incohérente = dépassé', () => {
     assert.equal(ENVOI_PLAFOND_MS, 30000);
-    assert.equal(PREPARATION_MAX_MS, 125000);
     assert.equal(plafondDepasse(1000, 1000 + 29999, ENVOI_PLAFOND_MS), false);
     assert.equal(plafondDepasse(1000, 1000 + 30000, ENVOI_PLAFOND_MS), true);
     assert.equal(plafondDepasse(1000, 500, ENVOI_PLAFOND_MS), true);
     assert.equal(plafondDepasse(NaN, 500, ENVOI_PLAFOND_MS), true);
   });
-  test('source de la page : préparation sans tick actif, envoi borné de bout en bout', () => {
+  test('source de la page : l\'attente est tenue par le natif, la page ne fait que la suivre', () => {
     const src = readFileSync(new URL('../site/app.js', import.meta.url), 'utf8');
-    assert.match(src, /if \(a\.verif \|\| a\.prepa\) return;/); // aucun tick actif pendant la préparation
-    assert.match(src, /function envoiApresAttente\(a\) \{\s*if \(a\.prepa\) return;/);
-    assert.match(src, /setTimeout\(function \(\) \{ terminerPrepa\(a, null\); \}, PREPARATION_MAX_MS\)/);
-    // Le plafond de l'envoi est posé dans le même passage que l'appel au pont (aucune attente avant) et relu à la reprise.
+    // Le plafond de l'envoi direct est posé dans le même passage que l'appel au pont (aucune attente avant) et relu à la reprise.
     const deb = src.indexOf('local: function () {'), fin = src.indexOf('programmerSelonMoyen(m, envoi)');
     const local = deb > 0 && fin > deb ? src.slice(deb, fin) : null;
     assert.ok(local, 'bloc local de lancerEnvoi trouvé');
     assert.ok(local.indexOf('opCableLancer(') < local.indexOf('setTimeout(declencher, DELAI_LOCAL_MAX_MS)'));
     assert.match(src, /verifierPlafondEnvoi\(\);\s*verifierConfirmation\(\);/);
-  });
-  test('source de la page : arrière-plan annule attente, envois comptés', () => {
-    const src = readFileSync(new URL('../site/app.js', import.meta.url), 'utf8');
-    assert.match(src, /if \(quitterSiCache\(\{ cache: document\.hidden, arriere: a\.arriere, prepa: a\.prepa \}\)\) \{ quitterAttente\(\); return; \}/);
-    assert.match(src, /if \(quitterSiCache\(\{ cache: true, arriere: att && att\.arriere, prepa: att && att\.prepa \}\)\) quitterAttente\(\);/);
-    assert.match(src, /function envoiApresAttente[\s\S]*?attenteExpiree\(a\.debut, Date\.now\(\)\)[\s\S]*?lancerEnvoi\(opts\)/); // échéance revérifiée avant l'envoi
-    assert.equal((src.match(/opCableLancer\(/g) || []).length, 6); // définition + envoi local, lecture, recherche (attente), majEtatCable, lancerRecherche
-    assert.equal((src.match(/lancerEnvoi\(/g) || []).length, 4); // définition + service + après contrôle + après attente (avec opts) // définition + trois appels (service, après contrôle, après attente)
+    // Plus aucune boucle d'attente dans la page : ni lecture du câble, ni recherche, ni envoi, ni clé gardée.
+    for (const mort of ['tickAttente', 'lireCablePendantAttente', 'chercherPendantAttente', 'envoiApresAttente', 'attenteExpiree', 'etapeAttente',
+      'lectureDue', 'quitterSiCache', 'confValable', 'preparerArrierePlan', 'lireConfigurationCable', 'notifierFin', 'oublierMemoire', 'memoriser']) {
+      assert.ok(!src.includes(mort), mort + ' n\'a plus lieu d\'être dans la page');
+    }
+    // Les appels au câble faits par la page : envoi direct, lecture d'état, recherche demandée (opCableLancer : définition + 3).
+    assert.equal((src.match(/opCableLancer\(/g) || []).length, 4);
+    assert.equal((src.match(/lancerEnvoi\(/g) || []).length, 3); // définition + service/local sans attente + après le contrôle du réseau
+    // « Annuler » : le natif décide ; refusé une fois l'envoi commencé, l'attente continue jusqu'au résultat.
+    assert.match(src, /appelPont\("attenteAnnuler"\)\.then\(function \(r\) \{[\s\S]*?r\.annulee === true[\s\S]*?plus annulable/);
+    // Le résultat du natif est acquitté après affichage ; reprise à l'ouverture et au retour de l'appli.
+    assert.match(src, /appelPont\("attenteAcquitter"\)/);
+    assert.match(src, /reprendreAttente\(\)\.then\(function \(\) \{ if \(!att && !busy\) majEtatCable\(\); \}\)/);
+    // Une attente reprise après un rechargement n'est pas annulée par un changement de saisie.
+    assert.match(src, /if \(att && !att\.reprise && !memeDemande\(d, att\.d\)\) annulerAttente\(/);
+    // La page ne lit ni n'écrit jamais la clé : seules les heures partent vers le natif.
+    assert.match(src, /appelPont\("attenteDebut", \{ demande: d, heureManuelle: h \}, 15000\)/);
   });
 });

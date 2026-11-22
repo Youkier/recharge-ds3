@@ -233,8 +233,13 @@
     <p class="send-help" id="sendHelp" hidden></p>
     <p class="sr-only" id="attenteLive" role="status"></p>
     <div class="attente-box" id="attenteBox" hidden>
+      <p class="attente-etat" id="attenteEtat"></p>
+      <p class="attente-consigne" id="attenteConsigne"></p>
       <p class="send-help" id="attenteInfo" hidden></p>
-      <button type="button" class="attente-annuler" id="attenteAnnuler">Annuler</button>
+      <div class="attente-actions">
+        <button type="button" class="attente-annuler" id="attenteAnnuler">Annuler</button>
+        <a class="attente-regler" id="attenteRegler" href="#aide" data-nav="aide">Régler à la main</a>
+      </div>
     </div>
     <button type="button" class="send-btn" id="sendBtn" aria-describedby="sendSub sendHelp" disabled>
       <span class="send-main" id="sendMain">Programmer la charge</span>

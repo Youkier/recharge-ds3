@@ -12,7 +12,7 @@
 //   sans demande ; rien n'est effacé ; l'adresse n'est retenue (côté natif) qu'après une lecture ou une écriture réussie ;
 // - la clé reste dans le code natif : jamais lue, gardée, affichée ni journalisée ici.
 
-import { resultatKo, interpreterReponse } from './service.js';
+import { resultatKo, interpreterReponse, messageNonSuivie } from './service.js';
 
 export function pontPresent(g = globalThis) {
   return !!(g && g.PontLocal && typeof g.PontLocal.postMessage === 'function');
@@ -25,8 +25,17 @@ export function pontPresent(g = globalThis) {
 const IPV4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/;
 const reseau24 = (ip) => (typeof ip === 'string' && IPV4.test(ip) ? ip.split('.').slice(0, 3).join('.') : null);
 
-// Code d'erreur du pont natif -> code de service.js (CAUSES). Un code inconnu (pont_muet…) reste « incertain ».
-function codeLocal(erreur) {
+// Codes dont l'état réel du câble est peut-être différent de ce qu'on croit (comme `incertain` de service.js).
+const CODES_INCERTAINS = new Set(['local_delai', 'relecture_differente', 'local_format', 'local_non_suivie']);
+
+// Code d'erreur du pont natif -> code de service.js (CAUSES). Un code inconnu (pont_muet…) reste « incertain ». Une écriture partie
+// (ecrit:true) ne peut jamais être dite « rien n'a été modifié » : un code non incertain devient « incertain ».
+export function codeLocal(erreur, ecrit = false) {
+  const c = codeBrut(erreur);
+  return ecrit === true && !CODES_INCERTAINS.has(c) ? 'local_format' : c;
+}
+
+function codeBrut(erreur) {
   switch (erreur) {
     case 'hors_ligne': case 'sans_adresse': return 'local_muet';
     case 'delai': return 'local_delai';
@@ -37,30 +46,23 @@ function codeLocal(erreur) {
     case 'relecture_differente': return 'relecture_differente';
     case 'requete_invalide': return 'requete_invalide';
     case 'trop_tard': return 'trop_tard'; // début passé et départ à 10 min ou moins : le natif n'a rien écrit
+    // Attente tenue par le natif (lot E3) : rien n'a été envoyé dans ces cas.
+    case 'attente_annulee': return 'local_attente_annulee';
+    case 'attente_expiree': return 'local_attente_expiree';
+    case 'attente_cable': return 'local_attente_cable';
+    case 'attente_cle': return 'local_attente_cle';
+    case 'non_suivie': return 'local_non_suivie';
     default: return 'local_format';
   }
 }
 
 // Configuration du câble : { pret:true, adresse } ou { erreur }. Seule l'adresse (non secrète) est connue de la page ; la
-// clé et l'identifiant restent dans le code natif. Lue au moment de l'appel, sauf si l'appelant en fournit une déjà lue
-// (deps.confCable, attente en arrière-plan : le natif a gardé la configuration en mémoire, la clé du magasin étant
-// illisible téléphone verrouillé). Seule l'adresse est mise à jour quand une recherche trouve le câble ailleurs.
-async function configuration(client, confCable = null) {
-  if (confCable && confCable.pret === true) return confCable;
+// clé et l'identifiant restent dans le code natif. Lue au moment de l'appel.
+async function configuration(client) {
   const c = await client.cable();
   if (!c || !c.ok) return { erreur: 'local_format' };
   if (!c.configure) return { erreur: 'local_pas_de_cle' };
   return { pret: true, adresse: typeof c.adresse === 'string' ? c.adresse : null };
-}
-
-// Demande au natif de garder la configuration du câble le temps d'une attente (15 min au plus, puis effacée) et rend ce
-// que la page a le droit d'en savoir : { pret, adresse } ou { erreur }.
-export async function lireConfigurationCable(client) {
-  try {
-    const m = await client.memoriser();
-    if (!m || !m.ok) return { erreur: m && m.erreur === 'pas_de_cle' ? 'local_pas_de_cle' : 'local_format' };
-    return await configuration(client);
-  } catch (e) { return { erreur: 'local_format' }; }
 }
 
 // Le téléphone est-il sur le réseau de l'adresse retenue ? 'oui' | 'non' | 'pas_wifi'.
@@ -76,7 +78,7 @@ async function surLeReseau(client, adresse) {
  */
 export async function surLeReseauDeLaMaison(deps) {
   try {
-    const conf = await configuration(deps.client, deps.confCable);
+    const conf = await configuration(deps.client);
     if (conf.erreur || !conf.adresse) return 'inconnu';
     return await surLeReseau(deps.client, conf.adresse);
   } catch (e) {
@@ -91,7 +93,7 @@ export async function surLeReseauDeLaMaison(deps) {
  */
 export async function etatCable(deps) {
   const { client } = deps;
-  const conf = await configuration(client, deps.confCable);
+  const conf = await configuration(client);
   if (conf.erreur === 'local_pas_de_cle') return { etat: 'a_relier' };
   if (conf.erreur) return { etat: 'erreur' };
   if (!conf.adresse) return { etat: 'sans_adresse' };
@@ -113,7 +115,7 @@ export async function etatCable(deps) {
  */
 export async function chercherCable(deps, surProgres = null) {
   const { client } = deps;
-  const conf = await configuration(client, deps.confCable);
+  const conf = await configuration(client);
   if (conf.erreur === 'local_pas_de_cle') return { ok: false, etat: 'a_relier' };
   if (conf.erreur) return { ok: false, etat: 'erreur' };
   const w = await client.prefixeWifi();
@@ -124,7 +126,6 @@ export async function chercherCable(deps, surProgres = null) {
   // qu'il annonce couvre les deux.
   const res = await client.chercher({ ...params, reessayer: true }, surProgres);
   if (res && res.ok === true) {
-    if (deps.confCable) deps.confCable.adresse = res.ip; // la suite de l'attente lit la nouvelle adresse
     return { ok: true, plage: { debut: res.debut, fin: res.fin, plage_active: res.plage_active } };
   }
   const e = res && res.erreur;
@@ -142,7 +143,7 @@ export async function programmerLocal(demande, deps, finHC) {
   try {
     if (!demande) return ko('inattendue');
     const { client } = deps;
-    const conf = await configuration(client, deps.confCable);
+    const conf = await configuration(client);
     if (conf.erreur) return ko(conf.erreur);
     if (!conf.adresse) return ko('local_muet');
     const reseau = await surLeReseau(client, conf.adresse);
@@ -154,8 +155,29 @@ export async function programmerLocal(demande, deps, finHC) {
     // Le natif refait une tentative SEULEMENT si l'écriture n'est pas partie, dans un budget de 27 s (sous le plafond de
     // 30 s de la page, app.js) ; une écriture peut-être appliquée n'est jamais relancée (règle 2 : résultat incertain).
     const r = await client.programmer(action, { ip: conf.adresse, reessayer: true }, 20000);
-    if (!r || r.ok !== true) return ko(codeLocal(r && r.erreur));
+    if (!r || r.ok !== true) return ko(codeLocal(r && r.erreur, r && r.ecrit === true));
     return interpreterReponse(demande, 200, r, finHC);
+  } catch (e) {
+    return ko('local_format');
+  }
+}
+
+/**
+ * Résultat d'une attente tenue par le natif (attenteEtat, phase « terminee ») -> même forme que programmerLocal : { etat:'ok', ... }
+ * (seule la vérification de service.js, interpreterReponse, mène à « ok », sur le résultat BRUT relu sur le câble) ou resultatKo
+ * avec l'heure à régler à la main. `heureManuelle` : { debut, fin } du natif, pour le message « programmation non suivie ».
+ * Ne lève jamais.
+ */
+export function resultatAttente(demande, brut, finHC, maintenant, heureManuelle) {
+  const ko = (code) => {
+    const r = resultatKo(demande, code, finHC, maintenant);
+    if (code === 'local_non_suivie') r.message = messageNonSuivie(heureManuelle);
+    return r;
+  };
+  try {
+    if (!demande || !brut || typeof brut !== 'object') return ko('local_non_suivie');
+    if (brut.ok !== true) return ko(codeLocal(brut.erreur, brut.ecrit === true));
+    return interpreterReponse(demande, 200, brut, finHC);
   } catch (e) {
     return ko('local_format');
   }

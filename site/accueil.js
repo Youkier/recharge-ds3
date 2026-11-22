@@ -179,8 +179,8 @@ export function contexteHoraire({ maintenant, hcStart, hcEnd, startRel, nuitChan
 }
 
 // Sous-ligne du bouton Programmer, par ordre de priorité.
-export function sousLigneBouton({ occupe, delaiS, demande, confirme, reussi, blocage, secondaire, attente, deja, socVide }) {
-  if (attente) return sousLigneAttente(attente);
+export function sousLigneBouton({ occupe, delaiS, demande, confirme, reussi, blocage, secondaire, attente, attenteRestantMs, deja, socVide }) {
+  if (attente) return sousLigneAttente(attente, attenteRestantMs);
   if (occupe) return "patientez, jusqu'à " + delaiS + " secondes";
   if (!demande) return socVide ? 'batterie à saisir' : 'saisie à corriger'; // champ vide : rien à corriger, juste à remplir
   if (!confirme) return "confirmez la batterie ci-dessus";
@@ -208,111 +208,81 @@ export function secondesRestantes(echeance, maintenant) {
 }
 
 // ---------- Attente du Wi-Fi de la maison puis du câble (appli seulement) ----------
-// « Programmer » touché alors que le téléphone n'est pas encore sur le Wi-Fi de la maison, ou que le câble ne répond pas
-// encore : la demande est figée, puis envoyée dès que le téléphone est sur le bon réseau ET que le câble répond,
-// pendant 10 minutes au plus, page au premier plan seulement.
+// « Programmer » touché alors que le téléphone n'est pas encore sur le Wi-Fi de la maison, ou que le câble ne répond pas encore :
+// la demande est confiée au code natif (lot E3, PiloteAttente dans le service de premier plan), qui attend le Wi-Fi puis le câble
+// pendant 10 minutes au plus, lit toutes les 5 s, cherche le câble après 60 s de silence, envoie et notifie. La page n'est qu'une
+// vue : elle relit l'état du natif (attenteEtat) et affiche ce qu'il rend ; balayer l'appli ou la recharger n'annule rien.
 export const ATTENTE_MAX_MS = 10 * 60 * 1000;
-export const ATTENTE_SONDE_MS = 2000; // contrôle du Wi-Fi pendant l'attente
-export const ATTENTE_LECTURE_MS = 5000; // lecture du câble pendant l'attente (une à la fois)
-export const ATTENTE_SILENCE_MS = 60 * 1000; // câble muet à son adresse depuis ce délai : une recherche
+export const ATTENTE_SONDE_MS = 2000; // relecture de l'état de l'attente auprès du natif (page visible)
 export const SUIVI_PASTILLE_MS = 5000; // contrôle du Wi-Fi quand la pastille dit « Hors Wi-Fi maison »
 
 export const LIBELLES_ATTENTE = {
   principal: 'En attente du Wi-Fi et du câble…',
+  envoi: 'Envoi au câble…',
   sousLignes: {
-    wifi: 'téléphone pas encore sur le Wi-Fi · au plus 10 min',
-    cable: 'câble pas encore joignable · au plus 10 min',
+    wifi: 'téléphone pas encore sur le Wi-Fi',
+    cable: 'câble pas encore joignable',
     recherche: 'recherche du câble…',
+    envoi: "l'envoi ne peut plus être annulé",
   },
   annuler: 'Annuler',
+  regler: 'Régler à la main',
   autoriser: 'Autorisez les notifications pour être prévenu écran éteint',
-  sansNotifications: "Sans notifications, gardez l'application ouverte",
-  annonce: 'En attente du Wi-Fi et du câble. Envoi automatique dès que le câble répond, au plus 10 minutes.',
+  sansNotifications: "Sans notification, l'attente continue : rouvrez l'application pour voir le résultat",
+  annonce: 'En attente du Wi-Fi et du câble. Envoi automatique dès que le câble répond, au plus 10 minutes, même écran éteint.',
 };
 
-// Sous-ligne selon l'étape ('wifi' | 'cable' | 'recherche'). Toute autre valeur vraie : étape du Wi-Fi.
-export function sousLigneAttente(etape) {
-  return LIBELLES_ATTENTE.sousLignes[etape] || LIBELLES_ATTENTE.sousLignes.wifi;
+// Ligne d'état en haut de l'écran d'attente : « Programmation de 00:35 dès que le câble répond (10 min au plus) ».
+export function enteteAttente(heure) {
+  return 'Programmation de ' + (typeof heure === 'string' && HEURE_RE.test(heure) ? heure : '--:--') + ' dès que le câble répond (10 min au plus)';
 }
 
-export function attenteExpiree(debut, maintenant) {
-  if (!Number.isFinite(debut) || !Number.isFinite(maintenant)) return true; // doute : on n'attend pas indéfiniment
-  return maintenant - debut >= ATTENTE_MAX_MS || maintenant < debut;
+// Sous-ligne selon l'étape ('wifi' | 'cable' | 'recherche' | 'envoi'), avec le temps restant (minutes entières, au moins 1) si connu.
+// Toute autre valeur vraie : étape du Wi-Fi.
+export function sousLigneAttente(etape, restantMs) {
+  const base = LIBELLES_ATTENTE.sousLignes[etape] || LIBELLES_ATTENTE.sousLignes.wifi;
+  if (etape === 'envoi' || !Number.isFinite(restantMs)) return base;
+  return base + ' · encore ' + Math.max(1, Math.ceil(restantMs / 60000)) + ' min';
 }
 
-// Étape de l'attente. surReseau : 'oui' | 'non' | 'pas_wifi' | 'inconnu' ; cableDepuis : instant où le téléphone est
-// arrivé sur le réseau (null s'il n'y est pas encore) ; rechercheFaite : la recherche unique a déjà eu lieu.
-//   'wifi' : le téléphone n'est pas sur le réseau de la maison ; 'cable' : on lit le câble à son adresse ;
-//   'recherche' : câble muet depuis 60 s, une seule recherche.
-export function etapeAttente({ surReseau, cableDepuis, maintenant, rechercheFaite }) {
-  if (surReseau !== 'oui') return 'wifi';
-  if (!rechercheFaite && Number.isFinite(cableDepuis) && maintenant - cableDepuis >= ATTENTE_SILENCE_MS) return 'recherche';
-  return 'cable';
+// Deux demandes identiques (mêmes champs, quel que soit l'ordre des clés) : la demande figée du natif et celle de la page.
+export function memeDemande(a, b) {
+  if (!a || !b || typeof a !== 'object' || typeof b !== 'object') return false;
+  if (a.desactiver === true || b.desactiver === true) return a.desactiver === true && b.desactiver === true && a.fin === b.fin;
+  return a.allumage === b.allumage && a.fin === b.fin && a.duree_min === b.duree_min && a.depart === b.depart;
 }
 
-// Lecture due : jamais plus d'une toutes les 5 s (derniere : instant de la fin de la dernière lecture, ou null).
-export function lectureDue(derniere, maintenant) {
-  return !Number.isFinite(derniere) || maintenant - derniere >= ATTENTE_LECTURE_MS || maintenant < derniere;
+// Titre de la carte de résultat d'une attente qui n'a pas abouti, selon le code de service.js ; undefined : titre par défaut.
+export function titreAttente(code) {
+  switch (code) {
+    case 'local_attente_annulee': return 'Programmation annulée';
+    case 'local_attente_modifiee': return 'Attente annulée';
+    case 'local_non_suivie': return 'Programmation non suivie';
+    case 'local_attente_expiree': case 'local_attente_cable': case 'local_attente_cle': case 'local_attente_quittee': case 'local_attente_refusee':
+      return 'Programmation non envoyée';
+    default: return undefined;
+  }
 }
 
-// Suite donnée à une lecture du câble pendant l'attente : 'envoyer' (prêt), 'relier' (clé ou liaison : fin d'attente,
-// panneau du câble ouvert) ou 'continuer' (muet, hors Wi-Fi, erreur : on relit).
-export function suiteLecture(etat) {
-  if (etat === 'pret') return 'envoyer';
-  if (etat === 'a_relier' || etat === 'cle') return 'relier';
-  return 'continuer';
+// Lecture de l'état de l'attente auprès du natif -> ce que la page doit faire :
+//   { action: 'aucune' }                       rien en cours (ou réponse inexploitable : on relira) ;
+//   { action: 'suivre', etape, restantMs }     attente ou envoi en cours ;
+//   { action: 'finir', resultat, demande, heureManuelle }   terminée : afficher le résultat puis acquitter.
+export function lireEtatAttente(e) {
+  if (!e || e.ok !== true) return { action: 'aucune' };
+  if (e.phase === 'attente' || e.phase === 'envoi') {
+    return { action: 'suivre', envoi: e.phase === 'envoi', etape: e.phase === 'envoi' ? 'envoi' : e.etape, restantMs: e.phase === 'attente' ? e.restant_ms : undefined, demande: e.demande, heureManuelle: e.heureManuelle };
+  }
+  if (e.phase === 'terminee') return { action: 'finir', resultat: e.resultat, demande: e.demande, heureManuelle: e.heureManuelle };
+  return { action: 'aucune' };
 }
 
-// ---------- Attente en arrière-plan (appli Android : service de premier plan + notification) ----------
-export const CLE_EN_MEMOIRE_MAX_MS = 15 * 60 * 1000; // la configuration du câble n'est gardée que le temps d'une attente
-
-// La configuration lue au toucher est-elle encore utilisable ? (au plus 15 min, horloge cohérente)
-export function confValable(luLe, maintenant) {
-  return Number.isFinite(luLe) && Number.isFinite(maintenant) && maintenant >= luLe && maintenant - luLe < CLE_EN_MEMOIRE_MAX_MS;
-}
-
-// Plafond de l'envoi local, et de la préparation de l'attente (demande de notifications : 120 s + marge).
+// Plafond de l'envoi local direct (« Programmer » alors que le câble répond déjà), au premier plan.
 export const ENVOI_PLAFOND_MS = 30000;
-export const PREPARATION_MAX_MS = 125000;
 // Un plafond est-il dépassé ? Horloge incohérente : oui (on n'attend jamais indéfiniment).
 export function plafondDepasse(debut, maintenant, max) {
   if (!Number.isFinite(debut) || !Number.isFinite(maintenant)) return true;
   return maintenant < debut || maintenant - debut >= max;
-}
-
-// Page cachée : seule l'attente en mode « appli ouverte » est quittée. Pendant la préparation (fenêtre système de
-// permission) ou en arrière-plan, l'attente continue.
-export function quitterSiCache({ cache, arriere, prepa }) {
-  return !!cache && !arriere && !prepa;
-}
-
-// Résultat envoyé à la notification de fin : 'ok' | 'aucune' | 'tardif' | 'trop_tard' | 'ko' | 'annulee'.
-export function resultatNotification({ code, res }) {
-  if (code === 'local_attente_annulee') return 'annulee';
-  if (res && res.etat === 'ko' && res.code === 'trop_tard') return 'trop_tard'; // début passé, départ trop proche : rien n'est écrit
-  if (!res || res.etat !== 'ok') return 'ko';
-  if (res.aucune === true) return 'aucune';  // « pas de charge cette nuit » : jamais « Charge programmée »
-  if (res.tardif === true) return 'tardif';  // début décalé à maintenant + 10 min : pas « démarrage HH:MM » de la demande
-  return 'ok';
-}
-
-// Heure de la notification de fin : début relu si ok, sinon heure à régler à la main (début demandé ; pour « pas de
-// charge », une minute avant la fin des heures creuses). null si rien d'exploitable.
-export function heureNotification({ demande, finHC, debutRelu }) {
-  const H = /^([01]\d|2[0-3]):[0-5]\d$/;
-  if (typeof debutRelu === 'string' && H.test(debutRelu)) return debutRelu;
-  if (demande && typeof demande.allumage === 'string' && H.test(demande.allumage)) return demande.allumage;
-  if (typeof finHC === 'string' && H.test(finHC)) {
-    const [h, m] = finHC.split(':').map(Number);
-    const t = (h * 60 + m + 1439) % 1440;
-    return String(Math.floor(t / 60)).padStart(2, '0') + ':' + String(t % 60).padStart(2, '0');
-  }
-  return null;
-}
-
-// Code de la carte KO à l'échéance : le téléphone était-il sur le Wi-Fi (cableDepuis connu) ?
-export function codeEcheance(cableDepuis) {
-  return Number.isFinite(cableDepuis) ? 'local_attente_cable' : 'local_attente_expiree';
 }
 
 // Que fait le bouton « Programmer » dans l'appli ? etat : état de la pastille ; surReseau : 'oui' | 'non' | 'pas_wifi' | 'inconnu'.

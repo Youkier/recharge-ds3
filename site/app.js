@@ -1,7 +1,7 @@
 import { plan, hm, fmt, fdur, fr, eur, effAuto, nuitChangementHeure, soirDe, soirSimule, texteChangementHeure } from "./calc.js";
 import { lignesValides, marques, modeles, versions, trouver } from "./vehicules.js";
-import { validerAdresse, validerJeton, choisirDemande, libelleBouton, envoyer, resultatKo, lireEtatService, RAPPEL_REPROGRAMMER } from "./service.js";
-import { confirmationValable, confirmationAEnregistrer, confirmationRestauree, CLE_CONFIRMATION, blocageCable, plageRelue, plageDuCable, ligneCable, dejaProgramme, libelleDejaProgramme, contexteHoraire, LIBELLES_SOC, mentionProvisoire, sousLigneBouton, socValide, moyenEnvoi, boutonActif, programmerSelonMoyen, pastille, secondesRestantes, rechercheAutomatique, decisionEnvoi, attenteExpiree, suiviWifiActif, etapeAttente, lectureDue, quitterSiCache, confValable, plafondDepasse, PREPARATION_MAX_MS, ENVOI_PLAFOND_MS, resultatNotification, heureNotification, suiteLecture, codeEcheance, LIBELLES_ATTENTE, ATTENTE_SONDE_MS, SUIVI_PASTILLE_MS } from "./accueil.js";
+import { validerAdresse, validerJeton, choisirDemande, libelleBouton, envoyer, resultatKo, lireEtatService, RAPPEL_REPROGRAMMER, heureManuelleDe, consigneManuelle, messageNonSuivie } from "./service.js";
+import { confirmationValable, confirmationAEnregistrer, confirmationRestauree, CLE_CONFIRMATION, blocageCable, plageRelue, plageDuCable, ligneCable, dejaProgramme, libelleDejaProgramme, contexteHoraire, LIBELLES_SOC, mentionProvisoire, sousLigneBouton, socValide, moyenEnvoi, boutonActif, programmerSelonMoyen, pastille, secondesRestantes, rechercheAutomatique, decisionEnvoi, suiviWifiActif, plafondDepasse, ENVOI_PLAFOND_MS, LIBELLES_ATTENTE, ATTENTE_SONDE_MS, SUIVI_PASTILLE_MS, enteteAttente, memeDemande, titreAttente, lireEtatAttente, ATTENTE_MAX_MS } from "./accueil.js";
 
 (function () {
   var DEFAULTS = { cap: 46, soh: 95, target: 80, dep: "07:30", hcStart: "22:00", hcEnd: "06:00", amp: 16, volt: 230, eff: 90, pHC: 0.146688, pHP: 0.196476, mode: "end", soc: 38 };
@@ -539,7 +539,7 @@ import { confirmationValable, confirmationAEnregistrer, confirmationRestauree, C
     var t = null;
     return Promise.race([p, new Promise(function (ok) { t = setTimeout(function () { ok(repli); }, ms); })]).then(function (r) { clearTimeout(t); return r; }, function (e) { clearTimeout(t); throw e; });
   }
-  var att = null, controle = false; // att : attente du Wi-Fi en cours ; controle : contrôle du réseau au toucher
+  var att = null, controle = false; // att : miroir de l'attente tenue par le natif (E3) ; controle : contrôle du réseau au toucher
   var demande = null, busy = false, alertKey = null, moyen = null, reussi = null, etatCable = null, debugPont = false;
   var plageCable = null; // plage lue sur le câble { debut, fin, active } ; null = inconnue (la ligne « Câble réglé » est alors masquée)
   var pontOk = !!(globalThis.PontLocal && typeof globalThis.PontLocal.postMessage === "function");
@@ -614,13 +614,10 @@ import { confirmationValable, confirmationAEnregistrer, confirmationRestauree, C
 
   function setDemande(d) {
     demande = d;
-    // Attente du Wi-Fi : la demande est figée au toucher ; si elle change (% ou réglages), l'attente est annulée.
-    // On le dit, avec l'heure de l'ancienne demande : rien ne doit laisser croire qu'un envoi est encore en cours.
-    if (att && JSON.stringify(d) !== att.cle) {
-      var ancienne = sortirAttente();
-      journal({ action: "page-attente-wifi", etat: "annulee" });
-      koAttente(ancienne, "local_attente_modifiee", "Attente annulée");
-    }
+    // Attente : la demande est figée au toucher ; si elle change (% ou réglages), l'attente est annulée (tant que l'envoi n'a pas
+    // commencé). On le dit, avec l'heure de l'ancienne demande : rien ne doit laisser croire qu'un envoi est encore en cours.
+    // Une attente reprise après un rechargement de la page n'est pas liée à la saisie actuelle : seul « Annuler » l'arrête.
+    if (att && !att.reprise && !memeDemande(d, att.d)) annulerAttente("local_attente_modifiee", "Attente annulée");
     // Une alerte qui concerne une autre demande que l'actuelle est périmée.
     if (!busy && alertKey !== null && alertKey !== JSON.stringify(d)) hideAlert();
     updateSend();
@@ -645,11 +642,11 @@ import { confirmationValable, confirmationAEnregistrer, confirmationRestauree, C
     moyen = moyenEnvoi({ pont: pontOk, adresse: svc.adresse, jeton: svc.jeton });
     // Le câble a déjà la plage demandée : rien à envoyer (seulement quand la batterie est confirmée).
     var deja = confirme && dejaProgramme(plageCable, demande, ctx);
-    $("sendMain").textContent = att ? LIBELLES_ATTENTE.principal : occ ? "Envoi en cours…" : deja ? libelleDejaProgramme(demande) : (lab ? lab.principal : "Programmer la charge");
+    $("sendMain").textContent = att ? (att.envoi ? LIBELLES_ATTENTE.envoi : LIBELLES_ATTENTE.principal) : occ ? "Envoi en cours…" : deja ? libelleDejaProgramme(demande) : (lab ? lab.principal : "Programmer la charge");
     var cle = demande ? JSON.stringify(demande) : null;
     var socVide = String($("soc").value).trim() === "";
     $("sendSub").textContent = sousLigneBouton({
-      attente: att ? att.etape : null, occupe: occ, delaiS: moyen === "local" ? 30 : 25, demande: demande, confirme: confirme, socVide: socVide,
+      attente: att ? att.etape : null, attenteRestantMs: att ? att.restantMs : undefined, occupe: occ, delaiS: moyen === "local" ? 30 : 25, demande: demande, confirme: confirme, socVide: socVide,
       reussi: reussi && reussi.cle === cle ? "programmé à " + reussi.heure + " · relu sur le câble" : null, deja: deja,
       blocage: moyen === "local" ? blocageCable(etatCable) : null,
       secondaire: lab ? lab.secondaire : "",
@@ -660,7 +657,11 @@ import { confirmationValable, confirmationAEnregistrer, confirmationRestauree, C
     $("sendBar").hidden = !moyen;
     mesurerBarre();
     document.body.classList.toggle("has-sendbar", !!moyen);
+    // Écran d'attente : l'état en haut, la consigne en clair (début et fin à régler à la main), « Annuler » puis « Régler à la main ».
     $("attenteBox").hidden = !att;
+    $("attenteEtat").textContent = att ? enteteAttente(att.heure && att.heure.debut) : "";
+    $("attenteConsigne").textContent = att ? consigneManuelle(att.d, att.finHC) : "";
+    $("attenteAnnuler").hidden = !!(att && att.envoi); // « Annuler » n'agit qu'avant l'envoi de l'écriture
     $("attenteInfo").textContent = att && att.info ? att.info : "";
     $("attenteInfo").hidden = !(att && att.info);
     document.body.classList.toggle("en-attente", !!att);
@@ -724,29 +725,22 @@ import { confirmationValable, confirmationAEnregistrer, confirmationRestauree, C
     });
   });
 
-  // Dépendances du mode Local, avec la configuration du câble lue au toucher quand l'attente en garde une.
-  function depsAvec(l, conf) { return conf ? Object.assign({}, l.deps, { confCable: conf }) : l.deps; }
-  function reseauMaison(conf) {
-    return localPret().then(function (l) { return l.surLeReseauDeLaMaison(depsAvec(l, conf)); }).catch(function () { return "inconnu"; });
+  function reseauMaison() {
+    return localPret().then(function (l) { return l.surLeReseauDeLaMaison(l.deps); }).catch(function () { return "inconnu"; });
   }
-  // Appel au pont natif (attente en arrière-plan) ; ne rejette jamais.
+  // Appel au pont natif ; ne rejette jamais.
   function appelPont(op, params, delaiMs) {
     return localPret().then(function (l) { return l.client.appeler(op, params || {}, delaiMs); }).catch(function () { return { ok: false }; });
   }
-  // Notification de fin (mode arrière-plan) : une seule fois par attente.
-  function notifierFin(a, resultat, incertain, heure) {
-    if (!a || a.finNotifiee) return;
-    a.finNotifiee = true;
-    var p = { resultat: resultat };
-    if (heure) p.heure = heure;
-    if (incertain) p.incertain = true;
-    appelPont("attenteFin", p);
-  }
+
+  // ---------- Attente tenue par le code natif (lot E3) ----------
+  // « Programmer » touché avant que le téléphone et le câble soient prêts : la demande est confiée au natif (attenteDebut), qui
+  // attend le Wi-Fi puis le câble (10 min au plus), envoie et notifie, même appli balayée ou écran éteint. Ici, on relit son état
+  // (attenteEtat, page visible) et on affiche ce qu'il rend ; le résultat BRUT est interprété par service.js (resultatAttente).
   function sortirAttente() {
     var a = att;
     if (!a) return null;
     clearInterval(a.timer); att = null;
-    a.conf = null; // la configuration du câble ne survit jamais à l'attente
     $("attenteLive").textContent = "";
     updateSend();
     return a;
@@ -754,186 +748,147 @@ import { confirmationValable, confirmationAEnregistrer, confirmationRestauree, C
   // Fin d'attente sans envoi : carte KO avec l'heure à régler à la main (règle 2).
   function koAttente(a, code, titre) {
     var r = resultatKo(a.d, code, a.finHC);
+    if (code === "local_non_suivie") r.message = messageNonSuivie(a.heure);
     r.titre = titre;
     try { showAlert(r, a.d); } catch (e) { /* l'état du bouton est déjà rendu */ }
-    if (a.arriere) notifierFin(a, resultatNotification({ code: code }), false, heureNotification({ demande: a.d, finHC: a.finHC }));
   }
-  function demarrerAttente(sr) {
-    var d = demande, now = Date.now(), surReseau = sr === "oui";
-    att = { d: d, cle: JSON.stringify(d), debut: now, finHC: fmt(hm(cur.hcEnd)), verif: true, timer: null,
-      etape: surReseau ? "cable" : "wifi", cableDepuis: surReseau ? now : null, derniere: null, rechercheFaite: false,
-      prepa: true, arriere: false, conf: null, confLuLe: null, info: "", etatEnCours: false, finNotifiee: false };
-    var a = att;
-    hideAlert();
-    a.timer = setInterval(tickAttente, ATTENTE_SONDE_MS);
-    $("attenteLive").textContent = LIBELLES_ATTENTE.annonce;
-    journal({ action: "page-attente-wifi", etat: "debut" });
-    if (surReseau) journal({ action: "page-attente-wifi", etat: "cable" });
-    updateSend();
-    // Préparation : tant qu'elle dure (a.prepa), aucun tick ne lit le câble ni n'envoie (a.verif les retient). Elle finit
-    // une seule fois : résultat du pont, ou abandon à 125 s (demande de notifications sans réponse = refus).
-    a.prepaTimer = setTimeout(function () { terminerPrepa(a, null); }, PREPARATION_MAX_MS);
-    preparerArrierePlan(a).then(function (r) { terminerPrepa(a, r); });
-  }
-  function terminerPrepa(a, r) {
-    if (a.prepaFinie) {
-      // Réponse arrivée après l'abandon : un service de premier plan démarré trop tard est arrêté.
-      if (r && !a.arriere) notifierFin(a, "annulee", false, heureNotification({ demande: a.d, finHC: a.finHC }));
-      return;
-    }
-    a.prepaFinie = true; clearTimeout(a.prepaTimer);
-    if (att !== a) { if (r) notifierFin(a, "annulee", false, heureNotification({ demande: a.d, finHC: a.finHC })); return; } // annulée pendant la préparation : le service démarré est arrêté
-    a.prepa = false; a.verif = false;
-    if (r) { a.arriere = true; a.conf = r.conf; a.confLuLe = r.luLe; a.info = ""; journal({ action: "page-attente-wifi", etat: "arriere-plan" }); }
-    else if (!a.info) a.info = LIBELLES_ATTENTE.sansNotifications;
-    journal({ action: "page-attente-wifi", etat: "preparation-finie", arriere: !!r });
-    updateSend();
-    tickAttente(); // Wi-Fi et câble déjà prêts : l'envoi part maintenant
-  }
-  // Mode arrière-plan : notifications autorisées (demandées une fois), configuration du câble lue ici (illisible écran
-  // verrouillé) et gardée en mémoire le temps de l'attente seulement, service de premier plan démarré.
-  // -> { conf, luLe } ou null (mode « appli ouverte », avec sa ligne d'explication si les notifications sont refusées).
-  function preparerArrierePlan(a) {
-    var c = null;
+
+  // Permission de notification : demandée une seule fois, jamais bloquante (refusée, l'attente tourne quand même).
+  function notificationsDabord(a) {
     return localPret().then(function (l) {
-      c = l;
-      return l.client.appeler("notifications");
-    }).then(function (n) {
-      if (n && n.ok && n.autorise) return true;
-      a.info = LIBELLES_ATTENTE.autoriser; if (att === a) updateSend();
-      return c.client.appeler("demanderNotifications", {}, 120000).then(function (r) { return !!(r && r.ok && r.autorise); });
-    }).then(function (autorise) {
-      if (!autorise) { a.info = LIBELLES_ATTENTE.sansNotifications; return null; }
-      if (a.prepaFinie) return null; // abandon entre-temps : on ne démarre pas de service
-      a.info = "";
-      return c.lireConfigurationCable(c.client).then(function (conf) {
-        if (!conf || conf.erreur) { c.client.oublierMemoire(); return null; } // rien ne doit rester gardé côté natif
-        var h = heureNotification({ demande: a.d, finHC: a.finHC });
-        return c.client.appeler("attenteDebut", h ? { heure: h } : {}).then(function (r) {
-          if (r && r.ok) return { conf: conf, luLe: Date.now() };
-          c.client.oublierMemoire(); // service non démarré : le natif n'a plus à garder la configuration
-          return null;
+      return l.client.notifications().then(function (n) {
+        if (n && n.ok && n.autorise) return null;
+        a.info = LIBELLES_ATTENTE.autoriser; if (att === a) updateSend();
+        return l.client.demanderNotifications().then(function (r) {
+          a.info = r && r.ok && r.autorise ? "" : LIBELLES_ATTENTE.sansNotifications; if (att === a) updateSend();
         });
       });
-    }).catch(function () { if (c) c.client.oublierMemoire(); return null; });
+    }).catch(function () { /* facultatif */ });
   }
-  function quitterAttente() {
-    var a = sortirAttente();
-    if (!a) return;
-    journal({ action: "page-attente-wifi", etat: "quittee" });
-    koAttente(a, "local_attente_quittee", "Programmation non envoyée");
-  }
-  // Envoi après attente : la confirmation du % est revérifiée à cet instant (6 h, même jour).
-  function envoiApresAttente(a) {
-    if (a.prepa) return; // jamais d'envoi avant la fin de la préparation
-    var opts = { conf: a.conf, confLuLe: a.confLuLe, arriere: a.arriere, a: a };
-    sortirAttente();
-    // Échéance revérifiée juste avant l'envoi : une lecture ou une recherche tardive ne déclenche rien.
-    if (attenteExpiree(a.debut, Date.now())) {
-      journal({ action: "page-attente-wifi", etat: "expiree" });
-      koAttente(a, codeEcheance(a.cableDepuis), "Programmation non envoyée");
-      return;
-    }
-    journal({ action: "page-attente-wifi", etat: "envoi" });
-    if (!confirme || !confirmationValable(confirmeLe, Date.now())) {
-      hideAlert(); setConfirme(false);
-      koAttente(a, "local_attente_confirmation", "Programmation non envoyée");
-      return;
-    }
-    lancerEnvoi(opts);
-  }
-  function changerEtape(a, etape) {
-    if (a.etape === etape) return;
-    a.etape = etape;
-    if (etape === "cable") journal({ action: "page-attente-wifi", etat: "cable" });
-    updateSend();
-  }
-  // Une seule opération à la fois (a.verif) : contrôle du Wi-Fi, lecture du câble ou recherche.
-  function tickAttente() {
-    var a = att;
-    if (!a) return;
-    // Mode arrière-plan : l'annulation touchée dans la notification est relue à chaque tick (indépendamment des lectures du câble).
-    if (a.arriere && !a.etatEnCours) {
-      a.etatEnCours = true;
-      appelPont("attenteEtat").then(function (r) {
-        a.etatEnCours = false;
-        if (att !== a || !r || !r.ok || !r.annulee) return;
-        sortirAttente(); journal({ action: "page-attente-wifi", etat: "annulee" });
-        koAttente(a, "local_attente_annulee", "Programmation annulée");
-      });
-    }
-    // Préparation trop longue (minuteurs gelés pendant une fenêtre système) : abandon, mode appli ouverte.
-    if (a.prepa && Date.now() - a.debut >= PREPARATION_MAX_MS) terminerPrepa(a, null);
-    if (a.verif || a.prepa) return; // jamais de lecture ni d'envoi pendant la préparation
-    if (quitterSiCache({ cache: document.hidden, arriere: a.arriere, prepa: a.prepa })) { quitterAttente(); return; } // l'événement de visibilité a pu manquer
-    if (attenteExpiree(a.debut, Date.now())) {
-      sortirAttente(); journal({ action: "page-attente-wifi", etat: "expiree" });
-      koAttente(a, codeEcheance(a.cableDepuis), "Programmation non envoyée");
-      return;
-    }
-    if (opCable) return; // une opération sur le câble est encore en vol : on attend sa fin
-    a.verif = true;
-    borne(reseauMaison(a.conf), 10000, "inconnu").then(function (sr) {
-      if (att !== a) return null;
-      var now = Date.now();
-      if (sr !== "oui") { a.cableDepuis = null; a.verif = false; changerEtape(a, "wifi"); return null; }
-      if (!Number.isFinite(a.cableDepuis)) a.cableDepuis = now;
-      var etape = etapeAttente({ surReseau: sr, cableDepuis: a.cableDepuis, maintenant: now, rechercheFaite: a.rechercheFaite });
-      changerEtape(a, etape);
-      if (etape === "recherche") return chercherPendantAttente(a);
-      if (!lectureDue(a.derniere, now)) { a.verif = false; return null; }
-      return lireCablePendantAttente(a);
-    }).catch(function () { if (att === a) a.verif = false; });
-  }
-  function lireCablePendantAttente(a) {
-    var reel = opCableLancer(function () { return localPret().then(function (l) { return l.etatCable(depsAvec(l, a.conf)); }); });
-    // Si la lecture dépasse 10 s, l'attente reprend la main ; la réponse tardive est quand même traitée.
-    borne(reel.then(function () {}, function () {}), 10000).then(function () { if (att === a) { a.verif = false; if (!Number.isFinite(a.derniere)) a.derniere = Date.now(); } });
-    return reel.then(function (r) {
-      if (att !== a) return;
-      a.derniere = Date.now(); a.verif = false;
-      var suite = suiteLecture(r && r.etat);
-      journal({ action: "page-attente-wifi", etat: "lecture", cable: r && r.etat });
-      if (suite === "envoyer") { pastilleMontre("pret"); envoiApresAttente(a); }
-      else if (suite === "relier") finirParCle(a, r.etat);
-    }, function () { if (att === a) { a.derniere = Date.now(); a.verif = false; } });
-  }
-  function chercherPendantAttente(a) {
-    a.rechercheFaite = true;
-    journal({ action: "page-attente-wifi", etat: "recherche" });
-    cherche = true;
-    var reel = opCableLancer(function () { return localPret().then(function (l) { return l.chercherCable(depsAvec(l, a.conf)); }); });
-    var fini = function () { cherche = false; };
-    reel.then(fini, fini);
-    borne(reel.then(function () {}, function () {}), 45000).then(function () { if (att === a) { a.verif = false; a.derniere = null; changerEtape(a, "cable"); } });
-    return reel.then(function (r) {
-      if (att !== a) return;
-      a.derniere = null; a.verif = false;
-      if (r && r.ok) { pastilleMontre("pret"); envoiApresAttente(a); }
-      else if (r && r.etat === "a_relier") finirParCle(a, "a_relier");
-      else changerEtape(a, "cable"); // on continue de lire l'adresse (peut-être nouvelle) jusqu'à l'échéance
-    }, function () { if (att === a) { a.derniere = null; a.verif = false; changerEtape(a, "cable"); } });
-  }
-  // Clé refusée ou câble non relié pendant l'attente : fin d'attente, carte KO et panneau du câble ouvert.
-  function finirParCle(a, etat) {
-    sortirAttente(); journal({ action: "page-attente-wifi", etat: "cle" });
-    pastilleMontre(etat);
-    koAttente(a, "local_attente_cle", "Programmation non envoyée");
-    ouvrirPanneau(true);
-  }
-  $("attenteAnnuler").addEventListener("click", function () {
-    var a = sortirAttente();
-    if (!a) return;
-    journal({ action: "page-attente-wifi", etat: "annulee" });
-    koAttente(a, "local_attente_annulee", "Programmation annulée");
-  });
 
-  // opts (après une attente en arrière-plan) : { conf, confLuLe, arriere, a } ; la configuration du câble n'est utilisée que
-  // moins de 15 min après sa lecture et n'est plus référencée après l'envoi.
-  function lancerEnvoi(opts) {
+  function demarrerAttente(sr) {
+    var d = demande, finHC = fmt(hm(cur.hcEnd));
+    var h = heureManuelleDe(d, finHC, new Date());
+    var a = att = { d: d, finHC: finHC, heure: h, etape: sr === "oui" ? "cable" : "wifi", restantMs: ATTENTE_MAX_MS, envoi: false,
+      demarre: false, annulee: false, annulation: false, enSonde: false, timer: null, info: "", reprise: false };
+    hideAlert();
+    $("attenteLive").textContent = LIBELLES_ATTENTE.annonce;
+    journal({ action: "page-attente-wifi", etat: "debut" });
+    if (sr === "oui") journal({ action: "page-attente-wifi", etat: "cable" });
+    updateSend();
+    notificationsDabord(a).then(function () {
+      if (a.annulee) return null; // annulée pendant la demande de permission : le natif n'a rien reçu
+      return appelPont("attenteDebut", { demande: d, heureManuelle: h }, 15000);
+    }).then(function (r) {
+      if (!r) return;
+      if (!r.ok) {
+        if (att !== a) return;
+        sortirAttente();
+        journal({ action: "page-attente-wifi", etat: "refusee", erreur: r.erreur });
+        if (r.erreur === "occupe") { reprendreAttente(); return; } // une attente tourne déjà côté natif : on la suit
+        var code = r.erreur === "pas_de_cle" ? "local_pas_de_cle" : r.erreur === "service" ? "local_attente_refusee" : r.erreur === "requete_invalide" ? "requete_invalide" : "local_format";
+        koAttente(a, code, "Programmation non envoyée");
+        if (code === "local_pas_de_cle") majEtatCable();
+        return;
+      }
+      a.demarre = true;
+      if (a.annulee) { // « Annuler » touché pendant le démarrage : le natif l'a reçue, on la lui retire
+        appelPont("attenteAnnuler").then(function () { return appelPont("attenteAcquitter"); });
+        return;
+      }
+      if (att !== a) return;
+      a.timer = setInterval(sonderAttente, ATTENTE_SONDE_MS);
+      sonderAttente();
+    });
+  }
+
+  // Une seule lecture de l'état à la fois ; page visible seulement (cachée, le natif continue sans elle).
+  function sonderAttente() {
+    var a = att;
+    if (!a || !a.demarre || a.enSonde || document.hidden) return Promise.resolve();
+    a.enSonde = true;
+    return appelPont("attenteEtat", {}, 5000).then(function (e) {
+      a.enSonde = false;
+      if (att !== a) return;
+      var s = lireEtatAttente(e);
+      if (s.action === "suivre") {
+        if (a.etape !== s.etape) { a.etape = s.etape; journal({ action: "page-attente-wifi", etat: s.etape === "envoi" ? "envoi" : s.etape === "recherche" ? "recherche" : "cable" }); }
+        a.envoi = s.envoi; a.restantMs = s.restantMs;
+        updateSend();
+      } else if (s.action === "finir") finirAttente(a, s);
+      else if (e && e.ok && e.phase === "inactive") finirAttente(a, { resultat: { ok: false, erreur: "non_suivie" }, heureManuelle: a.heure }); // le natif n'a plus rien : suivi perdu
+    });
+  }
+
+  // Résultat du natif : carte « ok » ou KO avec l'heure à régler à la main, puis acquittement (il ne sera plus rendu).
+  function finirAttente(a, f) {
+    if (att === a) sortirAttente();
+    var res = lireResultatAttente(a, f);
+    try { showAlert(res, a.d); } catch (e) { try { showAlert(resultatKo(a.d, "inattendue", a.finHC), a.d); } catch (e2) { /* rien de plus */ } }
+    appelPont("attenteAcquitter");
+    var pl = plageRelue(res);
+    journal({ action: "page-attente-wifi", etat: "fin", ok: res.etat === "ok", code: res.etat === "ko" ? res.code : undefined });
+    journal({ action: "page-programmer", ok: res.etat === "ok", debut: pl.debut, fin: pl.fin, tardif: res.tardif === true ? true : undefined, code: res.etat === "ko" ? res.code : undefined, manuel: res.etat === "ko" ? res.manuel : undefined });
+    if (res.etat === "ok") majPlage(plageDuCable(res)); else if (res.incertain) majPlage(null);
+    if (res.etat === "ko" && res.code === "local_attente_cle") majEtatCable().then(function () { ouvrirPanneau(true); });
+    else if (res.etat === "ok" && !document.hidden) majEtatCable();
+    setDemande(demande);
+  }
+  // Résultat BRUT du natif -> carte (service.js, seul chemin vers « ok »). Le module local est déjà chargé : l'attente l'a demandé.
+  var resultatAttenteFn = null;
+  function lireResultatAttente(a, f) {
+    var r = resultatAttenteFn ? resultatAttenteFn(a.d, f.resultat, a.finHC, undefined, f.heureManuelle || a.heure) : resultatKo(a.d, "local_non_suivie", a.finHC);
+    if (r.etat === "ko") { var t = titreAttente(r.code); if (t) r.titre = t; }
+    return r;
+  }
+
+  // Page (re)chargée ou rouverte : une attente peut tourner côté natif, ou avoir fini en notre absence (résultat à montrer une fois).
+  function reprendreAttente() {
+    if (!pontOk || att) return Promise.resolve();
+    return appelPont("attenteEtat", {}, 5000).then(function (e) {
+      var s = lireEtatAttente(e);
+      if (att || (s.action !== "suivre" && s.action !== "finir")) return;
+      var a = { d: s.demande, finHC: fmt(hm(cur.hcEnd)), heure: s.heureManuelle, etape: s.etape, restantMs: s.restantMs, envoi: !!s.envoi,
+        demarre: true, annulee: false, annulation: false, enSonde: false, timer: null, info: "", reprise: true };
+      if (s.action === "finir") { finirAttente(a, s); return; }
+      att = a;
+      a.timer = setInterval(sonderAttente, ATTENTE_SONDE_MS);
+      $("attenteLive").textContent = LIBELLES_ATTENTE.annonce;
+      journal({ action: "page-attente-wifi", etat: "reprise", phase: a.envoi ? "envoi" : "attente" });
+      updateSend();
+    });
+  }
+
+  // Annulation voulue (bouton, ou saisie modifiée). Avant le démarrage du natif, on s'arrête ici ; ensuite, c'est le natif qui décide :
+  // « Annuler » n'agit qu'avant l'envoi de l'écriture, et s'il est refusé l'attente continue jusqu'au résultat.
+  function annulerAttente(code, titre) {
+    var a = att;
+    if (!a || a.annulation) return;
+    if (!a.demarre) {
+      a.annulee = true; sortirAttente();
+      journal({ action: "page-attente-wifi", etat: "annulee" });
+      koAttente(a, code, titre);
+      return;
+    }
+    a.annulation = true;
+    appelPont("attenteAnnuler").then(function (r) {
+      a.annulation = false;
+      if (att !== a) return;
+      if (r && r.ok && r.annulee === true) {
+        sortirAttente();
+        journal({ action: "page-attente-wifi", etat: "annulee" });
+        koAttente(a, code, titre);
+        appelPont("attenteAcquitter");
+      } else if (r && r.ok) { // l'envoi a commencé entre-temps : plus annulable
+        a.envoi = true; a.info = "L'envoi a commencé : il ne peut plus être annulé."; updateSend(); sonderAttente();
+      }
+    });
+  }
+  $("attenteAnnuler").addEventListener("click", function () { annulerAttente("local_attente_annulee", "Programmation annulée"); });
+
+  // Envoi direct, page au premier plan : le câble répond déjà (sinon, attente tenue par le natif).
+  function lancerEnvoi() {
     var d = demande, m = moyen, finHC = fmt(hm(cur.hcEnd));
-    var conf = opts && opts.conf && confValable(opts.confLuLe, Date.now()) ? opts.conf : null;
-    if (opts) opts.conf = null;
     busy = true;
     try { hideAlert(); updateSend(); } catch (e) { /* l'envoi et son alerte restent garantis ci-dessous */ }
     var envoi = {
@@ -942,7 +897,7 @@ import { confirmationValable, confirmationAEnregistrer, confirmationRestauree, C
         // Aucun repli vers le service : si le mode Local échoue, l'échec est affiché avec l'heure à régler à la main.
         // Plafond de 30 s : l'échec est affiché, mais le bouton reste occupé jusqu'à la fin réelle de l'envoi.
         var minuteur = null;
-        var reel = opCableLancer(function () { return localPret().then(function (l) { return l.programmerLocal(d, depsAvec(l, conf), finHC); }); });
+        var reel = opCableLancer(function () { return localPret().then(function (l) { return l.programmerLocal(d, l.deps, finHC); }); });
         localEnVol = reel;
         var fin = function () { clearTimeout(minuteur); if (localEnVol === reel) { localEnVol = null; try { updateSend(); } catch (e) { /* sans effet */ } } };
         reel.then(fin, fin);
@@ -961,10 +916,6 @@ import { confirmationValable, confirmationAEnregistrer, confirmationRestauree, C
     programmerSelonMoyen(m, envoi).catch(function () { return resultatKo(d, "inattendue", finHC); }).then(function (res) {
       try { showAlert(res, d); } catch (e) { try { showAlert(resultatKo(d, "inattendue", finHC), d); } catch (e2) { /* rien de plus */ } }
       busy = false; envoiPlafond = null;
-      if (opts && opts.arriere) {
-        var pr = plageRelue(res);
-        notifierFin(opts.a, resultatNotification({ res: res }), !!(res && res.etat === "ko" && res.incertain), heureNotification({ demande: d, finHC: finHC, debutRelu: pr.debut }));
-      }
       // Plage du câble : relue dans un envoi réussi ; inconnue si le résultat est incertain (la ligne disparaît).
       if (res && res.etat === "ok") majPlage(plageDuCable(res));
       else if (res && res.incertain) majPlage(null);
@@ -972,9 +923,7 @@ import { confirmationValable, confirmationAEnregistrer, confirmationRestauree, C
       if (m === "local") {
         var pl = plageRelue(res);
         journal({ action: "page-programmer", ok: !!res && res.etat === "ok", debut: pl.debut, fin: pl.fin, tardif: res && res.tardif === true ? true : undefined, code: res && res.etat === "ko" ? res.code : undefined, manuel: res && res.etat === "ko" ? res.manuel : undefined });
-        // Écran éteint après un envoi en arrière-plan : pas de lecture (clé illisible téléphone verrouillé) ;
-        // le retour au premier plan relit l'état.
-        if (res && res.etat === "ok" && !(opts && opts.arriere && document.hidden)) majEtatCable();
+        if (res && res.etat === "ok" && !document.hidden) majEtatCable();
       }
     });
   }
@@ -991,11 +940,12 @@ import { confirmationValable, confirmationAEnregistrer, confirmationRestauree, C
         import("./local.js"), import("./pont.js"),
       ]).then(function (mods) {
         // Le protocole local tourne dans le code natif : la page ne reçoit ni la clé ni l'identifiant du câble.
+        resultatAttenteFn = mods[0].resultatAttente;
         var client = mods[1].creerClientPont(globalThis.PontLocal);
         return client.demarrage().then(function (dem) {
           debugPont = !!(dem && dem.ok && dem.variante === "debug");
           return {
-            programmerLocal: mods[0].programmerLocal, surLeReseauDeLaMaison: mods[0].surLeReseauDeLaMaison, etatCable: mods[0].etatCable, chercherCable: mods[0].chercherCable, lireConfigurationCable: mods[0].lireConfigurationCable,
+            programmerLocal: mods[0].programmerLocal, surLeReseauDeLaMaison: mods[0].surLeReseauDeLaMaison, etatCable: mods[0].etatCable, chercherCable: mods[0].chercherCable, resultatAttente: mods[0].resultatAttente,
             client: client,
             deps: { client: client },
           };
@@ -1092,17 +1042,16 @@ import { confirmationValable, confirmationAEnregistrer, confirmationRestauree, C
   });
   // Retour de l'écran de saisie de la clé, ou du réglage du Wi-Fi : on relit l'état (une lecture, jamais de recherche).
   document.addEventListener("visibilitychange", function () {
-    if (document.hidden) { // rien ne part en arrière-plan, sauf l'attente en mode arrière-plan (service de premier plan + notification)
-      if (quitterSiCache({ cache: true, arriere: att && att.arriere, prepa: att && att.prepa })) quitterAttente();
-      return;
-    }
+    if (document.hidden) return; // l'attente éventuelle continue dans le service natif, sans la page
     verifierPlafondEnvoi();
     verifierConfirmation();
     updateSend(); // l'heure a pu changer pendant l'absence
     if (soirAffiche !== null && soirAffiche !== cleSoir() && !busy && !att) render(); // page restée ouverte d'un soir à l'autre : bandeau et calcul
     else updateSend(); // « pour cette nuit » / « démarre tout de suite » dépendent de l'heure
-    if (pontOk && !busy && !att) majEtatCable();
-    else if (!pontOk && !busy) lirePlageService();
+    if (pontOk && !busy) {
+      if (att) sonderAttente();
+      else reprendreAttente().then(function () { if (!att && !busy) majEtatCable(); }); // une attente finie en notre absence : résultat montré ici
+    } else if (!pontOk && !busy) lirePlageService();
   });
   // Mode service : la plage lue n'est jamais gardée d'une visite à l'autre (« Déjà programmé » ne doit jamais
   // reposer sur une lecture périmée : onglet ouvert d'un soir à l'autre, autre téléphone). Elle est effacée puis relue,
@@ -1163,7 +1112,7 @@ import { confirmationValable, confirmationAEnregistrer, confirmationRestauree, C
   loadService(); chargerVehicules(); render();
   setConfirme(confirmationReprise !== null || (!!essai && essai.get("confirme") === "1" && socValide($("soc").value) !== null), confirmationReprise);
   route(false);
-  if (pontOk) { $("svcBox").hidden = true; majEtatCable(); } // dans l'appli, le service n'est pas joignable : pas de carte service
+  if (pontOk) { $("svcBox").hidden = true; reprendreAttente().then(function () { if (!att && !busy) majEtatCable(); }); } // dans l'appli, le service n'est pas joignable : pas de carte service
   else lirePlageService(); // Mode service (GitHub Pages) : lecture de la plage au chargement, puis à chaque retour sur la page
   afficherBandeauDefauts();
   protegerStockage();

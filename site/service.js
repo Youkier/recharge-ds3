@@ -164,7 +164,10 @@ const CAUSES = {
   local_attente_modifiee: { message: "La saisie a changé pendant l'attente du Wi-Fi : rien n'a été envoyé. Touchez de nouveau « Programmer la charge ».", incertain: false },
   local_attente_annulee: { message: "Vous avez annulé l'attente : rien n'a été envoyé.", incertain: false },
   local_attente_quittee: { message: "L'application a été quittée pendant l'attente du Wi-Fi : rien n'a été envoyé.", incertain: false },
-  local_attente_confirmation: { message: "La batterie saisie n'est plus confirmée : rien n'a été envoyé.", incertain: false },
+  // Attente tenue par le code natif (lot E3) : le service d'arrière-plan a pu être arrêté par le système (économiseur de batterie) ;
+  // l'état réel du câble est alors inconnu. Le message exact (avec début et fin) est donné par messageNonSuivie.
+  local_non_suivie: { message: "La dernière programmation n'a pas pu être suivie : vérifiez dans Smart Life.", incertain: true },
+  local_attente_refusee: { message: "Android n'a pas lancé l'attente en arrière-plan : rien n'a été envoyé. Touchez de nouveau « Programmer la charge ».", incertain: false },
   local_occupe: { message: "Une autre opération sur le câble est en cours : rien n'a été envoyé.", incertain: false },
   local_pas_de_cle: { message: 'Le câble n\'est pas encore relié à l\'application.', incertain: false },
   local_format: { message: 'Le câble a donné une réponse inattendue : le réglage n\'est pas confirmé.', incertain: true },
@@ -188,6 +191,24 @@ export function resultatKo(demande, code, finHC, maintenant = new Date()) {
 // Trop tard : l'heure calculée est dépassée et le départ est trop proche ; l'heure à régler à la main est dite, avec le geste.
 function consigneTropTard(demande) {
   return 'Heure calculée : début ' + (demande && demande.allumage ? demande.allumage : '--:--') + ', déjà passé. Pour charger quand même, démarrez la charge à la main dans Smart Life.';
+}
+
+// Début et fin à régler à la main pour une demande, tels que le câble les aurait reçus maintenant (démarrage tardif compris) :
+// { debut, fin } en HH:MM. « Pas de charge » : une minute avant la fin des heures creuses, puis la fin. Donnés au natif à chaque
+// attente (heureManuelle), qui les garde pour le message « programmation non suivie ».
+export function heureManuelleDe(demande, finHC, maintenant = new Date()) {
+  if (demande && demande.desactiver) {
+    const fin = estHeure(finHC) ? finHC : demande.fin;
+    return { debut: moinsUneMinute(fin), fin };
+  }
+  const h = heuresManuelles(demande, maintenant);
+  return { debut: h.debut, fin: h.fin || (demande && demande.fin) };
+}
+
+// Message d'une attente dont le suivi s'est perdu (processus arrêté) : donne où vérifier, avec les heures connues du natif.
+export function messageNonSuivie(heure) {
+  const ok = heure && estHeure(heure.debut) && estHeure(heure.fin);
+  return "La dernière programmation n'a pas pu être suivie : vérifiez dans Smart Life" + (ok ? ' (début ' + heure.debut + ', fin ' + heure.fin + ')' : '') + '.';
 }
 
 // Où vérifier quand le résultat est incertain : l'écran et la valeur à comparer.
