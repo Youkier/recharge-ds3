@@ -35,6 +35,8 @@ object Attente {
      */
     fun issue(action: Action, r: Map<String, Any?>): Issue {
         if (r["ok"] != true) {
+            // Réponse anormale (« ok » ni vrai ni faux) : on ne sait pas si l'écriture est partie (règle 2).
+            if (r["ok"] != false) return Issue.INCERTAINE
             val e = r["erreur"] as? String
             if (e == "trop_tard") return Issue.TROP_TARD
             return if (r["ecrit"] == true || e in ERREURS_INCERTAINES) Issue.INCERTAINE else Issue.NON_FAITE
