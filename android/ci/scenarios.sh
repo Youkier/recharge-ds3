@@ -10,6 +10,10 @@
 # Versions debug seulement : l'action est demandée par `am start --es action ...` (le pont ne la transmet jamais en release).
 # La clé factice et l'identifiant factice sont saisis dans l'écran natif par uiautomator + input. Depuis la v0.3 ils sont
 # mémorisés chiffrés : on ne les ressaisit que pour changer de clé (données de l'appli effacées d'abord, pm clear).
+#
+# Cas atypiques de la revue UX du 2026-11-22 (S-A, S-B, S-D à S-G, S-J, S-K) : bloc placé avant S22, voir son en-tête.
+# Le faux câble y est relancé avec des options (tools/faux-cable-tcp.mjs : --plage, --delai-reponse, --silence-apres-ecriture) ;
+# tools/heure-page.mjs donne l'heure que la page calcule, pour régler le faux câble en conséquence.
 set -euo pipefail
 
 APK="${1:?usage : scenarios.sh APK SORTIE}"
@@ -21,6 +25,8 @@ TAG="RechargeEssai"
 CLE_OK="CLE-FACTICE-0000"      # = CLE_FACTICE de tools/faux-cable-tcp.mjs
 CLE_KO="CLE-FAUSSE-00000"      # 16 caractères, refusée par le faux câble
 IDENTIFIANT="ID-FACTICE-0001"
+CLE_COURTE="CLE-123"            # 7 caractères : « Enregistrer » reste grisé (S-A)
+IDENTIFIANT_KO="ID.INVALIDE"    # le point n'est pas permis dans un identifiant (S-A)
 THEME_COURANT="clair"
 mkdir -p "$SORTIE"
 LIGNES="$SORTIE/lignes-essai.txt"
@@ -37,6 +43,7 @@ nettoyer() {
   if [ -n "$FAUX_PID" ]; then kill "$FAUX_PID" 2> /dev/null || true; fi
   [ -n "${E0_PIN_POSE:-}" ] && e0_remettre
   adb shell cmd uimode night no > /dev/null 2>&1 || true
+  adb shell settings put system font_scale 1.0 > /dev/null 2>&1 || true # S-J : même en échec, police normale
   exit "$code"
 }
 trap nettoyer EXIT
@@ -558,6 +565,357 @@ toucher_texte_systeme() {
 ATTENTE_RESUME="$SORTIE/attente-resume.txt"
 : > "$ATTENTE_RESUME"
 
+# ======================================================================================================================
+# Cas atypiques de la revue UX du 2026-11-22 (docs/revue-ux-2026-11-22.md) : S-A premier lancement, S-B données effacées,
+# S-D coupure pendant l'envoi, S-E câble lent, S-F plage déjà présente (et S-K bascule du thème), S-J police agrandie,
+# S-G « démarrage immédiat » et « pas de charge ». Aucun ne dépend de l'attente en arrière-plan (réécrite en E3).
+# S-C, S-H, S-I, S-L et S-M ne sont pas faits ici (voir la revue) ; le service d'attente n'est pas touché.
+# Le faux câble est relancé avec les options voulues (lancer_faux) ; le bloc le remet par défaut et laisse l'application
+# configurée avec la clé factice, thème clair, police normale, batterie enregistrée à 39 %, pour la suite.
+# ======================================================================================================================
+RELEVES="$SORTIE/releves-cas-atypiques.txt" # constats non bloquants (comportement à décider par Mathieu)
+: > "$RELEVES"
+releve() { echo "RELEVÉ $*" | tee -a "$RELEVES"; }
+
+# Relance le faux câble avec ces options (aucune : plage 03:30-06:00, réponses immédiates). Les points de données repartent de zéro.
+lancer_faux() {
+  local i
+  if [ -n "$FAUX_PID" ]; then kill "$FAUX_PID" 2> /dev/null || true; wait "$FAUX_PID" 2> /dev/null || true; fi
+  FAUX_PID=""
+  node "$RACINE/tools/faux-cable-tcp.mjs" "$@" >> "$SORTIE/faux-cable.log" 2>&1 &
+  FAUX_PID=$!
+  for i in $(seq 1 50); do
+    if ss -Htln "( sport = :6668 )" | grep -q 6668; then echo "faux câble relancé (pid $FAUX_PID), options : ${*:-aucune}"; return 0; fi
+    sleep 0.2
+  done
+  echec "faux câble non redémarré (options : $*)"
+}
+ecritures_log() { grep -c "écriture reçue" "$SORTIE/faux-cable.log" || true; }
+contacts_avec_donnees_log() { grep -c "avec données" "$SORTIE/faux-cable.log" || true; }
+
+# --- Lecture de l'écran (uiautomator) : le texte de la page se cherche tel quel dans l'arbre, SANS apostrophe (échappée) ---
+DUMP=""
+contient() { grep -F -q -- "$2" <<< "$1"; } # here-string : pas de SIGPIPE avec pipefail
+attendre_texte_page() { # attendre_texte_page <texte> [délai en s] ; laisse le dernier dump dans DUMP
+  local texte="$1" delai="${2:-40}" i
+  for i in $(seq 1 "$delai"); do
+    DUMP="$(ui_dump || true)"
+    if contient "$DUMP" "$texte"; then return 0; fi
+    sleep 1
+  done
+  echec "texte « $texte » absent de l'écran après ${delai} s"
+}
+ecran_sans() { # ecran_sans <texte> <message d'échec>
+  DUMP="$(ui_dump || true)"
+  if contient "$DUMP" "$1"; then echec "$2"; fi
+}
+ecran_avec() { # ecran_avec <texte> <message d'échec> : sans attente
+  DUMP="$(ui_dump || true)"
+  contient "$DUMP" "$1" || echec "$2"
+}
+
+# Écran natif : vue par son id (balise du dump), attribut, centre ; défilement jusqu'à la voir (formulaire dans un ScrollView).
+noeud_de() { grep -o "<node [^>]*resource-id=\"[^\"]*:id/$1\"[^>]*>" <<< "$2" | head -1 || true; }
+attribut_de() { sed -n "s/.* $1=\"\([^\"]*\)\".*/\1/p" <<< "$2" | head -1 || true; }
+centre_du_noeud() {
+  local nombres
+  nombres="$(grep -o 'bounds="[^"]*"' <<< "$1" | grep -o '[0-9]\+' | tr '\n' ' ')"
+  # shellcheck disable=SC2086
+  set -- $nombres
+  echo "$(( ($1 + $3) / 2 )) $(( ($2 + $4) / 2 ))"
+}
+atteindre_vue() { # atteindre_vue <id> : DUMP contient la vue ; défile vers le bas, puis vers le haut
+  local nom="$1" taille l h essai
+  taille="$(adb shell wm size | tr -d '\r' | grep -o '[0-9]\+x[0-9]\+' | tail -1)"
+  l="${taille%x*}"; h="${taille#*x}"
+  for essai in 1 2 3 4 5 6; do
+    DUMP="$(ui_dump || true)"
+    if [ -n "$(noeud_de "$nom" "$DUMP")" ]; then return 0; fi
+    if [ "$essai" -le 2 ]; then adb shell input swipe $(( l / 2 )) $(( h / 2 )) $(( l / 2 )) $(( h / 5 )) 300
+    else adb shell input swipe $(( l / 2 )) $(( h / 5 )) $(( l / 2 )) $(( h * 4 / 5 )) 300; fi
+    sleep 1
+  done
+  echec "vue native « $nom » introuvable à l'écran"
+}
+toucher_natif() {
+  local c
+  atteindre_vue "$1"
+  c="$(centre_du_noeud "$(noeud_de "$1" "$DUMP")")"
+  # shellcheck disable=SC2086
+  adb shell input tap $c
+}
+vider_champ() { # vider_champ <id> : place le curseur à la fin et efface (24 caractères au plus)
+  toucher_natif "$1"
+  adb shell input keyevent KEYCODE_MOVE_END
+  # shellcheck disable=SC2046
+  adb shell input keyevent $(printf 'KEYCODE_DEL %.0s' $(seq 1 24))
+}
+valeur_native() { # valeur_native <id> <attribut> : lue après défilement (vue introuvable : le script échoue)
+  atteindre_vue "$1"
+  attribut_de "$2" "$(noeud_de "$1" "$DUMP")"
+}
+
+# --- Batterie de la page : boutons « Ajouter 1 % » / « Retirer 1 % » (position lue une fois, puis rafale de touchers) ---
+SOC_PAGE=38 # valeur de départ des boutons : celle enregistrée dans la page, ou 38 (défaut) tant que rien n'est enregistré
+taper_bouton() { # taper_bouton <libellé> <n>
+  local libelle="$1" n="$2" c
+  c="$(centre_web "$libelle")"
+  if [ "$n" -le 3 ]; then
+    for _ in $(seq 1 "$n"); do
+      # shellcheck disable=SC2086
+      adb shell input tap $c
+      sleep 0.3
+    done
+  else
+    adb shell "for i in \$(seq 1 $n); do input tap $c; done"
+  fi
+}
+# Amène la batterie à <cible> % ET la confirme (au moins un geste) : le calcul de la page vaut alors pour cette valeur.
+regler_soc() {
+  local cible="$1" delta
+  delta=$(( cible - SOC_PAGE ))
+  if [ "$delta" -gt 0 ]; then taper_bouton "Ajouter 1 %" "$delta"
+  elif [ "$delta" -lt 0 ]; then taper_bouton "Retirer 1 %" "$(( -delta ))"
+  else taper_bouton "Ajouter 1 %" 1; taper_bouton "Retirer 1 %" 1; fi
+  SOC_PAGE="$cible"
+}
+
+# Premier lancement complet dans le thème donné (données effacées d'abord), avec les saisies invalides de l'écran natif.
+# premier_lancement <clair|sombre> <préfixe de capture>
+premier_lancement() {
+  local theme="$1" p="$2" L
+  mode_theme "$theme"
+  oublier_donnees
+  SOC_PAGE=38
+  adb logcat -c
+  adb shell am force-stop "$PKG"
+  adb shell am start -W -n "$ACT" > /dev/null
+  centre champ_cle > /dev/null
+  capturer "${theme}-${p}1-ecran-natif-vide"
+  # Identifiant invalide (le point n'est pas permis) avec une clé de 16 caractères : « Enregistrer » est actif, l'erreur s'affiche.
+  toucher_natif champ_id;  adb shell input text "$IDENTIFIANT_KO"
+  toucher_natif champ_cle; adb shell input text "$CLE_OK"
+  toucher_natif bouton_enregistrer
+  sleep 1
+  [ -n "$(valeur_native texte_erreur text)" ] || echec "$p ($theme) : aucun message d'erreur pour un identifiant invalide"
+  if grep -q 'name="bloc"' <<< "$(fichier_cable)"; then echec "$p ($theme) : un identifiant invalide a été enregistré"; fi
+  capturer "${theme}-${p}2-ecran-natif-identifiant-invalide"
+  # Clé de 7 caractères : « Enregistrer » grisé (le bouton n'est même pas touchable).
+  vider_champ champ_cle; adb shell input text "$CLE_COURTE"
+  [ "$(valeur_native bouton_enregistrer enabled)" = "false" ] || echec "$p ($theme) : « Enregistrer » actif avec une clé de 7 caractères"
+  capturer "${theme}-${p}3-ecran-natif-cle-courte"
+  # Saisies correctes.
+  vider_champ champ_id;  adb shell input text "$IDENTIFIANT"
+  vider_champ champ_cle; adb shell input text "$CLE_OK"
+  toucher_natif bouton_enregistrer
+  CLE_ENREGISTREE="$CLE_OK"
+  # Page avec les réglages par défaut : bandeau, batterie vide, pas de « dernière valeur » ; câble à localiser, recherche automatique.
+  L="$(attendre_essai page-etat 90)"
+  verifier "$p ($theme) état à l'ouverture sans adresse" "$L" 'l.etat === "sans_adresse"'
+  attendre_texte_page "Réglages par défaut" 30
+  contient "$DUMP" "Entrez votre batterie" || echec "$p ($theme) : « Entrez votre batterie » absent (champ batterie pas vide)"
+  if contient "$DUMP" "Dernière valeur"; then echec "$p ($theme) : « Dernière valeur » affiché au premier lancement"; fi
+  capturer "${theme}-${p}4-page-reglages-par-defaut" # la recherche est en général en cours (pastille « Recherche du câble… »)
+  L="$(attendre_essai page-chercher 150)"
+  verifier "$p ($theme) recherche automatique" "$L" 'l.auto === true && l.ok === true'
+  attendre_texte_page "Câble prêt" 30
+  sleep 1
+  capturer "${theme}-${p}5-page-cable-pret"
+}
+
+etape "S-A Premier lancement complet, thème clair : saisies invalides, enregistrement, réglages par défaut, recherche, câble prêt"
+lancer_faux
+premier_lancement clair A
+
+etape "S-B Données effacées : réglages utilisés, puis pm clear et relance (dans l'autre thème, pour les captures sombres de S-A)"
+demarrer_page
+page_prete "S-B"
+regler_soc 39 # un réglage utilisé : la batterie est enregistrée
+demarrer_page # relance sans effacer : les données restent
+L="$(attendre_essai page-etat 60)"
+verifier "S-B relance : câble prêt" "$L" 'l.etat === "pret"'
+attendre_texte_page "Dernière valeur" 20 # la batterie saisie est restée (preuve que ce sont bien les données effacées qui font revenir les défauts)
+if contient "$DUMP" "Réglages par défaut"; then
+  releve "S-B : le bandeau « Réglages par défaut » réapparaît à chaque ouverture"
+else
+  releve "S-B : après une première utilisation, le bandeau « Réglages par défaut » ne revient pas à la relance (comportement actuel : affiché au seul lancement sans réglage enregistré)"
+fi
+premier_lancement sombre A # même parcours que S-A, mais après un effacement des données : défauts et bandeau reviennent
+mode_theme clair
+
+etape "S-D Coupure pendant l'envoi : le câble applique l'écriture puis ne répond plus : résultat incertain, heure manuelle, aucun second envoi"
+A39="$(node "$RACINE/tools/heure-page.mjs" heure 39)"
+lancer_faux --silence-apres-ecriture
+demarrer_page
+page_prete "S-D"
+regler_soc 39
+ECR_AVANT="$(ecritures_log)"
+adb logcat -c
+toucher_web "Programmer la charge"
+L="$(attendre_essai page-programmer 90)"
+verifier "S-D résultat incertain" "$L" "l.ok === false && l.code === \"local_delai\" && typeof l.manuel === \"string\" && l.manuel.includes(\"$A39\")"
+attendre_texte_page "Vérifiez dans Smart Life" 20
+contient "$DUMP" "À régler à la main" || echec "S-D : l'heure à régler à la main n'est pas affichée"
+sleep 1
+capturer "clair-D1-resultat-incertain"
+sleep 12 # le temps qu'un second envoi, s'il existait, arrive
+[ "$(( $(ecritures_log) - ECR_AVANT ))" = 1 ] || echec "S-D : le faux câble n'a pas vu exactement une écriture"
+echo "OK  S-D une seule écriture, résultat incertain"
+lancer_faux
+
+etape "S-E1 Câble lent : réponses à 3 s, la première lecture (4 s) échoue, le second essai (8 s) aboutit"
+lancer_faux --delai-reponse=3000
+CONTACTS_AVANT="$(contacts_avec_donnees_log)"
+demarrer_page
+L="$(attendre_essai page-etat 90)"
+verifier "S-E1 lecture lente aboutie" "$L" 'l.etat === "pret"'
+sleep 2
+[ "$(( $(contacts_avec_donnees_log) - CONTACTS_AVANT ))" -ge 2 ] || echec "S-E1 : un seul contact avec le câble : le second essai n'a pas eu lieu"
+attendre_texte_page "Câble prêt" 20
+capturer "clair-E1-cable-lent-pret"
+
+etape "S-E2 Câble très lent : réponses à 8 s, les deux essais échouent : pastille « Câble introuvable », rien n'est effacé"
+lancer_faux --delai-reponse=8000
+demarrer_page
+L="$(attendre_essai page-etat 90)"
+verifier "S-E2 câble trop lent" "$L" 'l.etat === "muet"'
+attendre_texte_page "Câble introuvable" 20
+sleep 1
+capturer "clair-E2-cable-tres-lent"
+lancer_faux
+
+etape "S-F Plage déjà présente sur le câble à l'ouverture (F1 identique, F2 différente, F3 pas de charge) ; S-K : bascule du thème sur F1"
+echo "heure calculée par la page pour 39 % : $A39"
+lancer_faux --plage="$A39-06:00"
+demarrer_page
+L="$(attendre_essai page-etat 60)"
+verifier "S-F1 état à l'ouverture" "$L" 'l.etat === "pret"'
+attendre_texte_page "Câble réglé : $A39 → 06:00" 20
+ecran_sans "Déjà programmé" "S-F1 : « Déjà programmé » affiché avant la confirmation du %"
+ECR_AVANT="$(ecritures_log)"
+regler_soc 39
+attendre_texte_page "Déjà programmé à $A39" 20
+sleep 1
+capturer "clair-F1-deja-programme"
+adb logcat -c
+toucher_web "Déjà programmé" # bouton inactif : le toucher n'envoie rien
+sleep 3
+ligne_vue page-programmer && echec "S-F1 : un envoi est parti alors que le câble a déjà la plage"
+[ "$(ecritures_log)" = "$ECR_AVANT" ] || echec "S-F1 : le faux câble a reçu une écriture"
+echo "OK  S-F1 déjà programmé, rien envoyé"
+# S-K : le thème bascule (sombre automatique au coucher du soleil) alors que le % est confirmé : la page est rechargée.
+adb logcat -c
+mode_theme sombre
+L="$(attendre_essai page-etat 60)"
+sleep 3
+capturer "sombre-K-apres-bascule-du-theme"
+DUMP="$(ui_dump || true)"
+if contient "$DUMP" "Déjà programmé à $A39"; then
+  releve "S-K : la confirmation du % survit à la bascule du thème (le bouton reste « Déjà programmé »)"
+else
+  releve "S-K : après la bascule du thème, la page est rechargée et le % doit être confirmé de nouveau (le bouton redemande la batterie)"
+fi
+mode_theme clair
+# F2 : plage différente (celle du faux câble par défaut) : « Câble réglé : 03:30 → 06:00 », bouton actif.
+lancer_faux
+demarrer_page
+L="$(attendre_essai page-etat 60)"
+verifier "S-F2 état à l'ouverture" "$L" 'l.etat === "pret"'
+attendre_texte_page "Câble réglé : 03:30 → 06:00" 20
+regler_soc 39
+sleep 1
+ecran_sans "Déjà programmé" "S-F2 : « Déjà programmé » affiché alors que la plage du câble est différente"
+ecran_avec "Programmer la charge" "S-F2 : le bouton « Programmer la charge » est absent"
+ecran_sans "rien à envoyer" "S-F2 : « rien à envoyer » affiché alors que la plage est différente"
+capturer "clair-F2-plage-differente"
+# F3 : plage 05:59-06:00, la nuit « pas de charge » de la veille : ligne dédiée, bouton actif pour programmer le soir.
+lancer_faux --plage=05:59-06:00
+demarrer_page
+L="$(attendre_essai page-etat 60)"
+verifier "S-F3 état à l'ouverture" "$L" 'l.etat === "pret"'
+attendre_texte_page "Câble réglé sur : pas de charge" 20
+regler_soc 39
+sleep 1
+ecran_sans "Déjà programmé" "S-F3 : « Déjà programmé » affiché alors que le câble est sur « pas de charge »"
+ecran_avec "Programmer la charge" "S-F3 : le bouton « Programmer la charge » est absent"
+capturer "clair-F3-plage-pas-de-charge"
+lancer_faux
+
+etape "S-J Police agrandie à 130 % et 200 % : accueil (puis Paramètres et écran natif à 200 %)"
+for ECH in 130 200; do
+  adb shell settings put system font_scale "$(( ECH / 100 )).$(printf '%02d' $(( ECH % 100 )))"
+  sleep 2
+  demarrer_page
+  page_prete "S-J ($ECH %)"
+  regler_soc 39
+  sleep 1
+  ecran_avec "Programmer la charge" "S-J ($ECH %) : le bouton « Programmer la charge » n'est plus visible"
+  capturer "police-${ECH}-accueil"
+  if [ "$ECH" = 200 ]; then
+    toucher_web "Paramètres"
+    sleep 2
+    capturer "police-${ECH}-parametres"
+    adb shell am force-stop "$PKG"
+    adb shell am start -W -n "$ACT" --es action cle > /dev/null
+    centre champ_cle > /dev/null
+    capturer "police-${ECH}-ecran-natif"
+  fi
+done
+adb shell settings put system font_scale 1.0
+sleep 1
+
+etape "S-G « Démarrage immédiat » et « Pas de charge » : cartes de confirmation, thèmes clair et sombre"
+# Démarrage immédiat : le téléphone l'annonce si l'heure actuelle est dans [début ; fin de la plage du câble). Avec fin = début - 1 min,
+# c'est vrai à toute heure sauf une minute : tools/heure-page.mjs choisit la batterie qui évite cette minute (l'heure du
+# téléphone est celle du runner). Le faux câble reçoit donc une plage 03:30 -> (début - 1 min), et non 06:00 : la carte
+# affiche alors, en plus, l'avertissement sur la fin de plage, absent d'un vrai soir.
+IMM="$(node "$RACINE/tools/heure-page.mjs" immediat)"
+read -r SOC_IMM DEB_IMM FIN_IMM <<< "$IMM"
+echo "démarrage immédiat : batterie $SOC_IMM %, heure calculée $DEB_IMM, fin de plage du faux câble $FIN_IMM"
+
+g_immediat() { # g_immediat <thème>
+  lancer_faux --plage="03:30-$FIN_IMM"
+  regler_soc "$SOC_IMM"
+  adb logcat -c
+  toucher_web "Programmer la charge"
+  L="$(attendre_essai page-programmer 60)"
+  verifier "S-G immédiat ($1)" "$L" "l.ok === true && l.fin === \"$FIN_IMM\" && /^[0-2][0-9]:[0-5][0-9]\$/.test(l.debut) && l.debut !== \"$DEB_IMM\""
+  attendre_texte_page "Démarrage immédiat" 20
+  sleep 1
+  capturer "$1-G1-demarrage-immediat"
+  attendre_essai page-etat 40 > /dev/null # relecture de la page après l'envoi : à finir avant de relancer le faux câble
+}
+g_pas_de_charge() { # g_pas_de_charge <thème>
+  lancer_faux
+  regler_soc 84
+  attendre_texte_page "Pas de charge ce soir" 20
+  adb logcat -c
+  toucher_web "Pas de charge ce soir"
+  L="$(attendre_essai page-programmer 60)"
+  verifier "S-G pas de charge ($1)" "$L" 'l.ok === true && l.debut === "05:59" && l.fin === "06:00"'
+  attendre_texte_page "Le câble ne chargera pas cette nuit" 20
+  sleep 1
+  capturer "$1-G2-pas-de-charge"
+  attendre_texte_page "Déjà réglé : pas de charge" 20 # la plage relue est « pas de charge » : le bouton le dit
+  attendre_essai page-etat 40 > /dev/null
+}
+mode_theme clair
+demarrer_page
+page_prete "S-G (clair)"
+g_immediat clair
+g_pas_de_charge clair
+mode_theme sombre
+demarrer_page
+page_prete "S-G (sombre)"
+g_pas_de_charge sombre # la batterie enregistrée est déjà à 84 % : pas de rafale
+g_immediat sombre      # on redescend à la batterie du cas : l'état de la page redevient normal pour la suite
+mode_theme clair
+lancer_faux
+echo "OK  S-G cartes de confirmation"
+echo
+echo "Constats non bloquants (cas atypiques) :"
+cat "$RELEVES"
+
 # --- Attente en arrière-plan sur la VRAIE page (service AttenteWifi, version publiée) ---
 etape "S22 Attente en arrière-plan annulée depuis la notification : rien n'est envoyé, notification « Attente annulée »"
 demarrer_page
@@ -741,7 +1099,7 @@ echo "connexions vues par le faux câble : ${OUV} ouvertes, ${FER} fermées (don
 
 etape "S9 Ni clé, ni identifiant, ni trame dans logcat"
 adb logcat -d > "$SORTIE/logcat-complet.txt"
-if grep -F -e "$CLE_OK" -e "$CLE_KO" -e "$IDENTIFIANT" "$SORTIE/logcat-complet.txt" > /dev/null; then
+if grep -F -e "$CLE_OK" -e "$CLE_KO" -e "$CLE_COURTE" -e "$IDENTIFIANT" -e "$IDENTIFIANT_KO" "$SORTIE/logcat-complet.txt" > /dev/null; then
   echec "S9 : la clé ou l'identifiant factice apparaît dans logcat"
 fi
 # Seul l'étiquette fixe porte des lignes de l'application ; toutes commencent par ESSAI.

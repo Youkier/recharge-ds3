@@ -7,7 +7,7 @@ import net from 'node:net';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { lireEtat, programmer } from '../local/tuya-local.js';
-import { demarrerFauxCableTcp, CLE_FACTICE, DPS_INITIAUX } from '../tools/faux-cable-tcp.mjs';
+import { demarrerFauxCableTcp, lireArguments, CLE_FACTICE, DPS_INITIAUX } from '../tools/faux-cable-tcp.mjs';
 
 // Transport TCP minimal pour les tests (le port 6668 et le filtre d'adresses de transport-node.mjs ne conviennent pas
 // à un port éphémère sur 127.0.0.1). Même interface : ouvrir · envoyer · recevoir · fermer.
@@ -113,4 +113,81 @@ test('arrêt : toutes les connexions sont fermées', async () => {
   await srv.arreter();
   await ferme;
   assert.equal(srv.stats.actives, 0);
+});
+
+// --- Options des scénarios de cas atypiques (revue UX du 2026-11-22) ---
+
+test('lireArguments : valeurs par défaut, options valides, refus du reste', () => {
+  assert.deepEqual(lireArguments([]), { port: 6668, plage: null, delaiReponseMs: 0, silenceApresEcriture: false });
+  assert.deepEqual(
+    lireArguments(['--port=7000', '--plage=00:35-06:00', '--delai-reponse=3000', '--silence-apres-ecriture']),
+    { port: 7000, plage: { debut: '00:35', fin: '06:00' }, delaiReponseMs: 3000, silenceApresEcriture: true });
+  for (const mauvais of ['--plage=25:00-06:00', '--plage=0:35-06:00', '--plage=00:35', '--delai-reponse=-1', '--delai-reponse=31000',
+    '--port=70000', '--host=0.0.0.0', 'x']) {
+    assert.throws(() => lireArguments([mauvais]), Error, mauvais);
+  }
+});
+
+test('plage initiale : relue par le module réel, autres points inchangés', async () => {
+  await avecServeur(async (srv) => {
+    const r = await lireEtat(cfg(), transportTcp(srv.port));
+    assert.deepEqual(r, { ok: true, debut: '00:35', fin: '06:00', plage_active: true });
+    const dps = srv.dps();
+    assert.equal(dps['150'], DPS_INITIAUX['150']);
+    assert.equal(dps['152'], DPS_INITIAUX['152']);
+  }, { plage: { debut: '00:35', fin: '06:00' } });
+  await avecServeur(async (srv) => {
+    const r = await lireEtat(cfg(), transportTcp(srv.port));
+    assert.deepEqual(r, { ok: true, debut: '05:59', fin: '06:00', plage_active: true }, 'plage « pas de charge »');
+  }, { plage: { debut: '05:59', fin: '06:00' } });
+  await assert.rejects(() => demarrerFauxCableTcp({ port: 0, plage: { debut: '24:00', fin: '06:00' } }), /plage invalide/);
+});
+
+test('délai de réponse : la lecture aboutit, mais pas plus vite que le retard', async () => {
+  await avecServeur(async (srv) => {
+    const t0 = Date.now();
+    const r = await lireEtat(cfg(), transportTcp(srv.port));
+    const duree = Date.now() - t0;
+    assert.equal(r.ok, true, JSON.stringify(r));
+    assert.ok(duree >= 2 * 250 - 30, `deux réponses retardées de 250 ms (négociation, lecture) : ${duree} ms`);
+  }, { delaiReponseMs: 250 });
+  await avecServeur(async (srv) => {
+    const t0 = Date.now();
+    const r = await lireEtat(cfg(), transportTcp(srv.port));
+    assert.equal(r.ok, true);
+    assert.ok(Date.now() - t0 < 200, 'sans retard : réponse immédiate');
+  });
+});
+
+test("délai plus long que l'échéance du client : « delai », rien n'est écrit", async () => {
+  await avecServeur(async (srv) => {
+    const r = await lireEtat(cfg({ delaiGlobalMs: 300 }), transportTcp(srv.port));
+    assert.equal(r.ok, false);
+    assert.equal(r.erreur, 'delai');
+    assert.equal(srv.stats.ecritures, 0);
+  }, { delaiReponseMs: 600 });
+});
+
+test("silence après l'écriture : appliquée, puis plus de réponse, résultat incertain, une seule écriture vue", async () => {
+  const lignes = [];
+  await avecServeur(async (srv) => {
+    const w = await programmer(cfg({ delaiGlobalMs: 1500 }), transportTcp(srv.port), { allumage: '05:10' });
+    assert.deepEqual(w, { ok: false, erreur: 'delai', ecrit: true }, 'écriture partie, relecture sans réponse : incertain');
+    assert.equal(srv.stats.ecritures, 1);
+    assert.equal(JSON.parse(srv.dps()['151']).ss, '05:10', "l'écriture a bien été appliquée par le câble");
+    // Une nouvelle connexion reste sans réponse (le câble est muet pour tout le monde) et n'écrit rien.
+    const r = await lireEtat(cfg({ delaiGlobalMs: 400 }), transportTcp(srv.port));
+    assert.equal(r.ok, false);
+    assert.equal(srv.stats.ecritures, 1, 'aucune seconde écriture');
+    assert.deepEqual(lignes.filter((l) => l.includes('écriture reçue')), ['écriture reçue (1)']);
+    assert.ok(!lignes.join(' ').includes('05:10'), 'le journal ne contient pas la valeur écrite');
+  }, { silenceApresEcriture: true, journal: (l) => lignes.push(l) });
+});
+
+test("sans l'option de silence, l'écriture est comptée une fois et la relecture aboutit", async () => {
+  await avecServeur(async (srv) => {
+    const w = await programmer(cfg(), transportTcp(srv.port), { allumage: '05:10' });
+    assert.equal(w.ok, true, JSON.stringify(w));
+    assert.equal(srv.stats.ecritures, 1);
+  });
 });
