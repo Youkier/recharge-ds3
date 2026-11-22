@@ -26,32 +26,25 @@
     <string name="erreur_identifiant">Identifiant invalide : lettres, chiffres, tiret et tiret bas seulement.</string>
     <string name="erreur_cle">Il manque des caractères : la clé en compte 16.</string>
     <string name="erreur_enregistrement">L\'enregistrement a échoué. Réessayez ; si cela persiste, redémarrez le téléphone.</string>
-    <!-- Attente en arrière-plan (service AttenteWifi) : textes FIXES ; seule l'heure HH:MM, validée, vient de la page. -->
+    <!-- Attente en arrière-plan (service AttenteWifi) : textes FIXES ; seules les heures HH:MM, validées, viennent de la page
+         (début %1$s, fin %2$s). Tout échec donne le début ET la fin à régler à la main. -->
     <string name="canal_attente">Programmation en attente</string>
     <string name="canal_resultat">Résultat de la programmation</string>
     <string name="attente_titre">En attente du Wi-Fi et du câble</string>
-    <string name="attente_texte">Programmation de %1$s dès que le câble répond</string>
+    <string name="attente_texte">Programmation de %1$s dès que le câble répond (10 min au plus)</string>
+    <string name="attente_envoi_titre">Envoi au câble en cours</string>
+    <string name="attente_envoi_texte">Programmation de %1$s : l\'envoi ne peut plus être annulé</string>
     <string name="resultat_ok_titre">Charge programmée : démarrage %1$s</string>
-    <string name="resultat_ok_texte">Relu sur le câble. Branchez la voiture avant %1$s : sinon la charge ne démarrera pas.</string>
-    <string name="resultat_aucune_texte">Demain soir, reprogrammez : sinon la voiture ne chargera pas.</string>
+    <string name="resultat_ok_texte">Relu sur le câble, fin %2$s. Branchez la voiture avant %1$s : sinon la charge ne démarrera pas.</string>
     <string name="resultat_aucune_titre">Pas de charge cette nuit</string>
-    <string name="resultat_tardif_titre">Heure de début dépassée : charge programmée à %1$s</string>
+    <string name="resultat_aucune_texte">Demain soir, reprogrammez : sinon la voiture ne chargera pas.</string>
+    <string name="resultat_tardif_titre">Heure de début dépassée : charge programmée de %1$s à %2$s</string>
     <string name="resultat_tardif_texte">Relu sur le câble. Branchez la voiture avant %1$s. Demain soir, reprogrammez : cette plage se répète chaque nuit.</string>
     <string name="resultat_trop_tard_titre">Trop tard pour charger</string>
     <string name="resultat_trop_tard_texte">Le départ est trop proche : rien n\'a été modifié sur le câble. Pour charger quand même, démarrez la charge à la main dans Smart Life.</string>
     <string name="resultat_ko_titre">Programmation non faite</string>
-    <string name="resultat_a_la_main">À régler à la main dans Smart Life : début %1$s.</string>
-    <string name="resultat_verifier">Vérifiez dans Smart Life ; sinon réglez le début à %1$s.</string>
+    <string name="resultat_a_la_main">À régler à la main dans Smart Life : début %1$s, fin %2$s.</string>
+    <string name="resultat_verifier">Vérifiez dans Smart Life > charge différée : début %1$s, fin %2$s, activée.</string>
     <string name="resultat_annulee_titre">Attente annulée</string>
     <string name="resultat_inconnu_titre">Résultat inconnu</string>
-    <string name="resultat_fermee_titre">Programmation non envoyée</string>
-    <string name="resultat_fermee_texte">L\'application a été fermée. À régler à la main dans Smart Life : début %1$s.</string>
-    <!-- Variantes sans heure : la page n'a pas pu la calculer (attenteFin sans « heure »). -->
-    <string name="resultat_ok_titre_sans_heure">Charge programmée</string>
-    <string name="resultat_ok_texte_sans_heure">Relu sur le câble. Branchez la voiture avant l\'heure de début : sinon la charge ne démarrera pas.</string>
-    <string name="resultat_tardif_titre_sans_heure">Heure de début dépassée : charge programmée</string>
-    <string name="resultat_tardif_texte_sans_heure">Relu sur le câble. Branchez la voiture avant le début de la charge. Demain soir, reprogrammez : cette plage se répète chaque nuit.</string>
-    <string name="resultat_a_la_main_sans_heure">À régler à la main dans Smart Life.</string>
-    <string name="resultat_verifier_sans_heure">Vérifiez dans Smart Life.</string>
-    <string name="resultat_fermee_texte_sans_heure">L\'application a été fermée. À régler à la main dans Smart Life.</string>
 </resources>
