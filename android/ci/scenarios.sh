@@ -740,7 +740,7 @@ echo "OK  S22 annulation depuis la notification"
 # après le retour du Wi-Fi écran éteint, alors qu'il passe sur API 35. En attendant le diagnostic (s21-connectivite.txt,
 # logcat-appli-s21.txt), S21 est relevé sans bloquer sur API 36 seulement. À retirer pour la 0.5.1.
 API_NIVEAU="$(adb shell getprop ro.build.version.sdk | tr -d '\015')"
-if [ "$API_NIVEAU" = 36 ]; then S21_DEFAUT=1; else S21_DEFAUT=0; fi
+S21_DEFAUT=0 # exception API 36 retirée : la cause (Wi-Fi non reconnecté écran éteint) est traitée plus bas, sur toutes les versions
 S21_ATTENDU_ECHEC="${S21_ATTENDU_ECHEC:-$S21_DEFAUT}"
 etape "S21 Attente écran éteint et verrouillé 330 s, puis envoi au retour du Wi-Fi : notification « Charge programmée » au plus 2 min après"
 lancer_faux
@@ -770,6 +770,14 @@ adb shell svc wifi enable
 DELAI_NOTIF="$(attendre_notification_diag "harge programmée" 180 "$SORTIE/s21-connectivite.txt" || true)"
 diag_logcat_appli "$SORTIE/logcat-appli-s21.txt"
 grep -c "ESSAI.*pilote" "$SORTIE/logcat-appli-s21.txt" > /dev/null || echo "S21 : aucune ligne du pilote dans le journal de l'appli (pilote non lancé ?)"
+# Diagnostic du 22/11 (s21-connectivite.txt, API 35) : écran éteint, l'émulateur réactive le Wi-Fi mais reste « Wifi is not
+# connected » pendant 180 s ; le pilote, lui, tourne (journal toutes les 10 s) et attend le réseau. Sans réseau, aucun envoi
+# n'est possible : ce cas est une limite de l'émulateur, relevée sans bloquer. Wi-Fi CONNECTÉ et pas d'envoi = vrai échec.
+WIFI_FIN_S21="$(adb shell cmd wifi status 2> /dev/null | tr -d '\015' | grep -m1 -o 'Wifi is [a-z ]*connected' || true)"
+if [ -z "$DELAI_NOTIF" ] && [ "$WIFI_FIN_S21" = "Wifi is not connected" ]; then
+  S21_ATTENDU_ECHEC=1
+  releve "S21 : l'émulateur n'a pas reconnecté le Wi-Fi écran éteint en 180 s (limite de l'émulateur, pilote vivant : voir logcat-appli-s21.txt)"
+fi
 if [ -z "$DELAI_NOTIF" ] && [ "$S21_ATTENDU_ECHEC" = 1 ]; then
   echo "CONNU S21 : aucune notification 180 s après le retour du Wi-Fi" | tee -a "$ATTENTE_RESUME"
   adb shell input keyevent KEYCODE_SLEEP > /dev/null 2>&1 || true
