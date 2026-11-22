@@ -80,3 +80,7 @@ a.bouton { display: inline-flex; align-items: center; min-height: 2.75rem; paddi
 main h2 { margin-top: 1.5rem; }
 main .bloc h2 { margin-top: 0; }
 .a-sourcer { border: 2px dashed var(--alerte); border-radius: 6px; padding: .5rem .75rem; color: var(--alerte); font-weight: 600; }
+.exemple { background: var(--carte); border-left: 6px solid var(--accent); border-radius: 6px; padding: .5rem 1rem; margin: .75rem 0; }
+.aide-provisoire { color: var(--alerte); font-weight: 600; margin: .25rem 0; }
+.resultat.provisoire { border-left-style: dashed; }
+.avis[role="note"] { margin: .75rem 0; }

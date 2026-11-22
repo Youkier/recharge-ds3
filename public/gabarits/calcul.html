@@ -2,8 +2,30 @@
 
 <form id="calcul" class="calcul" novalidate data-phc="{{phc}}" data-php="{{php}}"{{lien_voiture}}>
 
-<details id="reglages" class="bloc" open>
-<summary id="resume-reglages">Mes réglages (trois questions)</summary>
+<section class="bloc" id="bloc-soir" aria-labelledby="titre-soir">
+<h2 id="titre-soir">Ce soir</h2>
+<div class="champ"><label for="soc">Batterie à l'arrivée (%)</label>
+<input id="soc" type="text" inputmode="decimal" autocomplete="off" placeholder="par exemple 38"></div>
+<div class="champ"><label for="target">Batterie visée (%)</label>
+<input id="target" type="text" inputmode="decimal" autocomplete="off" value="80">
+<p class="aide">80 % par défaut ; mettez 100 avant un long trajet.</p></div>
+<div id="bandeau-heure" class="avis" role="note" hidden></div>
+<div id="resultat" class="resultat" aria-live="polite" data-statut="attente">
+<p>Saisissez la batterie à l'arrivée pour voir l'heure de début de charge.</p>
+</div>
+<div id="calcule-avec" class="calcule-avec" hidden>
+<p class="aide" id="texte-calcule-avec"></p>
+<button type="button" id="modifier-reglages">Modifier les réglages</button>
+</div>
+<div id="partage" class="partage" hidden>
+<h3>Ce que vous économisez</h3>
+<ul id="chiffres"></ul>
+<p class="aide" id="mode-calcul"></p>
+</div>
+</section>
+
+<details id="reglages" class="bloc">
+<summary id="resume-reglages">Régler ma voiture, ma recharge et mes heures (trois questions)</summary>
 <p id="etat-reglages" class="aide" role="status"></p>
 
 <fieldset>
@@ -80,24 +102,4 @@
 <p><button type="button" id="valider">Valider mes réglages</button></p>
 </details>
 
-<section class="bloc" id="bloc-soir" aria-labelledby="titre-soir">
-<h2 id="titre-soir">Ce soir</h2>
-<div class="champ"><label for="soc">Batterie à l'arrivée (%)</label>
-<input id="soc" type="text" inputmode="decimal" autocomplete="off" placeholder="par exemple 38"></div>
-<div class="champ"><label for="target">Batterie visée (%)</label>
-<input id="target" type="text" inputmode="decimal" autocomplete="off" value="80">
-<p class="aide">80 % par défaut ; mettez 100 avant un long trajet.</p></div>
-<div id="resultat" class="resultat" aria-live="polite" data-statut="attente">
-<p>Saisissez la batterie à l'arrivée pour voir l'heure de début de charge.</p>
-</div>
-<div id="calcule-avec" class="calcule-avec" hidden>
-<p class="aide" id="texte-calcule-avec"></p>
-<button type="button" id="modifier-reglages">Modifier les réglages</button>
-</div>
-<div id="partage" class="partage" hidden>
-<h3>Ce que vous économisez</h3>
-<ul id="chiffres"></ul>
-<p class="aide" id="mode-calcul"></p>
-</div>
-</section>
 </form>

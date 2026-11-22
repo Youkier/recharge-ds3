@@ -70,9 +70,29 @@ export function resumeReglages(p) {
 }
 
 // Rend le modèle de vue : { statut, titre, message, lignes:[[libellé, valeur]], champ, prixManquants, chiffres }.
-export function resultat(brut, soc) {
+// Valeurs d'un résultat provisoire : voiture de 50 kWh utiles, batterie à 38 %.
+export const CAP_PROVISOIRE = "50", SOC_PROVISOIRE = "38";
+
+// Comme resultat(), mais une capacité ou une batterie manquante est remplacée par une valeur par défaut : le résultat est alors
+// marqué provisoire (vue.provisoire = phrase à afficher). Une autre saisie invalide reste une erreur, sans résultat provisoire.
+export function resultatAvecDefauts(brut, soc, soir) {
+  var b = Object.assign({}, brut || {}), s = soc, voiture = false, batterie = false;
+  if (vide(b.cap)) { b.cap = CAP_PROVISOIRE; voiture = true; }
+  if (vide(s)) { s = SOC_PROVISOIRE; batterie = true; }
+  var vue = resultat(b, s, soir);
+  vue.provisoire = "";
+  if (vue.statut === "err" || (!voiture && !batterie)) return vue;
+  vue.chiffres = null; // jamais de chiffres à partager calculés avec des valeurs par défaut
+  vue.provisoire = voiture
+    ? "Résultat provisoire : calculé avec une voiture de " + CAP_PROVISOIRE + " kWh utiles" + (batterie ? " et une batterie à " + SOC_PROVISOIRE + " %" : "") + ". Réglez votre voiture pour un résultat exact."
+    : "Résultat provisoire : calculé avec une batterie à " + SOC_PROVISOIRE + " %. Saisissez votre batterie à l'arrivée.";
+  return vue;
+}
+
+// soir : date du soir (voir calc.js, nuitChangementHeure) ; facultative.
+export function resultat(brut, soc, soir) {
   var lu = lireReglages(brut, soc);
-  var vue = { statut: "", titre: "", message: "", lignes: [], champ: null, prixManquants: false, chiffres: null, resume: "" };
+  var vue = { statut: "", titre: "", message: "", lignes: [], champ: null, prixManquants: false, chiffres: null, resume: "", bandeau: "", provisoire: "" };
   if (lu.erreurs.length) {
     vue.statut = "err";
     vue.titre = "Une saisie est à corriger";
@@ -81,7 +101,9 @@ export function resultat(brut, soc) {
     return vue;
   }
   var p = lu.p, prix = lu.prix;
-  var r = plan(p);
+  var nuit = nuitChangementHeure(soir);
+  vue.bandeau = texteChangementHeure(nuit);
+  var r = plan(nuit ? Object.assign({}, p, { nuit: nuit }) : p);
   vue.statut = r.status;
   if (r.status !== "err") vue.resume = resumeReglages(p);
   vue.prixManquants = !prix;
@@ -268,8 +290,12 @@ function demarrer() {
     res.textContent = "";
     res.dataset.statut = vue.statut || "attente";
     function el(tag, texte, classe) { var e = document.createElement(tag); if (texte) e.textContent = texte; if (classe) e.className = classe; return e; }
+    res.classList.toggle("provisoire", !!vue.provisoire);
     res.appendChild(el("p", vue.titre, "grand"));
+    if (vue.provisoire) res.appendChild(el("p", vue.provisoire, "aide-provisoire"));
     if (vue.message) res.appendChild(el("p", vue.message));
+    var bh = $("bandeau-heure");
+    bh.textContent = vue.bandeau || ""; bh.hidden = !vue.bandeau;
     if (vue.lignes.length) {
       var dl = el("dl", "", "details");
       vue.lignes.forEach(function (l) { dl.appendChild(el("dt", l[0])); dl.appendChild(el("dd", l[1])); });
@@ -285,7 +311,7 @@ function demarrer() {
       });
       res.appendChild(bt);
     }
-    if (vue.prixManquants && (vue.statut === "ok" || vue.statut === "short")) {
+    if (vue.prixManquants && !vue.provisoire && (vue.statut === "ok" || vue.statut === "short")) {
       res.appendChild(el("p", "Saisissez vos prix de l'électricité (ils figurent sur votre facture) pour voir le coût de la nuit et l'économie.", "aide"));
       var bp = el("button", "Saisir mes prix"); bp.type = "button";
       bp.addEventListener("click", function () { $("reglages").open = true; $("avance").open = true; $("pHC").focus(); });
@@ -303,15 +329,21 @@ function demarrer() {
     $("mode-calcul").textContent = vue.chiffres ? modeCalcul(vue.chiffres) : "";
   }
 
+  // Soir de la nuit calculée (changement d'heure) : ?soir=AAAA-MM-JJ en local seulement, sinon la date du téléphone.
+  function soirDuCalcul(b) {
+    var sim = soirSimule(location.search, location.hostname);
+    if (sim) return sim;
+    return heureOk(b.hcStart) && heureOk(b.hcEnd) ? soirDe(new Date(), b.hcStart, b.hcEnd) : new Date();
+  }
+
   function recalculer() {
     var b = lireBrut();
     zones(b);
     var auto = effAuto(nombre(b.amp), nombre(b.volt));
     $("info-eff").textContent = isFinite(auto) ? "Automatique : " + auto + " % selon le courant." : "";
     enregistrer(b);
-    var soc = $("soc").value;
-    if (vide(soc)) { afficher({ statut: "attente", titre: "Saisissez la batterie à l'arrivée", message: "L'heure de début de charge s'affichera ici.", lignes: [], champ: null, prixManquants: false, chiffres: null }); return; }
-    afficher(resultat(b, soc));
+    // Sans batterie saisie ni voiture choisie : résultat provisoire aux valeurs par défaut, signalé comme tel.
+    afficher(resultatAvecDefauts(b, $("soc").value, soirDuCalcul(b)));
   }
 
   function restaurer(s, defautsPrix) {
@@ -424,7 +456,7 @@ function demarrer() {
     if (!pret) return;
     var lu = lireReglages(lireBrut());
     if (lu.erreurs.length) {
-      afficher({ statut: "err", titre: "Une saisie est à corriger", message: lu.erreurs[0].message, lignes: [], champ: lu.erreurs[0].id, prixManquants: false, chiffres: null });
+      afficher({ statut: "err", titre: "Une saisie est à corriger", message: lu.erreurs[0].message, lignes: [], champ: lu.erreurs[0].id, prixManquants: false, chiffres: null, bandeau: "", provisoire: "" });
       return;
     }
     $("reglages").open = false;
