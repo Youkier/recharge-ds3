@@ -358,6 +358,25 @@ class PiloteAttenteTest {
         assertEquals("inactive", Banc(Env(), stock = b.stock).pilote.etat()["phase"])
     }
 
+    @Test fun uneAttenteTueeRecemmentEstNonSuivieAvecUneHorlogeRealiste() {
+        // Horloge d'un vrai téléphone (millisecondes depuis 1970) : l'attente perdue n'est pas prise pour un vieux résultat (bug de la CI du 22/11).
+        val t0 = 1_795_000_000_000L
+        val b = banc({ muet() })
+        b.t = t0
+        b.pilote.demarrer(demande, manuelle)
+        val b2 = Banc(Env(), stock = b.stock).also { it.t = t0 + 5_000 }
+        val e = b2.pilote.etat()
+        assertEquals("terminee", e["phase"]); assertEquals("non_suivie", resultat(e)["erreur"])
+        // Un résultat terminé garde sa vraie date de fin.
+        val c = banc({ faux() })
+        c.t = t0
+        c.demarrerEtLancer()
+        val c2 = Banc(Env(), stock = c.stock).also { it.t = t0 + 3_600_000 }
+        assertEquals("terminee", c2.pilote.etat()["phase"])
+        c2.t = t0 + 13 * 3_600_000L
+        assertEquals("inactive", c2.pilote.etat()["phase"])
+    }
+
     @Test fun unResultatNonVuSurvitAuRedemarrageJusquAuAcquittement() {
         val b = banc({ faux() })
         b.demarrerEtLancer()

@@ -396,7 +396,8 @@ class PiloteAttente(
         action = a
         manuel = h
         debutMs = (m["debut"] as? Long) ?: 0L
-        termineMs = (m["termine_ms"] as? Long) ?: debutMs // attente perdue : datée de son début
+        // Résultat déjà là : daté de sa fin. Attente perdue (jamais terminée : termine_ms vaut 0) : datée de son début.
+        termineMs = if (p == Phase.TERMINEE) ((m["termine_ms"] as? Long)?.takeIf { it > 0 } ?: debutMs) else debutMs
         phase = Phase.TERMINEE
         // Un résultat déjà là (page qui ne l'a pas encore vu) est gardé ; une attente en cours est perdue : suivi perdu.
         resultat = (if (p == Phase.TERMINEE) JsonStrict.objet(m["resultat"]) else null) ?: erreur("non_suivie")

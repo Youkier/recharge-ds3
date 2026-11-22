@@ -11,7 +11,7 @@
 # La clé factice et l'identifiant factice sont saisis dans l'écran natif par uiautomator + input. Depuis la v0.3 ils sont
 # mémorisés chiffrés : on ne les ressaisit que pour changer de clé (données de l'appli effacées d'abord, pm clear).
 #
-# Cas atypiques de la revue UX du 2026-11-22 (S-A, S-B, S-D à S-G, S-J, S-K) : bloc placé avant S22, voir son en-tête.
+# Ordre : S1 à S17, puis S22 et S21 (essentiels, bloquants), S13, S14, S10d, captures ; puis les cas atypiques (S-A, S-B, S-D, S-E, S-F/K, S-J, S-G, S-N, S-C, S-I1, S-I2, S8), chacun lancé par « essayer » : son échec est consigné (synthese-echecs.txt) et on passe au suivant ; le script sort en échec à la fin si la synthèse n est pas vide.
 # Le faux câble y est relancé avec des options (tools/faux-cable-tcp.mjs : --plage, --delai-reponse, --silence-apres-ecriture) ;
 # tools/heure-page.mjs donne l'heure que la page calcule, pour régler le faux câble en conséquence.
 set -euo pipefail
@@ -40,6 +40,8 @@ nettoyer() {
   adb logcat -d -b crash > "$SORTIE/logcat-crash.txt" 2> /dev/null || true
   adb exec-out screencap -p > "$SORTIE/derniere-capture.png" 2> /dev/null || true
   adb shell uiautomator dump /sdcard/ui-final.xml > /dev/null 2>&1 && adb exec-out cat /sdcard/ui-final.xml > "$SORTIE/derniere-interface.xml" 2> /dev/null || true
+  # Le faux câble peut avoir été relancé dans un sous-shell (essayer) : le PID fait foi dans son fichier.
+  [ -f "${PID_FAUX:-/inexistant}" ] && FAUX_PID="$(cat "$PID_FAUX")"
   if [ -n "$FAUX_PID" ]; then kill "$FAUX_PID" 2> /dev/null || true; fi
   [ -n "${E0_PIN_POSE:-}" ] && e0_remettre
   adb shell cmd uimode night no > /dev/null 2>&1 || true
@@ -49,10 +51,50 @@ nettoyer() {
 trap nettoyer EXIT
 
 # En cas d'échec, l'écran du moment est déposé avec les captures (zéro si l'émulateur ne répond plus).
+# Dans un scénario lancé par « essayer » (SCENARIO_COURANT défini), l'échec est consigné dans la synthèse et ne fait sortir que le sous-shell.
+SYNTHESE="$SORTIE/synthese-echecs.txt"
+: > "$SYNTHESE"
+SCENARIO_COURANT=""
 echec() {
-  echo "ÉCHEC : $*" >&2
-  adb exec-out screencap -p > "$SORTIE/echec-ecran.png" 2> /dev/null || true
+  echo "ÉCHEC${SCENARIO_COURANT:+ $SCENARIO_COURANT} : $*" >&2
+  if [ -n "$SCENARIO_COURANT" ]; then
+    echo "ÉCHEC $SCENARIO_COURANT : $*" >> "$SYNTHESE"
+    adb exec-out screencap -p > "$SORTIE/echec-ecran-${SCENARIO_COURANT// /_}.png" 2> /dev/null || true
+  else
+    adb exec-out screencap -p > "$SORTIE/echec-ecran.png" 2> /dev/null || true
+  fi
   exit 1
+}
+
+# Remise en état de l'émulateur entre deux scénarios « atypiques » : Wi-Fi, thème clair, police 1.0, écran, code de verrouillage,
+# économiseur de batterie, faux câble par défaut, données de l'appli effacées (la clé est ressaisie par le scénario suivant).
+remettre_emulateur() {
+  adb shell svc wifi enable > /dev/null 2>&1 || true
+  adb shell cmd uimode night no > /dev/null 2>&1 || true
+  THEME_COURANT="clair"
+  adb shell settings put system font_scale 1.0 > /dev/null 2>&1 || true
+  e0_remettre
+  adb shell am force-stop "$PKG" > /dev/null 2>&1 || true
+  lancer_faux
+  [ -f "${PID_FAUX:-/inexistant}" ] && FAUX_PID="$(cat "$PID_FAUX")"
+  oublier_donnees
+  adb shell am start -W -n "$ACT" > /dev/null 2>&1 || true # appli relancée (écran de saisie, données effacées)
+  sleep 2
+}
+
+# essayer <nom> <fonction> : lance le scénario dans un sous-shell ; son échec est consigné (« ÉCHEC <nom> : … ») et le suivant passe.
+essayer() {
+  local nom="$1" fonction="$2" rc=0
+  set +e
+  ( SCENARIO_COURANT="$nom"; set -e; "$fonction" )
+  rc=$?
+  set -e
+  if [ "$rc" != 0 ]; then
+    # Échec par une commande sans « echec » (set -e) : consigné aussi, une seule fois.
+    grep -q "^ÉCHEC $nom : " "$SYNTHESE" || echo "ÉCHEC $nom : une commande a échoué (code $rc), voir le journal" | tee -a "$SYNTHESE" >&2
+    echo "=== $nom : ÉCHEC, remise en état de l'émulateur puis scénario suivant"
+  fi
+  remettre_emulateur
 }
 etape() { echo; echo "=== $*"; }
 # Utilisés dès S12 (et par les cas atypiques) : à définir avant tout scénario.
@@ -64,6 +106,7 @@ contient() { grep -F -q -- "$2" <<< "$1"; } # here-string : pas de SIGPIPE avec 
 # --- Faux câble ---
 node "$RACINE/tools/faux-cable-tcp.mjs" > "$SORTIE/faux-cable.log" 2>&1 &
 FAUX_PID=$!
+echo "$FAUX_PID" > "$SORTIE/faux.pid"
 for i in $(seq 1 50); do
   if ss -Htln "( sport = :6668 )" | grep -q 6668; then break; fi
   sleep 0.2
@@ -75,12 +118,18 @@ connexions_fermees_log() { grep -c "connexion fermée" "$SORTIE/faux-cable.log" 
 connexions_etablies() { ss -Htn state established "( sport = :6668 )" | wc -l | tr -d ' '; }
 
 # Relance le faux câble avec ces options (aucune : plage 03:30-06:00, réponses immédiates). Les points de données repartent de zéro.
+PID_FAUX="$SORTIE/faux.pid"
 lancer_faux() {
-  local i
-  if [ -n "$FAUX_PID" ]; then kill "$FAUX_PID" 2> /dev/null || true; wait "$FAUX_PID" 2> /dev/null || true; fi
+  local i ancien
+  ancien="$(cat "$PID_FAUX" 2> /dev/null || echo "$FAUX_PID")"
+  if [ -n "$ancien" ]; then
+    kill "$ancien" 2> /dev/null || true
+    for i in $(seq 1 25); do ss -Htln "( sport = :6668 )" | grep -q 6668 || break; sleep 0.2; done
+  fi
   FAUX_PID=""
   node "$RACINE/tools/faux-cable-tcp.mjs" "$@" >> "$SORTIE/faux-cable.log" 2>&1 &
   FAUX_PID=$!
+  echo "$FAUX_PID" > "$PID_FAUX"
   for i in $(seq 1 50); do
     if ss -Htln "( sport = :6668 )" | grep -q 6668; then echo "faux câble relancé (pid $FAUX_PID), options : ${*:-aucune}"; return 0; fi
     sleep 0.2
@@ -501,84 +550,9 @@ ligne_vue page-programmer && echec "S17 : envoi parti alors que le câble est é
 capturer "clair-11-attente-cable"
 node "$RACINE/tools/faux-cable-tcp.mjs" >> "$SORTIE/faux-cable.log" 2>&1 &
 FAUX_PID=$!
+echo "$FAUX_PID" > "$PID_FAUX"
 L="$(attendre_essai page-programmer 90)"
 verifier "S17 envoi dès que le câble répond" "$L" "l.ok === true && $FIN_PAGE"
-
-etape "S13 Vraie page, nouvelle clé (données effacées, adresse inconnue) : « Câble à localiser », « Programmer » n'envoie rien"
-demarrer_page "$CLE_KO"
-L="$(attendre_essai page-etat 60)"
-verifier "S13 état sans adresse" "$L" 'l.etat === "sans_adresse"'
-L="$(attendre_essai page-chercher 150)"
-verifier "S13 recherche automatique (clé refusée partout)" "$L" 'l.auto === true && l.ok === false'
-adb logcat -c
-toucher_web "Ajouter 1 %"
-toucher_web "Programmer la charge"
-sleep 3
-ligne_vue page-programmer && echec "S13 : envoi lancé alors que le câble est à localiser"
-capturer "clair-7-page-a-localiser"
-demarrer_page "$CLE_OK"
-L="$(attendre_essai page-chercher 150)"
-verifier "S13 recherche automatique après une nouvelle clé" "$L" 'l.auto === true && l.ok === true'
-
-etape "S14 Vraie page, clé refusée à l'adresse retenue : pastille « clé », « Programmer » n'envoie rien"
-# Nouvelle clé saisie SANS effacer les données : l'adresse retenue est gardée.
-adb logcat -c
-adb shell am force-stop "$PKG"
-adb shell am start -W -n "$ACT" --es action cle > /dev/null
-saisir_cle "$CLE_KO"
-CLE_ENREGISTREE="$CLE_KO"
-sleep 2
-demarrer_page "$CLE_KO"
-L="$(attendre_essai page-etat 60)"
-verifier "S14 état clé refusée" "$L" 'l.etat === "cle"'
-adb logcat -c
-toucher_web "Ajouter 1 %"
-toucher_web "Programmer la charge"
-sleep 3
-ligne_vue page-programmer && echec "S14 : envoi lancé alors que la clé est refusée"
-capturer "clair-8-page-cle-refusee"
-demarrer_page "$CLE_OK"
-L="$(attendre_essai page-chercher 150)"
-verifier "S14 retour à la bonne clé" "$L" 'l.ok === true'
-
-etape "S10d Oublier le câble : confirmation, puis écran de saisie et fichier vidé"
-adb logcat -c
-adb shell am force-stop "$PKG"
-adb shell am start -W -n "$ACT" --es action cle > /dev/null
-toucher_apres_defilement bouton_oublier
-toucher button1
-sleep 2
-formulaire_affiche || echec "S10d : l'écran de saisie n'est pas affiché après « Oublier »"
-printf '%s' "$(fichier_cable)" | grep -q 'name="bloc"' && echec "S10d : le bloc est encore présent après « Oublier »"
-CLE_ENREGISTREE=""
-echo "OK  S10d oublier"
-
-# --- Captures, en clair puis en sombre : écran natif, accueil de la page, résultat ---
-for THEME in clair sombre; do
-  etape "S7 Captures en thème $THEME"
-  mode_theme "$THEME"
-  adb logcat -c
-  adb shell am force-stop "$PKG"
-  oublier_donnees
-  adb shell am start -W -n "$ACT" > /dev/null
-  centre champ_cle > /dev/null
-  capturer "${THEME}-1-ecran-natif"
-  saisir_cle "$CLE_OK"
-  CLE_ENREGISTREE="$CLE_OK"
-  sleep 3
-  capturer "${THEME}-2-accueil"
-  demarrer lire 10.0.2.2
-  L="$(attendre_essai lire 60)"
-  verifier "S7 résultat ($THEME)" "$L" 'l.ok === true'
-  sleep 1
-  capturer "${THEME}-3-resultat"
-done
-mode_theme clair
-demarrer lire 10.0.2.2 "" "$CLE_KO"
-L="$(attendre_essai lire 60)"
-verifier "S7 résultat clé refusée" "$L" 'l.erreur === "cle"'
-sleep 1
-capturer "clair-4-resultat-cle-refusee"
 
 # --- Attente tenue par le natif (lot E3) : l'essai de faisabilité E0 (WebView encore en vie en arrière-plan) est retiré, S21 est le vrai test ---
 # --- Outils communs de l'attente en arrière-plan (S22, S21, S-I) : code de verrouillage, écran, batterie ---
@@ -669,6 +643,204 @@ toucher_texte_systeme() {
 }
 ATTENTE_RESUME="$SORTIE/attente-resume.txt"
 : > "$ATTENTE_RESUME"
+
+# --- Attente tenue par le code natif (lot E3) sur la VRAIE page : service AttenteWifi + PiloteAttente ---
+# La page n'est qu'une vue : elle démarre l'attente (attenteDebut), relit son état (attenteEtat) et affiche ce que le natif rend. Les lignes
+# ESSAI de la page : page-attente-wifi {debut | cable | recherche | envoi | annulee | reprise | refusee | fin} puis page-programmer.
+attendre_notification() { # attendre_notification <texte> [délai en s] : écrit les secondes écoulées ; rend 1 si absente
+  local texte="$1" delai="${2:-120}" i
+  for i in $(seq 0 "$delai"); do
+    if notification_contient "$texte"; then echo "$i"; return 0; fi
+    sleep 1
+  done
+  return 1
+}
+service_au_premier_plan() { # service_au_premier_plan <fichier de trace>
+  adb shell dumpsys activity services "$PKG" | tr -d '\015' > "$1" || true
+  grep -q "isForeground=true" "$1"
+}
+service_en_cours() { grep -q "ServiceRecord{[^}]*AttenteWifi" <(adb shell dumpsys activity services "$PKG" | tr -d '\015'); }
+# Commence une attente : Wi-Fi coupé, % modifié (la plage demandée diffère de celle du câble), « Programmer » touché.
+attente_commencer() { # attente_commencer <nom>
+  adb shell svc wifi disable
+  sleep 5
+  adb logcat -c
+  toucher_web "Ajouter 1 %"
+  toucher_web "Programmer la charge"
+  L="$(attendre_etat page-attente-wifi debut 40)"
+  verifier "$1 attente commencée" "$L" 'l.etat === "debut"'
+  sleep 3 # laisse au natif le temps de démarrer son service
+}
+
+etape "S22 Attente annulée depuis la notification : rien n'est envoyé, notification « Attente annulée », puis résultat à la réouverture"
+lancer_faux
+demarrer_page
+page_prete "S22"
+accorder_notifications # après demarrer_page : pm clear retire les permissions
+attente_commencer "S22"
+service_au_premier_plan "$SORTIE/attente-services-s22.txt" || echec "S22 : service d'attente absent ou pas au premier plan"
+notification_contient "En attente du Wi-Fi et du câble" || echec "S22 : notification d'attente absente"
+notification_contient "10 min au plus" || echec "S22 : la notification d'attente ne dit pas la durée maximale"
+# L'appli passe en arrière-plan : la notification de résultat n'est publiée que si l'appli n'est pas visible.
+adb shell input keyevent KEYCODE_HOME
+sleep 2
+adb shell cmd statusbar expand-notifications
+sleep 2
+capturer "clair-12-notification-attente"
+toucher_texte_systeme "Annuler" "En attente du Wi-Fi"
+sleep 4
+ligne_vue page-programmer && echec "S22 : envoi parti après « Annuler » dans la notification"
+notification_contient "Attente annulée" || echec "S22 : notification « Attente annulée » absente"
+notification_contient "À régler à la main dans Smart Life : début" || echec "S22 : la notification d'annulation ne donne pas le début à régler à la main"
+capturer "clair-13-notification-annulee"
+adb shell cmd statusbar collapse
+adb shell svc wifi enable
+sleep 10
+ligne_vue page-programmer && echec "S22 : envoi parti au retour du Wi-Fi après « Annuler »"
+service_en_cours && echec "S22 : le service tourne encore après l'annulation"
+# Réouverture : la page montre l'annulation, puis la notification est retirée.
+adb logcat -c
+adb shell am start -W -n "$ACT" > /dev/null
+L="$(attendre_etat page-attente-wifi fin 40)"
+verifier "S22 annulation vue par la page à la réouverture" "$L" 'l.ok === false && l.code === "local_attente_annulee"'
+sleep 3
+notification_contient "Attente annulée" && echec "S22 : la notification de résultat reste après que la page l'a montré"
+echo "S22 : annulation par la notification conforme" >> "$ATTENTE_RESUME"
+echo "OK  S22 annulation depuis la notification"
+
+# S21 est BLOQUANT depuis E3 (le pilote natif tient l'attente : la WebView gelée écran éteint n'y change rien).
+S21_ATTENDU_ECHEC="${S21_ATTENDU_ECHEC:-0}"
+etape "S21 Attente écran éteint et verrouillé 330 s, puis envoi au retour du Wi-Fi : notification « Charge programmée » au plus 2 min après"
+lancer_faux
+# 330 s : au-delà de 5 min, la WebView d'une page cachée est gelée ; le pilote natif ne dépend pas d'elle.
+adb shell locksettings set-pin "$PIN_E0" > /dev/null
+E0_PIN_POSE=1
+adb shell settings put secure lock_screen_lock_after_timeout 0 # verrouillé dès l'extinction de l'écran
+adb shell dumpsys battery unplug
+adb shell svc power stayon false
+e0_deverrouiller
+# Clé ressaisie code posé (clé du magasin recréée dans ces conditions).
+oublier_donnees
+demarrer_page
+page_prete "S21"
+accorder_notifications
+attente_commencer "S21"
+adb shell input keyevent KEYCODE_SLEEP
+sleep 5
+service_au_premier_plan "$SORTIE/attente-services-s21.txt" || echec "S21 : service d'attente absent ou pas au premier plan, écran éteint"
+ECR_AVANT="$(ecritures_log)"
+sleep 325
+ligne_vue page-programmer && echec "S21 : envoi parti sans Wi-Fi"
+[ "$(ecritures_log)" = "$ECR_AVANT" ] || echec "S21 : une écriture est arrivée au faux câble avant le retour du Wi-Fi"
+ECRAN_S21="$(adb shell dumpsys power | tr -d '\015' | grep -m1 -o 'mWakefulness=[A-Za-z]*' || true)"
+T0=$(date +%s)
+adb shell svc wifi enable
+DELAI_NOTIF="$(attendre_notification "harge programmée" 180 || true)"
+if [ -z "$DELAI_NOTIF" ] && [ "$S21_ATTENDU_ECHEC" = 1 ]; then
+  echo "CONNU S21 : aucune notification 180 s après le retour du Wi-Fi" | tee -a "$ATTENTE_RESUME"
+  adb shell input keyevent KEYCODE_SLEEP > /dev/null 2>&1 || true
+  e0_remettre
+  adb shell am force-stop "$PKG"
+else
+[ -n "$DELAI_NOTIF" ] || echec "S21 : notification « Charge programmée » absente 180 s après le retour du Wi-Fi"
+T1=$(date +%s)
+# L'écran doit être resté éteint jusqu'à l'envoi : c'est le pilote natif qui a envoyé, pas une page réveillée.
+ECRAN_ENVOI="$(adb shell dumpsys power | tr -d '\015' | grep -m1 -o 'mWakefulness=[A-Za-z]*' || true)"
+case "$ECRAN_ENVOI" in
+  mWakefulness=Asleep|mWakefulness=Dozing) ;;
+  *) echec "S21 : l'écran n'était plus éteint au moment de l'envoi ($ECRAN_ENVOI)" ;;
+esac
+[ $(( T1 - T0 )) -le 120 ] || echec "S21 : notification publiée $(( T1 - T0 )) s après le retour du Wi-Fi (critère : 2 min au plus)"
+echo "S21 : notification $(( T1 - T0 )) s après le retour du Wi-Fi, écran éteint et verrouillé depuis 330 s ($ECRAN_S21)" | tee -a "$ATTENTE_RESUME"
+adb shell dumpsys notification --noredact 2> /dev/null | tr -d '\015' | grep -E "android\.(title|text)=" | grep -v "^ *$" > "$SORTIE/attente-notifications-s21.txt" || true
+grep -q "début\|démarrage\|harge programmée" "$SORTIE/attente-notifications-s21.txt" || echec "S21 : texte de la notification de résultat inattendu"
+capturer "clair-14-notification-programmee"
+# Réveil : la page, rouverte, montre le résultat relu (jamais de faux OK : le natif l'a vérifié), puis la notification est retirée.
+e0_deverrouiller
+L="$(attendre_essai page-programmer 60)"
+verifier "S21 résultat montré au réveil" "$L" "l.ok === true && $FIN_PAGE"
+sleep 3
+notification_contient "harge programmée" && echec "S21 : la notification de résultat reste après que la page l'a montré"
+e0_remettre
+echo "OK  S21 attente écran verrouillé 330 s, notification au plus 2 min après le retour du Wi-Fi"
+fi
+
+etape "S13 Vraie page, nouvelle clé (données effacées, adresse inconnue) : « Câble à localiser », « Programmer » n'envoie rien"
+demarrer_page "$CLE_KO"
+L="$(attendre_essai page-etat 60)"
+verifier "S13 état sans adresse" "$L" 'l.etat === "sans_adresse"'
+L="$(attendre_essai page-chercher 150)"
+verifier "S13 recherche automatique (clé refusée partout)" "$L" 'l.auto === true && l.ok === false'
+adb logcat -c
+toucher_web "Ajouter 1 %"
+toucher_web "Programmer la charge"
+sleep 3
+ligne_vue page-programmer && echec "S13 : envoi lancé alors que le câble est à localiser"
+capturer "clair-7-page-a-localiser"
+demarrer_page "$CLE_OK"
+L="$(attendre_essai page-chercher 150)"
+verifier "S13 recherche automatique après une nouvelle clé" "$L" 'l.auto === true && l.ok === true'
+
+etape "S14 Vraie page, clé refusée à l'adresse retenue : pastille « clé », « Programmer » n'envoie rien"
+# Nouvelle clé saisie SANS effacer les données : l'adresse retenue est gardée.
+adb logcat -c
+adb shell am force-stop "$PKG"
+adb shell am start -W -n "$ACT" --es action cle > /dev/null
+saisir_cle "$CLE_KO"
+CLE_ENREGISTREE="$CLE_KO"
+sleep 2
+demarrer_page "$CLE_KO"
+L="$(attendre_essai page-etat 60)"
+verifier "S14 état clé refusée" "$L" 'l.etat === "cle"'
+adb logcat -c
+toucher_web "Ajouter 1 %"
+toucher_web "Programmer la charge"
+sleep 3
+ligne_vue page-programmer && echec "S14 : envoi lancé alors que la clé est refusée"
+capturer "clair-8-page-cle-refusee"
+demarrer_page "$CLE_OK"
+L="$(attendre_essai page-chercher 150)"
+verifier "S14 retour à la bonne clé" "$L" 'l.ok === true'
+
+etape "S10d Oublier le câble : confirmation, puis écran de saisie et fichier vidé"
+adb logcat -c
+adb shell am force-stop "$PKG"
+adb shell am start -W -n "$ACT" --es action cle > /dev/null
+toucher_apres_defilement bouton_oublier
+toucher button1
+sleep 2
+formulaire_affiche || echec "S10d : l'écran de saisie n'est pas affiché après « Oublier »"
+printf '%s' "$(fichier_cable)" | grep -q 'name="bloc"' && echec "S10d : le bloc est encore présent après « Oublier »"
+CLE_ENREGISTREE=""
+echo "OK  S10d oublier"
+
+# --- Captures, en clair puis en sombre : écran natif, accueil de la page, résultat ---
+for THEME in clair sombre; do
+  etape "S7 Captures en thème $THEME"
+  mode_theme "$THEME"
+  adb logcat -c
+  adb shell am force-stop "$PKG"
+  oublier_donnees
+  adb shell am start -W -n "$ACT" > /dev/null
+  centre champ_cle > /dev/null
+  capturer "${THEME}-1-ecran-natif"
+  saisir_cle "$CLE_OK"
+  CLE_ENREGISTREE="$CLE_OK"
+  sleep 3
+  capturer "${THEME}-2-accueil"
+  demarrer lire 10.0.2.2
+  L="$(attendre_essai lire 60)"
+  verifier "S7 résultat ($THEME)" "$L" 'l.ok === true'
+  sleep 1
+  capturer "${THEME}-3-resultat"
+done
+mode_theme clair
+demarrer lire 10.0.2.2 "" "$CLE_KO"
+L="$(attendre_essai lire 60)"
+verifier "S7 résultat clé refusée" "$L" 'l.erreur === "cle"'
+sleep 1
+capturer "clair-4-resultat-cle-refusee"
+
 
 # ======================================================================================================================
 # Cas atypiques de la revue UX du 2026-11-22 (docs/revue-ux-2026-11-22.md) : S-A premier lancement, S-B données effacées,
@@ -795,10 +967,15 @@ premier_lancement() {
   capturer "${theme}-${p}5-page-cable-pret"
 }
 
+scn_s_a() {
 etape "S-A Premier lancement complet, thème clair : saisies invalides, enregistrement, réglages par défaut, recherche, câble prêt"
 lancer_faux
 premier_lancement clair A
 
+}
+essayer "S-A" scn_s_a
+
+scn_s_b() {
 etape "S-B Données effacées : réglages utilisés, puis pm clear et relance (dans l'autre thème, pour les captures sombres de S-A)"
 demarrer_page
 page_prete "S-B"
@@ -836,6 +1013,10 @@ fi
 premier_lancement sombre A # même parcours que S-A, mais après un effacement des données : défauts et bandeau reviennent
 mode_theme clair
 
+}
+essayer "S-B" scn_s_b
+
+scn_s_d() {
 etape "S-D Coupure pendant l'envoi : le câble applique l'écriture puis ne répond plus : résultat incertain, heure manuelle, aucun second envoi"
 A39="$(node "$RACINE/tools/heure-page.mjs" heure 39)"
 lancer_faux --silence-apres-ecriture
@@ -856,6 +1037,10 @@ sleep 12 # le temps qu'un second envoi, s'il existait, arrive
 echo "OK  S-D une seule écriture, résultat incertain"
 lancer_faux
 
+}
+essayer "S-D" scn_s_d
+
+scn_s_e1() {
 etape "S-E1 Câble lent : réponses à 3 s, la première lecture (4 s) échoue, le second essai (8 s) aboutit"
 lancer_faux --delai-reponse=3000
 CONTACTS_AVANT="$(contacts_avec_donnees_log)"
@@ -867,6 +1052,10 @@ sleep 2
 attendre_texte_page "Câble prêt" 20
 capturer "clair-E1-cable-lent-pret"
 
+}
+essayer "S-E1" scn_s_e1
+
+scn_s_e2() {
 etape "S-E2 Câble très lent : réponses à 8 s, les deux essais échouent : pastille « Câble introuvable », rien n'est effacé"
 lancer_faux --delai-reponse=8000
 demarrer_page
@@ -877,7 +1066,12 @@ sleep 1
 capturer "clair-E2-cable-tres-lent"
 lancer_faux
 
+}
+essayer "S-E2" scn_s_e2
+
+scn_s_f() {
 etape "S-F Plage déjà présente sur le câble à l'ouverture (F1 identique, F2 différente, F3 pas de charge) ; S-K : bascule du thème sur F1"
+A39="$(node "$RACINE/tools/heure-page.mjs" heure 39)" # self-suffisant : S-D peut avoir échoué
 echo "heure calculée par la page pour 39 % : $A39"
 lancer_faux --plage="$A39-06:00"
 demarrer_page
@@ -927,7 +1121,7 @@ DUMP="$(ui_dump || true)"
 # Vérification bloquante : la confirmation du % survit à la bascule du thème (la page est rechargée, la WebView recréée).
 contient "$DUMP" "confirmez la batterie" && echec "S-K : après la bascule du thème, le % doit être confirmé de nouveau (la confirmation n'a pas survécu au rechargement)"
 if [ "$DECISION_F1" = normal ]; then
-  contient "$DUMP" "Déjà programmé à $A39" || echec "S-K : après la bascule du thème, le bouton n'est plus « Déjà programmé à $A39 »"
+  attendre_texte_page "Déjà programmé à $A39" 20 # la page relit la plage après la recréation : on attend, on ne photographie pas
 fi
 echo "OK  S-K la confirmation du % survit à la bascule du thème"
 mode_theme clair
@@ -956,6 +1150,10 @@ ecran_avec "Programmer la charge" "S-F3 : le bouton « Programmer la charge » e
 capturer "clair-F3-plage-pas-de-charge"
 lancer_faux
 
+}
+essayer "S-F" scn_s_f
+
+scn_s_j() {
 etape "S-J Police agrandie à 130 % et 200 % : accueil (puis Paramètres et écran natif à 200 %)"
 for ECH in 130 200; do
   adb shell settings put system font_scale "$(( ECH / 100 )).$(printf '%02d' $(( ECH % 100 )))"
@@ -979,6 +1177,10 @@ done
 adb shell settings put system font_scale 1.0
 sleep 1
 
+}
+essayer "S-J" scn_s_j
+
+scn_s_g() {
 etape "S-G « Démarrage tardif » (ou « Trop tard ») et « Pas de charge » : cartes de confirmation, thèmes clair et sombre"
 # Démarrage tardif (décision du 2026-11-22) : si l'heure calculée par la page est déjà passée pour le téléphone (entre elle et le
 # départ, 07:30, heure de Paris), le début écrit est maintenant + 10 min et la fin est min(début + durée du plan, 07:30) ; l'alerte
@@ -1050,38 +1252,14 @@ g_tardif sombre        # on redescend à la batterie du cas : l'état de la page
 mode_theme clair
 lancer_faux
 echo "OK  S-G cartes de confirmation"
+}
+essayer "S-G" scn_s_g
+
 echo
 echo "Constats non bloquants (cas atypiques) :"
 cat "$RELEVES"
 
-# --- Attente tenue par le code natif (lot E3) sur la VRAIE page : service AttenteWifi + PiloteAttente ---
-# La page n'est qu'une vue : elle démarre l'attente (attenteDebut), relit son état (attenteEtat) et affiche ce que le natif rend. Les lignes
-# ESSAI de la page : page-attente-wifi {debut | cable | recherche | envoi | annulee | reprise | refusee | fin} puis page-programmer.
-attendre_notification() { # attendre_notification <texte> [délai en s] : écrit les secondes écoulées ; rend 1 si absente
-  local texte="$1" delai="${2:-120}" i
-  for i in $(seq 0 "$delai"); do
-    if notification_contient "$texte"; then echo "$i"; return 0; fi
-    sleep 1
-  done
-  return 1
-}
-service_au_premier_plan() { # service_au_premier_plan <fichier de trace>
-  adb shell dumpsys activity services "$PKG" | tr -d '\015' > "$1" || true
-  grep -q "isForeground=true" "$1"
-}
-service_en_cours() { grep -q "ServiceRecord{[^}]*AttenteWifi" <(adb shell dumpsys activity services "$PKG" | tr -d '\015'); }
-# Commence une attente : Wi-Fi coupé, % modifié (la plage demandée diffère de celle du câble), « Programmer » touché.
-attente_commencer() { # attente_commencer <nom>
-  adb shell svc wifi disable
-  sleep 5
-  adb logcat -c
-  toucher_web "Ajouter 1 %"
-  toucher_web "Programmer la charge"
-  L="$(attendre_etat page-attente-wifi debut 40)"
-  verifier "$1 attente commencée" "$L" 'l.etat === "debut"'
-  sleep 3 # laisse au natif le temps de démarrer son service
-}
-
+scn_s_n() {
 etape "S-N Attente non suivie : processus tué pendant l'attente (économiseur de batterie, arrêt forcé), puis relance : la page le dit, avec début et fin"
 lancer_faux
 refuser_notifications # sans notification : le résultat n'est montré qu'à la réouverture
@@ -1110,6 +1288,10 @@ sleep 8
 ecran_sans "pas pu être suivie" "S-N : le message revient à chaque lancement (résultat non acquitté)"
 echo "OK  S-N attente non suivie"
 
+}
+essayer "S-N" scn_s_n
+
+scn_s_c() {
 etape "S-C Wi-Fi coupé avant « Programmer » : rien ne part pendant 60 s, puis succès au retour du Wi-Fi ; puis expiration (10 min, raccourcie par la version de mise au point)"
 lancer_faux
 refuser_notifications
@@ -1150,6 +1332,10 @@ adb shell svc wifi enable
 sleep 5
 echo "OK  S-C"
 
+}
+essayer "S-C" scn_s_c
+
+scn_s_i1() {
 etape "S-I1 Notifications refusées et appli balayée pendant l'attente : l'envoi part quand même, le résultat est montré à la réouverture"
 lancer_faux
 refuser_notifications
@@ -1188,99 +1374,10 @@ L="$(attendre_essai page-programmer 40)"
 verifier "S-I1 résultat montré à la réouverture" "$L" "l.ok === true && $FIN_PAGE"
 echo "OK  S-I1"
 
-etape "S22 Attente annulée depuis la notification : rien n'est envoyé, notification « Attente annulée », puis résultat à la réouverture"
-lancer_faux
-demarrer_page
-page_prete "S22"
-accorder_notifications # après demarrer_page : pm clear retire les permissions
-attente_commencer "S22"
-service_au_premier_plan "$SORTIE/attente-services-s22.txt" || echec "S22 : service d'attente absent ou pas au premier plan"
-notification_contient "En attente du Wi-Fi et du câble" || echec "S22 : notification d'attente absente"
-notification_contient "10 min au plus" || echec "S22 : la notification d'attente ne dit pas la durée maximale"
-# L'appli passe en arrière-plan : la notification de résultat n'est publiée que si l'appli n'est pas visible.
-adb shell input keyevent KEYCODE_HOME
-sleep 2
-adb shell cmd statusbar expand-notifications
-sleep 2
-capturer "clair-12-notification-attente"
-toucher_texte_systeme "Annuler" "En attente du Wi-Fi"
-sleep 4
-ligne_vue page-programmer && echec "S22 : envoi parti après « Annuler » dans la notification"
-notification_contient "Attente annulée" || echec "S22 : notification « Attente annulée » absente"
-notification_contient "À régler à la main dans Smart Life : début" || echec "S22 : la notification d'annulation ne donne pas le début à régler à la main"
-capturer "clair-13-notification-annulee"
-adb shell cmd statusbar collapse
-adb shell svc wifi enable
-sleep 10
-ligne_vue page-programmer && echec "S22 : envoi parti au retour du Wi-Fi après « Annuler »"
-service_en_cours && echec "S22 : le service tourne encore après l'annulation"
-# Réouverture : la page montre l'annulation, puis la notification est retirée.
-adb logcat -c
-adb shell am start -W -n "$ACT" > /dev/null
-L="$(attendre_etat page-attente-wifi fin 40)"
-verifier "S22 annulation vue par la page à la réouverture" "$L" 'l.ok === false && l.code === "local_attente_annulee"'
-sleep 3
-notification_contient "Attente annulée" && echec "S22 : la notification de résultat reste après que la page l'a montré"
-echo "S22 : annulation par la notification conforme" >> "$ATTENTE_RESUME"
-echo "OK  S22 annulation depuis la notification"
+}
+essayer "S-I1" scn_s_i1
 
-# S21 est BLOQUANT depuis E3 (le pilote natif tient l'attente : la WebView gelée écran éteint n'y change rien).
-S21_ATTENDU_ECHEC="${S21_ATTENDU_ECHEC:-0}"
-etape "S21 Attente écran éteint et verrouillé 330 s, puis envoi au retour du Wi-Fi : notification « Charge programmée » au plus 2 min après"
-lancer_faux
-# 330 s : au-delà de 5 min, la WebView d'une page cachée est gelée ; le pilote natif ne dépend pas d'elle.
-adb shell locksettings set-pin "$PIN_E0" > /dev/null
-E0_PIN_POSE=1
-adb shell settings put secure lock_screen_lock_after_timeout 0 # verrouillé dès l'extinction de l'écran
-adb shell dumpsys battery unplug
-adb shell svc power stayon false
-e0_deverrouiller
-# Clé ressaisie code posé (clé du magasin recréée dans ces conditions).
-oublier_donnees
-demarrer_page
-page_prete "S21"
-accorder_notifications
-attente_commencer "S21"
-adb shell input keyevent KEYCODE_SLEEP
-sleep 5
-service_au_premier_plan "$SORTIE/attente-services-s21.txt" || echec "S21 : service d'attente absent ou pas au premier plan, écran éteint"
-ECR_AVANT="$(ecritures_log)"
-sleep 325
-ligne_vue page-programmer && echec "S21 : envoi parti sans Wi-Fi"
-[ "$(ecritures_log)" = "$ECR_AVANT" ] || echec "S21 : une écriture est arrivée au faux câble avant le retour du Wi-Fi"
-ECRAN_S21="$(adb shell dumpsys power | tr -d '\015' | grep -m1 -o 'mWakefulness=[A-Za-z]*' || true)"
-T0=$(date +%s)
-adb shell svc wifi enable
-DELAI_NOTIF="$(attendre_notification "harge programmée" 180 || true)"
-if [ -z "$DELAI_NOTIF" ] && [ "$S21_ATTENDU_ECHEC" = 1 ]; then
-  echo "CONNU S21 : aucune notification 180 s après le retour du Wi-Fi" | tee -a "$ATTENTE_RESUME"
-  adb shell input keyevent KEYCODE_SLEEP > /dev/null 2>&1 || true
-  e0_remettre
-  adb shell am force-stop "$PKG"
-else
-[ -n "$DELAI_NOTIF" ] || echec "S21 : notification « Charge programmée » absente 180 s après le retour du Wi-Fi"
-T1=$(date +%s)
-# L'écran doit être resté éteint jusqu'à l'envoi : c'est le pilote natif qui a envoyé, pas une page réveillée.
-ECRAN_ENVOI="$(adb shell dumpsys power | tr -d '\015' | grep -m1 -o 'mWakefulness=[A-Za-z]*' || true)"
-case "$ECRAN_ENVOI" in
-  mWakefulness=Asleep|mWakefulness=Dozing) ;;
-  *) echec "S21 : l'écran n'était plus éteint au moment de l'envoi ($ECRAN_ENVOI)" ;;
-esac
-[ $(( T1 - T0 )) -le 120 ] || echec "S21 : notification publiée $(( T1 - T0 )) s après le retour du Wi-Fi (critère : 2 min au plus)"
-echo "S21 : notification $(( T1 - T0 )) s après le retour du Wi-Fi, écran éteint et verrouillé depuis 330 s ($ECRAN_S21)" | tee -a "$ATTENTE_RESUME"
-adb shell dumpsys notification --noredact 2> /dev/null | tr -d '\015' | grep -E "android\.(title|text)=" | grep -v "^ *$" > "$SORTIE/attente-notifications-s21.txt" || true
-grep -q "début\|démarrage\|harge programmée" "$SORTIE/attente-notifications-s21.txt" || echec "S21 : texte de la notification de résultat inattendu"
-capturer "clair-14-notification-programmee"
-# Réveil : la page, rouverte, montre le résultat relu (jamais de faux OK : le natif l'a vérifié), puis la notification est retirée.
-e0_deverrouiller
-L="$(attendre_essai page-programmer 60)"
-verifier "S21 résultat montré au réveil" "$L" "l.ok === true && $FIN_PAGE"
-sleep 3
-notification_contient "harge programmée" && echec "S21 : la notification de résultat reste après que la page l'a montré"
-e0_remettre
-echo "OK  S21 attente écran verrouillé 330 s, notification au plus 2 min après le retour du Wi-Fi"
-fi
-
+scn_s_i2() {
 etape "S-I2 Écran éteint 10 min avec l'économiseur de batterie : le service survit, l'envoi part au retour du Wi-Fi"
 # Attente de 500 s (réglable : S_I2_ATTENTE_S) puis retour du Wi-Fi, avec de la marge sur la fenêtre de 10 min.
 S_I2_ATTENTE_S="${S_I2_ATTENTE_S:-500}"
@@ -1312,8 +1409,13 @@ L="$(attendre_essai page-programmer 60)"
 verifier "S-I2 résultat montré au réveil" "$L" "l.ok === true && $FIN_PAGE"
 e0_remettre
 echo "OK  S-I2"
+}
+E0_PIN_POSE=1 # le sous-shell pose un code de verrouillage : remettre_emulateur le retire
+essayer "S-I2" scn_s_i2
+
 
 # --- Rien ne reste ouvert, rien d'interdit dans logcat ---
+scn_s8() {
 etape "S8 Aucune connexion restée ouverte"
 sleep 2
 [ "$(connexions_etablies)" = "0" ] || echec "S8 : des connexions restent établies vers le faux câble après les actions"
@@ -1324,6 +1426,9 @@ OUV="$(connexions_ouvertes_log)"; FER="$(connexions_fermees_log)"
 echo "connexions vues par le faux câble : ${OUV} ouvertes, ${FER} fermées (dont les sondes)"
 [ "$OUV" = "$FER" ] || echec "S8 : ouvertures et fermetures du faux câble différentes"
 [ "$OUV" -gt "$OUVERTES_AVANT_TOUT" ] || echec "S8 : le faux câble n'a vu aucune connexion"
+
+}
+essayer "S8" scn_s8
 
 etape "S9 Ni clé, ni identifiant, ni trame dans logcat"
 adb logcat -d > "$SORTIE/logcat-complet.txt"
@@ -1337,4 +1442,13 @@ fi
 rm -f "$SORTIE/logcat-complet.txt" # volumineux et sans intérêt s'il est propre
 
 echo
+echo
+echo "Constats non bloquants :"
+cat "$RELEVES"
+if [ -s "$SYNTHESE" ]; then
+  echo
+  echo "SCÉNARIOS EN ÉCHEC ($(wc -l < "$SYNTHESE" | tr -d ' ')) :"
+  cat "$SYNTHESE"
+  exit 1
+fi
 echo "TOUS LES SCÉNARIOS SONT PASSÉS ($(wc -l < "$LIGNES" | tr -d ' ') lignes ESSAI vérifiées)"
