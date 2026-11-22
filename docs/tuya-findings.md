@@ -256,3 +256,7 @@ Vérifié par lecture du code (https://raw.githubusercontent.com/vineetchoudhary
 - Session : fichier JSON (droits 600) contenant `user_code` et jetons (`access_token`, `refresh_token`), non chiffré dans la sonde CLI ; le cache de la version web est chiffré (Fernet), clé dans un fichier voisin.
 - Appels sortants hors Tuya : seulement la vérification de mise à jour (API GitHub Releases, aucune donnée de compte) et le superviseur Home Assistant local. Pas de télémétrie dans les fichiers lus. Le reste du code (`app.py`, `lan_scan.py`, paquet `tuya_local_key/`) n'a PAS été lu.
 Hypothèses : réutiliser le `CLIENT_ID` de Home Assistant dans une appli diffusée serait un usage d'identité d'un tiers, probablement contraire aux conditions de Tuya (non lues) ; fonctionnement sur notre câble non testé.
+
+## Répétition de la plage de charge différée (2026-11-22)
+
+La plage de charge différée du câble (dp 151, `ss`/`se`, `m` activée) **se répète chaque nuit** tant qu'elle n'est pas modifiée ou désactivée. Source : constat d'usage de Mathieu (Smart Life et charges nocturnes), rapporté le 2026-11-22 ; non vérifié par lecture des dp un matin après exécution. Conséquence : « Déjà programmé » (plage lue active et identique) est fondé ; un soir sans programmation, le câble rejoue la dernière plage.
