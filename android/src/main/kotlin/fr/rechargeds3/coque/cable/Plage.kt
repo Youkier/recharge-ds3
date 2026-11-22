@@ -6,17 +6,36 @@ import java.time.ZonedDateTime
 /** Plage de charge du câble (dp 151, x_charge_mode) : m = 2 plage active, 0 charge immédiate ; dt recopié tel quel. */
 data class PlageCharge(val m: Int, val dt: Int, val ss: String, val se: String)
 
-/** Démarrage retenu : [debut] (HH:MM) et [immediat] vrai si l'heure demandée est déjà passée dans la plage. */
-data class Decision(val debut: String, val immediat: Boolean)
+/**
+ * Décision de programmation (règle du démarrage tardif, 2026-11-22), prise AU MOMENT DE L'ENVOI :
+ *  - [Normale] : écrire l'allumage et la fin demandés ;
+ *  - [Tardive] : début déjà passé ou dans moins de 10 min : début = maintenant + 10 min, fin = min(début + durée, départ) ;
+ *  - [TropTard] : début >= départ, rien n'est écrit ;
+ *  - [Invalide] : demande refusée (heures, durée, ou fin hors de la nuit).
+ */
+sealed class Decision {
+    data class Normale(val debut: String, val fin: String) : Decision()
+    data class Tardive(val debut: String, val fin: String) : Decision()
+    object TropTard : Decision()
+    object Invalide : Decision()
+}
 
 /**
- * Règles sur la plage de charge, reprises de local/tuya-local.js (lirePlage, decider, moinsUneMinute,
- * autresPointsModifies). Kotlin pur ; fuseau Europe/Paris via java.time.
+ * Règles sur la plage de charge, reprises de local/tuya-local.js (lirePlage, moinsUneMinute, autresPointsModifies).
+ * La décision d'écriture ([decider], démarrage tardif) est NOUVELLE : local/tuya-local.js (outil PC) garde l'ancienne règle
+ * « immédiat » ; la règle est la même que celle du Worker (worker/src/service.js, deciderPlage), cas communs dans
+ * tests/plage-tardif-cas.json. Kotlin pur ; fuseau Europe/Paris via java.time.
  */
 object Plage {
     const val DP_PLAGE = "151"
     val DP_VOLATILS = setOf("101", "102", "105", "109")
     const val DP_ETAT = "109"
+
+    /** Durée de charge demandée : 1 à 900 minutes. */
+    const val DUREE_MIN_MAX = 900
+
+    /** Un début qui tombe dans moins de 10 minutes est reporté à maintenant + 10 minutes. */
+    const val MARGE_TARDIF_MIN = 10
 
     val PARIS: ZoneId = ZoneId.of("Europe/Paris")
 
@@ -43,7 +62,7 @@ object Plage {
 
     private fun deuxChiffres(n: Int): String = n.toString().padStart(2, '0')
 
-    private fun formater(totalMinutes: Int): String = deuxChiffres(totalMinutes / 60) + ":" + deuxChiffres(totalMinutes % 60)
+    private fun formater(totalMinutes: Int): String = mod24(totalMinutes).let { deuxChiffres(it / 60) + ":" + deuxChiffres(it % 60) }
 
     /** Heure de Paris (HH:MM) de [instant], quel que soit le fuseau du système. */
     fun heureParis(instant: ZonedDateTime): String {
@@ -51,18 +70,45 @@ object Plage {
         return deuxChiffres(p.hour) + ":" + deuxChiffres(p.minute)
     }
 
+    private fun mod24(x: Int): Int = ((x % 1440) + 1440) % 1440
+
     /**
-     * Règle de l'heure déjà passée (décision du 2026-11-14) : si Paris est maintenant dans la plage [allumage, fin[,
-     * le démarrage est immédiat (heure de Paris actuelle) ; sinon l'heure demandée. Plage qui passe minuit comprise ;
-     * allumage = fin : jamais dedans.
+     * Demande de programmation valide : trois heures HH:MM strictes, durée entière de 1 à 900 minutes, et fin comprise entre
+     * l'allumage (exclu) et le départ (inclus), en heures murales, minuit compris. Allumage = départ est refusé.
      */
-    fun decider(allumage: String, fin: String, maintenant: ZonedDateTime): Decision {
-        val nowHHMM = heureParis(maintenant)
+    fun demandeValide(allumage: String, fin: String, dureeMin: Int, depart: String): Boolean {
+        if (!heureValide(allumage) || !heureValide(fin) || !heureValide(depart)) return false
+        if (dureeMin < 1 || dureeMin > DUREE_MIN_MAX) return false
         val a = minutes(allumage)
-        val f = minutes(fin)
-        val n = minutes(nowHHMM)
-        val dedans = if (a < f) n >= a && n < f else if (a > f) n >= a || n < f else false
-        return if (dedans) Decision(nowHHMM, true) else Decision(allumage, false)
+        val nuit = mod24(minutes(depart) - a) // de l'allumage au départ
+        val jusquaFin = mod24(minutes(fin) - a)
+        return nuit > 0 && jusquaFin > 0 && jusquaFin <= nuit
+    }
+
+    /** Minutes depuis minuit (heure murale de Paris) arrondies à la minute SUPÉRIEURE : 23:50:20 donne 23:51. */
+    private fun minutesParisSuperieures(instant: ZonedDateTime): Int {
+        val p = instant.withZoneSameInstant(PARIS)
+        val reste = if (p.second > 0 || p.nano > 0) 1 else 0
+        return mod24(p.hour * 60 + p.minute + reste)
+    }
+
+    /**
+     * Règle du démarrage tardif (décision du 2026-11-22), appliquée AU MOMENT DE L'ENVOI et en heure murale de Paris : la plage
+     * se répète chaque nuit, il n'y a pas de date. « Dans la nuit » = maintenant est entre l'allumage (inclus) et le départ
+     * (exclu), minuit compris. Si l'allumage est dans la nuit ou dans moins de 10 min : début = maintenant + 10 min,
+     * fin = min(début + durée, départ) ; si le départ est à 10 min ou moins : [Decision.TropTard]. Sinon allumage et fin demandés.
+     * Nuits de changement d'heure : minutes murales, sans viser l'exactitude (60 minutes d'écart possibles avec l'heure réelle).
+     */
+    fun decider(allumage: String, fin: String, dureeMin: Int, depart: String, maintenant: ZonedDateTime): Decision {
+        if (!demandeValide(allumage, fin, dureeMin, depart)) return Decision.Invalide
+        val a = minutes(allumage)
+        val n = minutesParisSuperieures(maintenant)
+        val nuit = mod24(minutes(depart) - a)
+        val dansLaNuit = mod24(n - a) < nuit
+        if (!dansLaNuit && mod24(a - n) >= MARGE_TARDIF_MIN) return Decision.Normale(allumage, fin)
+        val avantDepart = mod24(minutes(depart) - n) // minutes jusqu'au prochain départ
+        if (avantDepart <= MARGE_TARDIF_MIN) return Decision.TropTard
+        return Decision.Tardive(formater(n + MARGE_TARDIF_MIN), formater(n + minOf(MARGE_TARDIF_MIN + dureeMin, avantDepart)))
     }
 
     /** Début de la plage « courte » : la fin moins une minute (00:00 donne 23:59). */

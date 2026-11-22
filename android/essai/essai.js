@@ -43,7 +43,7 @@ function etat(texte, classe = '') {
 function occupe(oui) { for (const id of BOUTONS) { const b = $(id); if (b) b.disabled = oui; } }
 function horloge() {
   const f = new Intl.DateTimeFormat('fr-FR', { timeZone: 'Europe/Paris', hour: '2-digit', minute: '2-digit' });
-  $('horloge').textContent = `Heure du téléphone (Paris) : ${f.format(new Date())}. Si elle est fausse, la décision « démarrage immédiat » le sera aussi.`;
+  $('horloge').textContent = `Heure du téléphone (Paris) : ${f.format(new Date())}. Si elle est fausse, la décision « démarrage tardif » le sera aussi.`;
 }
 // Le seul appel de console de la page : une ligne « ESSAI {json} », sans clé ni identifiant.
 function ecrireLigne(ligne) {
@@ -51,7 +51,7 @@ function ecrireLigne(ligne) {
 }
 function journaliser(action, r, ip, mesures) {
   const ligne = { action, ok: r.ok === true, erreur: r.ok ? undefined : r.erreur, debut: r.debut, fin: r.fin, ip };
-  if (r.immediat) ligne.immediat = true;
+  if (r.tardif) ligne.tardif = true;
   if (r.courte) ligne.courte = true;
   if (mesures) Object.assign(ligne, mesures); // essai E0 : durées et état de l'écran, jamais de donnée du câble
   ecrireLigne(ligne);
@@ -108,15 +108,18 @@ async function actionChercher() {
   return { r: { ok: false, erreur: res.erreur }, ip: params.ip, texte: msg(res.erreur) };
 }
 
+// Demande de programmation de la page d'essai : début choisi, fin 06:00, durée 7 h, départ 07:30 (contrat du 2026-11-22).
+const demande = (h) => ({ allumage: h, fin: '06:00', duree_min: 420, depart: '07:30' });
+
 async function actionProgrammer(heure) {
   const p = await preparer({ adresse: true });
   if (p.erreur) return { r: { ok: false, erreur: p.erreur }, ip: p.ip, texte: msg(p.erreur) };
   const h = (heure ?? $('heure').value ?? '').trim();
   if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(h)) return { r: { ok: false, erreur: 'requete_invalide' }, ip: p.ip, texte: 'Heure invalide : choisissez une heure au format HH:MM.' };
   etat('Programmation du câble…');
-  const r = await client.programmer({ allumage: h }, { ip: p.ip });
+  const r = await client.programmer(demande(h), { ip: p.ip });
   if (r.ok) {
-    const note = r.immediat ? ' (l\'heure était déjà passée : démarrage immédiat)' : '';
+    const note = r.tardif ? ' (heure de début dépassée : démarrage tardif, maintenant + 10 min)' : '';
     return { r, ip: p.ip, texte: `Câble programmé et relu. Charge ${plageTexte(r)}${note}.` };
   }
   const suite = r.erreur === 'delai' ? ' Résultat incertain : vérifiez la plage de charge dans Smart Life.' : '';
@@ -162,7 +165,7 @@ async function actionArrierePlan(params) {
     const e = await client.appeler('essaiArrierePlan', { quoi: 'etat' });
     const mesures = { ecran: ecranTexte(e), visibilite: document.visibilityState, retard_ms: retard };
     const debut = Date.now();
-    const r = await client.programmer({ allumage: h }, { ip });
+    const r = await client.programmer(demande(h), { ip });
     mesures.duree_ms = Date.now() - debut; // lecture + écriture + relecture
     if (r.ok) return { r, ip, texte: `Câble programmé et relu en arrière-plan. Charge ${plageTexte(r)}.`, mesures };
     return { r, ip, texte: msg(r.erreur), mesures };
@@ -190,10 +193,10 @@ async function actionFiltre() {
     if (c.ok || c.erreur !== 'refuse') echecs.push(`chercher:${ip}`);
   }
   for (const h of ['25:00', '5:00', '05:60']) {
-    const r = await client.programmer({ allumage: h }, { ip: '10.0.2.2' }, 1000);
+    const r = await client.programmer(demande(h), { ip: '10.0.2.2' }, 1000);
     if (r.ok || r.erreur !== 'requete_invalide') echecs.push(`heure:${h}`);
   }
-  for (const action of [{}, { allumage: '05:00', desactiver: true }, { desactiver: false }]) {
+  for (const action of [{}, { allumage: '05:00' }, { ...demande('05:00'), fin: '08:00' }, { ...demande('05:00'), duree_min: 901 }, { allumage: '05:00', desactiver: true }, { desactiver: false }]) {
     const r = await client.programmer(action, { ip: '10.0.2.2' }, 1000);
     if (r.ok || r.erreur !== 'requete_invalide') echecs.push(`action:${JSON.stringify(action)}`);
   }

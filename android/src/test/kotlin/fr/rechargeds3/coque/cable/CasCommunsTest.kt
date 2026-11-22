@@ -4,11 +4,11 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import java.time.ZonedDateTime
 
 /**
  * Cas communs au JS et au Kotlin : tests/tuya-local-cas.json est lu ici contre Plage.kt, et par
- * tests/tuya-local-cas.test.mjs contre local/tuya-local.js. Les deux doivent donner exactement les mêmes résultats.
+ * tests/tuya-local-cas.test.mjs contre local/tuya-local.js. Les deux doivent donner exactement les mêmes résultats,
+ * sauf la section « decider » (ancienne règle « immédiat », décision du 2026-11-22 : seul l'outil PC la garde).
  */
 class CasCommunsTest {
     private val cas = Aides.json("tuya-local-cas.json")
@@ -20,29 +20,9 @@ class CasCommunsTest {
     private fun objet(v: Any?): Map<String, Any?> = v as Map<String, Any?>
 
     @Test fun lesSectionsSontPresentes() {
-        for (k in listOf("decider", "moinsUneMinute", "plages", "autresPointsModifies")) assertTrue(k, liste(k).isNotEmpty())
-        assertTrue(liste("decider").size >= 20)
-    }
-
-    @Test fun deciderHeureDeParisPassageDeMinuitEtChangementsDHeure() {
-        for (c in liste("decider")) {
-            val r = Plage.decider(c["allumage"] as String, c["fin"] as String, ZonedDateTime.parse(c["maintenant"] as String))
-            val attendu = objet(c["attendu"])
-            assertEquals(c["nom"] as String, attendu["debut"], r.debut)
-            assertEquals(c["nom"] as String, attendu["immediat"], r.immediat)
-        }
-    }
-
-    @Test fun deciderNeDependPasDuFuseauDuSysteme() {
-        // Le même instant, exprimé dans d'autres fuseaux, donne la même décision.
-        for (c in liste("decider")) {
-            val base = ZonedDateTime.parse(c["maintenant"] as String)
-            val reference = Plage.decider(c["allumage"] as String, c["fin"] as String, base)
-            for (zone in listOf("UTC", "Asia/Tokyo", "America/Los_Angeles", "Pacific/Kiritimati")) {
-                val r = Plage.decider(c["allumage"] as String, c["fin"] as String, base.withZoneSameInstant(java.time.ZoneId.of(zone)))
-                assertEquals("${c["nom"]} ($zone)", reference, r)
-            }
-        }
+        // La section « decider » (ancienne règle « immédiat ») ne sert plus qu'à l'outil PC (local/tuya-local.js) : le Kotlin
+        // applique la règle du démarrage tardif, voir PlageTardifTest et tests/plage-tardif-cas.json.
+        for (k in listOf("moinsUneMinute", "plages", "autresPointsModifies")) assertTrue(k, liste(k).isNotEmpty())
     }
 
     @Test fun moinsUneMinute() {

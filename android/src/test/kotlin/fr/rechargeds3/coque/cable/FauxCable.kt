@@ -9,6 +9,12 @@ import javax.crypto.Mac
 import javax.crypto.spec.GCMParameterSpec
 import javax.crypto.spec.SecretKeySpec
 
+/**
+ * Demande d'allumage des tests : début [h], fin des heures creuses 06:00, durée 7 h, départ 07:30 (contrat du 2026-11-22).
+ * Avec « maintenant » à 23:30 à Paris (valeur des tests), un début entre 23:40 et 07:30 est une écriture normale.
+ */
+fun alle(h: String, fin: String = "06:00", dureeMin: Int = 420, depart: String = "07:30") = Action.Allumage(h, fin, dureeMin, depart)
+
 /** Petits outils des tests du protocole local (aucune donnée réelle : clé, identifiant et adresse factices). */
 object Aides {
     private const val CHIFFRES = "0123456789abcdef"

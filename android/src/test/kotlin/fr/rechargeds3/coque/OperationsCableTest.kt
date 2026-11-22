@@ -5,6 +5,7 @@ import fr.rechargeds3.coque.cable.FauxCable
 import fr.rechargeds3.coque.cable.OptionsFaux
 import fr.rechargeds3.coque.cable.Transport
 import fr.rechargeds3.coque.cable.TransportException
+import fr.rechargeds3.coque.cable.alle
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -92,7 +93,7 @@ class OperationsCableTest {
     @Test fun laCleNApparaitDansAucunResultat() {
         for (env in listOf(Env(fabrique = { faux() }), Env(fabrique = { faux(cleCable = "AUTRE-CLE-000000") }))) {
             val o = ops(env)
-            for (r in listOf(o.lire(null, null), o.cable(), o.memoriser(), o.programmer(null, Action.Allumage("05:00"), null))) {
+            for (r in listOf(o.lire(null, null), o.cable(), o.memoriser(), o.programmer(null, alle("05:00"), null))) {
                 assertFalse(r.toString(), r.toString().contains(cle))
                 assertFalse(r.keys.any { it.contains("cle") || it.contains("device") })
             }
@@ -104,9 +105,9 @@ class OperationsCableTest {
     @Test fun programmerAllumageEcritPuisRelit() {
         val f = faux()
         val env = Env(fabrique = { f })
-        val r = ops(env).programmer(null, Action.Allumage("05:00"), null)
+        val r = ops(env).programmer(null, alle("05:00"), null)
         assertEquals(true, r["ok"]); assertEquals("05:00", r["debut"]); assertEquals("06:00", r["fin"]); assertEquals(true, r["plage_active"])
-        assertEquals(false, r["immediat"]); assertEquals(false, r["courte"])
+        assertEquals(false, r["tardif"]); assertEquals(false, r["courte"]); assertEquals(false, r.containsKey("immediat"))
         assertEquals(1, f.ecritures.size)
         assertEquals(listOf("192.168.1.48"), env.retenues)
     }
@@ -120,14 +121,40 @@ class OperationsCableTest {
         val f = faux()
         val o = ops(Env(fabrique = { f }))
         for (h in listOf("25:00", "5:00", "05:60", "", "05:00 ")) {
-            assertEquals(h, "requete_invalide", o.programmer(null, Action.Allumage(h), null)["erreur"])
+            assertEquals(h, "requete_invalide", o.programmer(null, alle(h), null)["erreur"])
         }
         assertEquals(0, f.ouvertures.get())
     }
 
+    @Test fun demandeAvecFinOuDureeInvalideNEnvoieRien() {
+        val f = faux()
+        val o = ops(Env(fabrique = { f }))
+        for (a in listOf(alle("05:00", fin = "08:00"), alle("05:00", dureeMin = 0), alle("05:00", dureeMin = 901), alle("05:00", depart = "05:00"), alle("05:00", fin = "05:00"))) {
+            assertEquals(a.toString(), "requete_invalide", o.programmer(null, a, null)["erreur"])
+        }
+        assertEquals(0, f.ouvertures.get())
+    }
+
+    @Test fun demarrageTardifRepondTardifAvecDebutEtFinEcrits() {
+        val f = faux()
+        // Maintenant (23:30 à Paris) : le début 23:00 est passé, début = 23:40, fin = min(23:40 + 7 h, départ) = 06:40.
+        val r = ops(Env(fabrique = { f })).programmer(null, alle("23:00"), null)
+        assertEquals(true, r["ok"]); assertEquals("23:40", r["debut"]); assertEquals("06:40", r["fin"]); assertEquals(true, r["tardif"])
+        assertEquals(1, f.ecritures.size)
+    }
+
+    @Test fun tropTardRienNEstEcritEtAucuneNouvelleTentative() {
+        val f = faux()
+        val s = Suite(listOf({ f }), { faux() })
+        val horsNuit = OperationsCable(Env(fabrique = s.fabrique), 900_000L, { 0L }, { ZonedDateTime.parse("2026-11-17T06:20:00Z") }, pause = {})
+        val r = horsNuit.programmer(null, alle("23:00"), null, reessayer = true) // 07:20, départ 07:30
+        assertEquals(false, r["ok"]); assertEquals("trop_tard", r["erreur"]); assertEquals(false, r.containsKey("ecrit"))
+        assertEquals(1, s.crees.get()); assertTrue(f.ecritures.isEmpty())
+    }
+
     @Test fun ecritureSansEffetRendEcritEtJamaisUnOk() {
         val f = FauxCable(OptionsFaux(cle = cle, dps = dps(), ignorerEcriture = true))
-        val r = ops(Env(fabrique = { f })).programmer(null, Action.Allumage("05:00"), null)
+        val r = ops(Env(fabrique = { f })).programmer(null, alle("05:00"), null)
         assertEquals(false, r["ok"]); assertEquals("relecture_differente", r["erreur"]); assertEquals(true, r["ecrit"])
     }
 
@@ -247,7 +274,7 @@ class OperationsCableTest {
             env.surLireCle = { entre.countDown(); libere.await(5, TimeUnit.SECONDS) }
             val o = ops(env)
             val res = AtomicReference<Map<String, Any?>>()
-            val fil = Thread { res.set(if (ecriture) o.programmer(null, Action.Allumage("05:00"), null) else o.lire(null, null)) }
+            val fil = Thread { res.set(if (ecriture) o.programmer(null, alle("05:00"), null) else o.lire(null, null)) }
                 .apply { isDaemon = true; start() }
             assertTrue(entre.await(5, TimeUnit.SECONDS))
             o.annulerTout() // appli cachée pendant le déchiffrement de la clé
@@ -306,11 +333,11 @@ class OperationsCableTest {
         // Échec de contact avant toute écriture : seconde tentative, une seule écriture au total.
         val f = faux()
         val s = Suite(listOf({ muet() }), { f })
-        val r = ops(Env(fabrique = s.fabrique)).programmer(null, Action.Allumage("05:00"), null, reessayer = true)
+        val r = ops(Env(fabrique = s.fabrique)).programmer(null, alle("05:00"), null, reessayer = true)
         assertEquals(true, r["ok"]); assertEquals(2, s.crees.get()); assertEquals(1, f.ecritures.size)
         // Sans la demande : une seule tentative.
         val s2 = Suite(listOf({ muet() }), { faux() })
-        assertEquals("hors_ligne", ops(Env(fabrique = s2.fabrique)).programmer(null, Action.Allumage("05:00"), null)["erreur"])
+        assertEquals("hors_ligne", ops(Env(fabrique = s2.fabrique)).programmer(null, alle("05:00"), null)["erreur"])
         assertEquals(1, s2.crees.get())
     }
 
@@ -324,13 +351,13 @@ class OperationsCableTest {
             }
         }
         val s = Suite(listOf({ coupe }), { faux() })
-        val r = ops(Env(fabrique = s.fabrique)).programmer(null, Action.Allumage("00:15"), null, reessayer = true)
+        val r = ops(Env(fabrique = s.fabrique)).programmer(null, alle("00:15"), null, reessayer = true)
         assertEquals(false, r["ok"]); assertEquals("delai", r["erreur"]); assertEquals(true, r["ecrit"])
         assertEquals(1, s.crees.get()); assertEquals(1, f.ecritures.size)
         // Relecture différente : jamais relancée non plus.
         val g = FauxCable(OptionsFaux(cle = cle, dps = dps(), ignorerEcriture = true))
         val s2 = Suite(listOf({ g }), { faux() })
-        val r2 = ops(Env(fabrique = s2.fabrique)).programmer(null, Action.Allumage("05:00"), null, reessayer = true)
+        val r2 = ops(Env(fabrique = s2.fabrique)).programmer(null, alle("05:00"), null, reessayer = true)
         assertEquals("relecture_differente", r2["erreur"]); assertEquals(1, s2.crees.get()); assertEquals(1, g.ecritures.size)
     }
 
@@ -342,7 +369,7 @@ class OperationsCableTest {
                 override fun ouvrir(ip: String, port: Int, delaiMs: Int) { t += consomme; throw TransportException("delai") }
             }
             val s = Suite(listOf({ premier }), { faux() })
-            val r = ops(Env(fabrique = s.fabrique), horloge = { t }).programmer(null, Action.Allumage("05:00"), null, reessayer = true)
+            val r = ops(Env(fabrique = s.fabrique), horloge = { t }).programmer(null, alle("05:00"), null, reessayer = true)
             assertEquals("consommé $consomme ms", attendu, s.crees.get())
             assertEquals(attendu == 2, r["ok"])
         }

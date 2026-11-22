@@ -32,10 +32,13 @@
     <string name="attente_titre">En attente du Wi-Fi et du câble</string>
     <string name="attente_texte">Programmation de %1$s dès que le câble répond</string>
     <string name="resultat_ok_titre">Charge programmée : démarrage %1$s</string>
-    <string name="resultat_ok_texte">Relu sur le câble. Pensez à brancher la voiture ce soir.</string>
+    <string name="resultat_ok_texte">Relu sur le câble. Branchez la voiture avant %1$s : sinon la charge ne démarrera pas.</string>
     <string name="resultat_aucune_texte">Demain soir, reprogrammez : sinon la voiture ne chargera pas.</string>
     <string name="resultat_aucune_titre">Pas de charge cette nuit</string>
-    <string name="resultat_immediat_titre">Charge programmée : démarrage immédiat</string>
+    <string name="resultat_tardif_titre">Heure de début dépassée : charge programmée à %1$s</string>
+    <string name="resultat_tardif_texte">Relu sur le câble. Branchez la voiture avant %1$s.</string>
+    <string name="resultat_trop_tard_titre">Trop tard pour charger</string>
+    <string name="resultat_trop_tard_texte">Le départ est trop proche : rien n\'a été modifié sur le câble.</string>
     <string name="resultat_ko_titre">Programmation non faite</string>
     <string name="resultat_a_la_main">À régler à la main dans Smart Life : début %1$s.</string>
     <string name="resultat_verifier">Vérifiez dans Smart Life ; sinon réglez le début à %1$s.</string>
@@ -45,6 +48,9 @@
     <string name="resultat_fermee_texte">L\'application a été fermée. À régler à la main dans Smart Life : début %1$s.</string>
     <!-- Variantes sans heure : la page n'a pas pu la calculer (attenteFin sans « heure »). -->
     <string name="resultat_ok_titre_sans_heure">Charge programmée</string>
+    <string name="resultat_ok_texte_sans_heure">Relu sur le câble. Branchez la voiture avant l\'heure de début : sinon la charge ne démarrera pas.</string>
+    <string name="resultat_tardif_titre_sans_heure">Heure de début dépassée : charge programmée</string>
+    <string name="resultat_tardif_texte_sans_heure">Relu sur le câble. Branchez la voiture avant le début de la charge.</string>
     <string name="resultat_a_la_main_sans_heure">À régler à la main dans Smart Life.</string>
     <string name="resultat_verifier_sans_heure">Vérifiez dans Smart Life.</string>
     <string name="resultat_fermee_texte_sans_heure">L\'application a été fermée. À régler à la main dans Smart Life.</string>

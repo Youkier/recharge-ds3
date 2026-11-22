@@ -19,15 +19,19 @@ class ConfigCable( // pas de data class : ni copy() ni composante qui exposerait
     override fun toString(): String = "ConfigCable(***)"
 }
 
-/** Les deux seules actions : régler le début de la plage, ou la rendre « courte » (début = fin moins une minute). */
+/**
+ * Les deux seules actions : régler la plage (début [hhmm], fin [fin], durée de charge [dureeMin] en minutes, heure de départ
+ * [depart], voir Plage.decider pour le démarrage tardif), ou la rendre « courte » (début = fin relue moins une minute).
+ */
 sealed class Action {
-    data class Allumage(val hhmm: String) : Action()
+    data class Allumage(val hhmm: String, val fin: String, val dureeMin: Int, val depart: String) : Action()
     object Desactiver : Action()
 }
 
 /**
  * Résultat, mêmes champs que le JS (plage_active devient [plageActive]). [erreur] : "cle", "hors_ligne", "delai",
- * "format", "relecture_differente" ou "requete_invalide". [ecrit] : l'écriture est partie, donc a pu être appliquée :
+ * "format", "relecture_differente", "requete_invalide" ou "trop_tard" (début >= départ : rien n'est écrit). [tardif] : le début a été
+ * reporté à maintenant + 10 min (début et fin sont ceux réellement écrits et relus). [ecrit] : l'écriture est partie, donc a pu être appliquée :
  * l'appelant ne doit JAMAIS la relancer.
  */
 data class Resultat(
@@ -36,7 +40,7 @@ data class Resultat(
     val debut: String? = null,
     val fin: String? = null,
     val plageActive: Boolean? = null,
-    val immediat: Boolean = false,
+    val tardif: Boolean = false,
     val courte: Boolean = false,
     val ecrit: Boolean = false,
 )
@@ -46,7 +50,7 @@ data class Resultat(
  * (même ordre des échanges, mêmes délais, mêmes codes d'erreur). Kotlin pur, sans android.*.
  *
  * Garanties :
- *  - n'écrit que `ss` et `m` du dp 151 (règle n°9) ; `dt` et `se` sont recopiés de la valeur relue ;
+ *  - n'écrit que `ss`, `se` et `m` du dp 151 (règle n°9, élargie le 2026-11-22) ; `dt` est recopié de la valeur relue ;
  *  - relit avant d'écrire : valeur au format exact attendu, sinon RIEN n'est envoyé ;
  *  - relit après : succès seulement si le dp 151 relu est celui demandé et qu'aucun autre point non volatil a changé ;
  *  - une seule connexion, fermée dans tous les cas (une seule fois) ; échéance globale tenue par un fil de travail
@@ -73,7 +77,9 @@ object ClientCable {
         pause: (Long) -> Unit = { ms -> Thread.sleep(ms) },
         aleas: (Int) -> ByteArray = Aleas.parDefaut,
     ): Resultat {
-        if (action is Action.Allumage && !Plage.heureValide(action.hhmm)) return Resultat(false, "requete_invalide")
+        if (action is Action.Allumage && !Plage.demandeValide(action.hhmm, action.fin, action.dureeMin, action.depart)) {
+            return Resultat(false, "requete_invalide")
+        }
         return executer(cfg, t, aleas, pause, maintenant) { ctx -> programmerEnSession(ctx, action) }
     }
 
@@ -261,8 +267,8 @@ object ClientCable {
 
     private fun memePlage(a: PlageCharge, b: PlageCharge): Boolean = a == b
 
-    private fun reponsePlage(p: PlageCharge, immediat: Boolean = false, courte: Boolean = false): Resultat =
-        Resultat(true, debut = p.ss, fin = p.se, plageActive = p.m == 2, immediat = immediat, courte = courte)
+    private fun reponsePlage(p: PlageCharge, tardif: Boolean = false, courte: Boolean = false): Resultat =
+        Resultat(true, debut = p.ss, fin = p.se, plageActive = p.m == 2, tardif = tardif, courte = courte)
 
     // --- Écriture : la SEULE construction d'une commande d'écriture du module ---
 
@@ -270,12 +276,12 @@ object ClientCable {
      * Corps tinytuya (payload_dict « v3.5 », CONTROL -> CONTROL_NEW), construit à la main à partir de valeurs validées,
      * identique à l'octet à JSON.stringify côté JS :
      * {"protocol":5,"t":<secondes>,"data":{"dps":{"151":"{\"m\":2,\"dt\":0,\"ss\":\"05:00\",\"se\":\"06:00\"}"}}}
-     * précédé de l'en-tête de version « 3.5 » + 12 octets nuls. Garde-fou : seuls m (forcé à 2) et ss changent ; dt et se
-     * sont recopiés de la valeur relue, et les deux heures sont revalidées ici.
+     * précédé de l'en-tête de version « 3.5 » + 12 octets nuls. Garde-fou : seuls m (forcé à 2), ss et se changent ; dt est
+     * recopié de la valeur relue, et les deux heures sont revalidées ici.
      */
-    private fun corpsEcriture(actuelle: PlageCharge, debut: String, t: Long): ByteArray {
-        if (!Plage.heureValide(debut) || !Plage.heureValide(actuelle.se)) throw ErreurCable("format")
-        val valeur = "{\"m\":2,\"dt\":" + actuelle.dt + ",\"ss\":\"" + debut + "\",\"se\":\"" + actuelle.se + "\"}"
+    private fun corpsEcriture(actuelle: PlageCharge, debut: String, fin: String, t: Long): ByteArray {
+        if (!Plage.heureValide(debut) || !Plage.heureValide(fin)) throw ErreurCable("format")
+        val valeur = "{\"m\":2,\"dt\":" + actuelle.dt + ",\"ss\":\"" + debut + "\",\"se\":\"" + fin + "\"}"
         val json = "{\"protocol\":5,\"t\":" + t + ",\"data\":{\"dps\":{\"" + Plage.DP_PLAGE + "\":\"" +
             valeur.replace("\"", "\\\"") + "\"}}}"
         val entete = ByteArray(15)
@@ -289,26 +295,34 @@ object ClientCable {
         val avant = lireDps(ctx)
         val actuelle = plageDepuisDps(avant) // format inattendu : on s'arrête ici, rien n'est envoyé
         val debut: String
-        val immediat: Boolean
+        val fin: String
+        val tardif: Boolean
         val courte: Boolean
         if (action is Action.Allumage) {
-            val d = Plage.decider(action.hhmm, actuelle.se, ctx.maintenant())
-            debut = d.debut
-            immediat = d.immediat
+            // Décision au moment de l'envoi (après la lecture) : normale, tardive, ou trop tard (rien n'est écrit).
+            val d = Plage.decider(action.hhmm, action.fin, action.dureeMin, action.depart, ctx.maintenant())
+            if (d is Decision.Normale) {
+                debut = d.debut; fin = d.fin; tardif = false
+            } else if (d is Decision.Tardive) {
+                debut = d.debut; fin = d.fin; tardif = true
+            } else {
+                return Resultat(false, if (d is Decision.TropTard) "trop_tard" else "requete_invalide")
+            }
             courte = false
         } else {
             debut = Plage.moinsUneMinute(actuelle.se)
-            immediat = false
+            fin = actuelle.se // la fin relue est réécrite telle quelle
+            tardif = false
             courte = true
         }
         val t = ctx.maintenant().toEpochSecond()
-        corpsEcriture(actuelle, debut, t) // valide aussi le format, avant tout envoi
-        val voulue = PlageCharge(2, actuelle.dt, debut, actuelle.se)
-        if (memePlage(actuelle, voulue)) return reponsePlage(actuelle, immediat, courte) // déjà réglé : rien à envoyer
+        corpsEcriture(actuelle, debut, fin, t) // valide aussi le format, avant tout envoi
+        val voulue = PlageCharge(2, actuelle.dt, debut, fin)
+        if (memePlage(actuelle, voulue)) return reponsePlage(actuelle, tardif, courte) // déjà réglé : rien à envoyer
 
-        // Un seul endroit construit et envoie l'écriture (toujours la même valeur voulue : seuls ss et m du dp 151).
+        // Un seul endroit construit et envoie l'écriture (toujours la même valeur voulue : seuls m, ss et se du dp 151).
         fun envoyerEcriture(tEnvoi: Long) {
-            val trame = corpsEcriture(actuelle, debut, tEnvoi)
+            val trame = corpsEcriture(actuelle, debut, fin, tEnvoi)
             ctx.ecrit = true // à partir d'ici, l'écriture a pu être appliquée même si la suite échoue
             envoyerTrame(ctx, Tuya35.CMD_ECRITURE, trame)
             // Accusé du câble (même commande, retcode 0) : son absence n'est pas une erreur, la relecture décide.
@@ -331,7 +345,7 @@ object ClientCable {
             val relue = plageDepuisDps(apres)
             if (memePlage(relue, voulue)) {
                 if (Plage.autresPointsModifies(avant, apres)) throw ErreurCable("relecture_differente")
-                return reponsePlage(relue, immediat, courte)
+                return reponsePlage(relue, tardif, courte)
             }
             if (enVeille && !renvoyee && memePlage(relue, actuelle)) {
                 renvoyee = true

@@ -197,14 +197,17 @@ class OperationsCable(
         }
 
     /**
-     * Règle le début de la plage, ou la rend « courte » : les deux seules écritures. [reessayer] : seconde tentative
+     * Règle la plage (début, fin, avec le démarrage tardif de Plage.decider), ou la rend « courte » : les deux seules
+     * écritures. [reessayer] : seconde tentative
      * SEULEMENT si l'échec vient du contact et qu'aucune écriture n'est partie ; les deux tentatives tiennent dans
      * [BUDGET_ECRITURE_MS] (sous le plafond de 30 s de la page) et la seconde ne part pas s'il reste moins de
      * [RESTE_MINI_SECONDE_ECRITURE_MS] (elle pourrait écrire après l'affichage de l'échec).
      */
     fun programmer(ip: String?, action: Action, delaiMs: Long?, reessayer: Boolean = false, origine: Origine = Origine.PAGE): Map<String, Any?> =
         exclusif(origine) { op ->
-            if (action is Action.Allumage && !Plage.heureValide(action.hhmm)) return@exclusif erreur("requete_invalide")
+            if (action is Action.Allumage && !Plage.demandeValide(action.hhmm, action.fin, action.dureeMin, action.depart)) {
+                return@exclusif erreur("requete_invalide")
+            }
             avecConfig(ip, delaiMs) { cfg ->
                 val debut = horloge()
                 val t = nouveauTransport(op) ?: return@avecConfig causeSansTransport(op)
@@ -291,7 +294,7 @@ class OperationsCable(
         m["debut"] = r.debut
         m["fin"] = r.fin
         m["plage_active"] = r.plageActive == true
-        m["immediat"] = r.immediat
+        m["tardif"] = r.tardif
         m["courte"] = r.courte
         return m
     }

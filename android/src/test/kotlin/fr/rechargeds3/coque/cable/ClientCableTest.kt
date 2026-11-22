@@ -162,7 +162,7 @@ class ClientCableTest {
 
     @Test fun programmerEcritureNormaleSeulsSsEtMChangent() {
         val f = fauxAvec()
-        val r = prog(f, Action.Allumage("00:15"))
+        val r = prog(f, alle("00:15"))
         assertEquals(Resultat(true, debut = "00:15", fin = "06:00", plageActive = true), r)
         assertEquals(1, f.ecritures.size)
         val e = f.ecritures[0]
@@ -179,7 +179,7 @@ class ClientCableTest {
 
     @Test fun programmerLeCorpsEstIdentiqueALOctetAJsonStringify() {
         val f = fauxAvec(dps = dpsBase(plage(0, "03:30", "06:15", 3)))
-        prog(f, Action.Allumage("01:00"))
+        prog(f, alle("01:00", fin = "06:15"))
         // Texte exact attendu, tel que JSON.stringify le produit (clés dans l'ordre, sans espace, guillemets échappés).
         val t = maintenantV().toEpochSecond()
         val attendu = "{\"protocol\":5,\"t\":$t,\"data\":{\"dps\":{\"151\":\"{\\\"m\\\":2,\\\"dt\\\":3,\\\"ss\\\":\\\"01:00\\\",\\\"se\\\":\\\"06:15\\\"}\"}}}"
@@ -188,16 +188,30 @@ class ClientCableTest {
         assertEquals(hex("3.5".toByteArray() + ByteArray(12) + attendu.toByteArray()), hex(f.clairsEcriture[0]))
     }
 
-    @Test fun programmerPlageInactiveMRepasseA2DtEtSeRecopies() {
+    @Test fun programmerPlageInactiveMRepasseA2DtRecopieSsEtSeEcrits() {
         val f = fauxAvec(dps = dpsBase(plage(0, "03:30", "06:15", 3)))
-        val r = prog(f, Action.Allumage("01:00"))
+        val r = prog(f, alle("01:00"))
         assertTrue(r.ok)
-        assertEquals(plage(2, "01:00", "06:15", 3), valeur151(f))
+        assertEquals(plage(2, "01:00", "06:00", 3), valeur151(f)) // la fin du câble (06:15) est remplacée par la fin demandée
+    }
+
+    @Test fun lAncienneFinRepousseeNeResteJamaisLeLendemain() {
+        val f = fauxAvec(dps = dpsBase(plage(2, "03:30", "07:30"))) // fin repoussée par un démarrage tardif la veille
+        val r = prog(f, alle("03:30"))
+        assertEquals(Resultat(true, debut = "03:30", fin = "06:00", plageActive = true), r)
+        assertEquals(plage(2, "03:30", "06:00"), valeur151(f))
+    }
+
+    @Test fun finDemandeeEcriteEtRelue() {
+        val f = fauxAvec()
+        val r = prog(f, alle("22:00", fin = "03:30", dureeMin = 330), instant("2026-11-16T20:00:00Z")) // 21:00 à Paris : avant le début
+        assertEquals(Resultat(true, debut = "22:00", fin = "03:30", plageActive = true), r)
+        assertEquals(plage(2, "22:00", "03:30"), valeur151(f))
     }
 
     @Test fun programmerDejaRegleRienNEstEnvoye() {
         val f = fauxAvec()
-        val r = prog(f, Action.Allumage("03:30"))
+        val r = prog(f, alle("03:30"))
         assertEquals(Resultat(true, debut = "03:30", fin = "06:00", plageActive = true), r)
         assertTrue(f.ecritures.isEmpty())
     }
@@ -205,47 +219,93 @@ class ClientCableTest {
     @Test fun programmerTrameCoupeeEtReponsesGroupees() {
         for ((d, g) in listOf(true to false, false to true, true to true)) {
             val f = fauxAvec(decouper = d, grouper = g)
-            val r = prog(f, Action.Allumage("00:15"))
+            val r = prog(f, alle("00:15"))
             assertTrue("decouper=$d grouper=$g : $r", r.ok)
             assertEquals(1, f.ecritures.size)
         }
     }
 
     @Test fun programmerSansAccuseLaRelectureDecide() {
-        assertTrue(prog(fauxAvec(sansAccuse = true), Action.Allumage("00:15")).ok)
+        assertTrue(prog(fauxAvec(sansAccuse = true), alle("00:15")).ok)
     }
 
-    @Test fun heureDejaPasseeDansLaPlageHiver() {
-        val f = fauxAvec() // plage 03:30-06:00 ; 03:10 UTC = 04:10 à Paris en hiver
-        val r = prog(f, Action.Allumage("03:30"), instant("2026-11-17T03:10:00Z"))
-        assertEquals(Resultat(true, debut = "04:10", fin = "06:00", plageActive = true, immediat = true), r)
-        assertEquals(plage(2, "04:10", "06:00"), valeur151(f))
+    @Test fun demarrageTardifHiver() {
+        val f = fauxAvec() // plage 03:30-06:00 ; 03:10 UTC = 04:10 à Paris en hiver ; début demandé 03:30 : passé
+        val r = prog(f, alle("03:30", dureeMin = 120), instant("2026-11-17T03:10:00Z"))
+        // début = 04:20 ; fin = min(04:20 + 2 h, départ 07:30) = 06:20
+        assertEquals(Resultat(true, debut = "04:20", fin = "06:20", plageActive = true, tardif = true), r)
+        assertEquals(plage(2, "04:20", "06:20"), valeur151(f))
     }
 
-    @Test fun heureDejaPasseeEteQuelQueSoitLeFuseauDuSysteme() {
+    @Test fun demarrageTardifEteQuelQueSoitLeFuseauDuSysteme() {
         val f = fauxAvec() // 02:10 UTC = 04:10 à Paris en été (UTC+2)
-        val r = prog(f, Action.Allumage("03:30"), instant("2026-07-01T02:10:00Z"))
-        assertEquals("04:10", r.debut)
-        assertTrue(r.immediat)
+        val r = prog(f, alle("03:30", dureeMin = 120), instant("2026-07-01T02:10:00Z"))
+        assertEquals("04:20", r.debut)
+        assertTrue(r.tardif)
         // Même instant exprimé dans un autre fuseau : même résultat.
         val f2 = fauxAvec()
         val tokyo = { ZonedDateTime.parse("2026-07-01T02:10:00Z").withZoneSameInstant(java.time.ZoneId.of("Asia/Tokyo")) }
-        val r2 = prog(f2, Action.Allumage("03:30"), tokyo)
-        assertEquals("04:10", r2.debut)
+        val r2 = prog(f2, alle("03:30", dureeMin = 120), tokyo)
+        assertEquals("04:20", r2.debut)
+        assertEquals("06:20", r2.fin)
     }
 
-    @Test fun heureDejaPasseePlageQuiPasseMinuit() {
+    @Test fun demarrageTardifPlageQuiPasseMinuit() {
         val f = fauxAvec(dps = dpsBase(plage(2, "22:00", "06:00")))
-        val r = prog(f, Action.Allumage("23:00"), instant("2026-11-16T22:30:00Z")) // 23:30 à Paris
-        assertTrue(r.immediat)
-        assertEquals("23:30", r.debut)
+        val r = prog(f, alle("23:00"), instant("2026-11-16T22:30:00Z")) // 23:30 à Paris
+        assertTrue(r.tardif)
+        assertEquals("23:40", r.debut)
+        assertEquals("06:40", r.fin) // 23:40 + 7 h
+        assertEquals(plage(2, "23:40", "06:40"), valeur151(f))
     }
 
-    @Test fun heureNonAtteintePasDeDemarrageImmediat() {
+    @Test fun demarrageTardifFinBorneeParLeDepart() {
         val f = fauxAvec()
-        val r = prog(f, Action.Allumage("03:30"), instant("2026-11-17T02:00:00Z"))
-        assertFalse(r.immediat)
+        val r = prog(f, alle("23:00"), instant("2026-11-17T04:50:00Z")) // 05:50 à Paris : début 06:00, 7 h plus tard dépasserait 07:30
+        assertEquals(Resultat(true, debut = "06:00", fin = "07:30", plageActive = true, tardif = true), r)
+        assertEquals(plage(2, "06:00", "07:30"), valeur151(f))
+    }
+
+    @Test fun debutDansMoinsDeDixMinutesEstTardif() {
+        val f = fauxAvec()
+        val r = prog(f, alle("23:00"), instant("2026-11-16T21:51:00Z")) // 22:51 : début dans 9 min
+        assertTrue(r.tardif)
+        assertEquals("23:01", r.debut)
+        val g = fauxAvec()
+        val r2 = prog(g, alle("23:00"), instant("2026-11-16T21:50:00Z")) // 22:50 : pile 10 min, normal
+        assertFalse(r2.tardif)
+        assertEquals("23:00", r2.debut)
+    }
+
+    @Test fun tropTardRienNEstEcrit() {
+        val f = fauxAvec()
+        val r = prog(f, alle("23:00"), instant("2026-11-17T06:20:00Z")) // 07:20 : début 07:30 = départ
+        assertEquals(Resultat(false, "trop_tard"), r)
+        assertTrue(f.ecritures.isEmpty())
+        assertEquals(1, f.fermetures.get())
+        assertEquals(dpsBase()["151"], f.dps["151"])
+    }
+
+    @Test fun demandeAvecFinApresLeDepartRienNEstOuvert() {
+        val f = fauxAvec()
+        assertEquals(Resultat(false, "requete_invalide"), prog(f, alle("23:00", fin = "08:00")))
+        assertEquals(Resultat(false, "requete_invalide"), prog(f, alle("23:00", dureeMin = 0)))
+        assertEquals(Resultat(false, "requete_invalide"), prog(f, alle("23:00", dureeMin = 901)))
+        assertEquals(0, f.ouvertures.get())
+    }
+
+    @Test fun heureNonAtteintePasDeDemarrageTardif() {
+        val f = fauxAvec()
+        val r = prog(f, alle("03:30"), instant("2026-11-17T02:00:00Z")) // 03:00 à Paris : 30 min avant le début
+        assertFalse(r.tardif)
         assertEquals("03:30", r.debut)
+    }
+
+    @Test fun plageCourteReecritLaFinRelue() {
+        val f = fauxAvec(dps = dpsBase(plage(2, "03:30", "07:30")))
+        val r = prog(f, Action.Desactiver)
+        assertEquals(Resultat(true, debut = "07:29", fin = "07:30", plageActive = true, courte = true), r)
+        assertEquals(plage(2, "07:29", "07:30"), valeur151(f))
     }
 
     @Test fun plageCourteDebutEgalFinMoinsUneMinute() {
@@ -289,7 +349,7 @@ class ClientCableTest {
         )
         for ((nom, valeur) in mauvaises) {
             val f = fauxAvec(dps = dpsBase(valeur))
-            assertEquals(nom, Resultat(false, "format"), prog(f, Action.Allumage("00:15")))
+            assertEquals(nom, Resultat(false, "format"), prog(f, alle("00:15")))
             assertTrue(nom, f.ecritures.isEmpty())
             assertEquals(nom, 1, f.fermetures.get())
         }
@@ -300,7 +360,7 @@ class ClientCableTest {
             val dps = LinkedHashMap(dpsBase())
             if (v == null) dps.remove("151") else dps["151"] = v
             val f = fauxAvec(dps = dps)
-            assertEquals(Resultat(false, "format"), prog(f, Action.Allumage("00:15")))
+            assertEquals(Resultat(false, "format"), prog(f, alle("00:15")))
             assertTrue(f.ecritures.isEmpty())
         }
     }
@@ -309,29 +369,29 @@ class ClientCableTest {
 
     @Test fun ecritureSansEffetRelectureDifferente() {
         val f = fauxAvec(ignorerEcriture = true)
-        assertEquals(Resultat(false, "relecture_differente", ecrit = true), prog(f, Action.Allumage("00:15")))
+        assertEquals(Resultat(false, "relecture_differente", ecrit = true), prog(f, alle("00:15")))
         assertEquals(1, f.ecritures.size)
         assertEquals(1, f.fermetures.get())
     }
 
     @Test fun leCableAppliqueUneAutreValeur() {
         val f = fauxAvec(transformerEcriture = { plage(2, "00:20", "06:00") })
-        assertEquals(Resultat(false, "relecture_differente", ecrit = true), prog(f, Action.Allumage("00:15")))
+        assertEquals(Resultat(false, "relecture_differente", ecrit = true), prog(f, alle("00:15")))
     }
 
     @Test fun unAutrePointDeReglageChange() {
         val f = fauxAvec(effetsEcriture = mapOf("150" to 6L))
-        assertEquals(Resultat(false, "relecture_differente", ecrit = true), prog(f, Action.Allumage("00:15")))
+        assertEquals(Resultat(false, "relecture_differente", ecrit = true), prog(f, alle("00:15")))
     }
 
     @Test fun unPointApparait() {
         val f = fauxAvec(effetsEcriture = mapOf("999" to true))
-        assertEquals(Resultat(false, "relecture_differente", ecrit = true), prog(f, Action.Allumage("00:15")))
+        assertEquals(Resultat(false, "relecture_differente", ecrit = true), prog(f, alle("00:15")))
     }
 
     @Test fun pointsVolatilsIgnores() {
         val f = fauxAvec(effetsEcriture = mapOf("101" to 300L, "102" to "{\"p\":33}", "105" to "x", "109" to "WORKING"))
-        assertTrue(prog(f, Action.Allumage("00:15")).ok)
+        assertTrue(prog(f, alle("00:15")).ok)
     }
 
     @Test fun relectureMuetteApresLEcritureDelai() {
@@ -346,7 +406,7 @@ class ClientCableTest {
                 return f.recevoir(delaiMs)
             }
         }
-        val r = prog(transport, Action.Allumage("00:15"))
+        val r = prog(transport, alle("00:15"))
         assertEquals(Resultat(false, "delai", ecrit = true), r)
         assertTrue(muets >= 1)
     }
@@ -356,7 +416,7 @@ class ClientCableTest {
     @Test fun demandesInvalidesRienNEstOuvert() {
         for (h in listOf("24:00", "7:30", "07:30\n", " 07:30", "07:60", "", "0730", "07:3", "07:30:00", "٠٧:٣٠", "07:30 ")) {
             val f = fauxAvec()
-            assertEquals("«$h»", Resultat(false, "requete_invalide"), prog(f, Action.Allumage(h)))
+            assertEquals("«$h»", Resultat(false, "requete_invalide"), prog(f, alle(h)))
             assertEquals(0, f.ouvertures.get())
         }
     }
@@ -364,17 +424,17 @@ class ClientCableTest {
     @Test fun uneDemandeInvalideNeSeFaitPasPasserPourUneCleFausse() {
         // Même ordre que le JS : la demande est validée avant la clé.
         val f = fauxAvec()
-        assertEquals(Resultat(false, "requete_invalide"), prog(f, Action.Allumage("24:00"), config = cfg(cleLocale = ByteArray(3))))
+        assertEquals(Resultat(false, "requete_invalide"), prog(f, alle("24:00"), config = cfg(cleLocale = ByteArray(3))))
     }
 
-    // --- Garde-fou : seul le dp 151, et seuls ss et m ---
+    // --- Garde-fou : seul le dp 151, et seuls m, ss et se ---
 
-    @Test fun quelleQueSoitLaPlageLueChaqueEcritureNeChangeQueSsEtM() {
+    @Test fun quelleQueSoitLaPlageLueChaqueEcritureNeChangeQueMSsEtSe() {
         val plages = listOf(
             plage(2, "03:30", "06:00"), plage(0, "03:30", "06:00", 5), plage(2, "22:00", "06:00", 1), plage(0, "00:00", "23:59", 9),
             plage(2, "05:59", "06:00"), plage(0, "12:00", "00:00"),
         )
-        val actions = listOf(Action.Allumage("00:15"), Action.Allumage("23:59"), Action.Allumage("04:00"), Action.Desactiver)
+        val actions = listOf(alle("00:15"), alle("23:59"), alle("04:00"), Action.Desactiver)
         val instants = listOf("2026-11-16T22:30:00Z", "2026-11-17T03:10:00Z", "2026-07-01T10:00:00Z")
         val heure = Regex("([01][0-9]|2[0-3]):[0-5][0-9]")
         var ecritures = 0
@@ -391,7 +451,8 @@ class ClientCableTest {
                 assertEquals(listOf("m", "dt", "ss", "se"), v.keys.toList())
                 assertEquals(2L, v["m"])
                 assertEquals(avant.dt.toLong(), v["dt"])
-                assertEquals(avant.se, v["se"])
+                if (a is Action.Desactiver) assertEquals(avant.se, v["se"]) // la fin relue est réécrite telle quelle
+                assertTrue(heure.matches(v["se"] as String))
                 assertTrue(heure.matches(v["ss"] as String))
             }
             assertTrue(f.ecritures.size <= 1)
@@ -413,8 +474,8 @@ class ClientCableTest {
             System.setOut(PrintStream(sortieOut, true, "UTF-8"))
             System.setErr(PrintStream(sortieErr, true, "UTF-8"))
             resultats.add(lire(fauxAvec(cleCable = "AUTRE-CLE-FAUSSE")))
-            resultats.add(prog(fauxAvec(ignorerEcriture = true), Action.Allumage("00:15")))
-            resultats.add(prog(fauxAvec(dps = dpsBase("pas du json")), Action.Allumage("00:15")))
+            resultats.add(prog(fauxAvec(ignorerEcriture = true), alle("00:15")))
+            resultats.add(prog(fauxAvec(dps = dpsBase("pas du json")), alle("00:15")))
             resultats.add(lire(fauxAvec(), cfg(cleLocale = "courte".toByteArray())))
             val piege = RuntimeException("échec avec la clé $cleTexte")
             val piegeur = object : Transport {
@@ -443,7 +504,7 @@ class ClientCableTest {
         // Un échec ne porte ni plage ni drapeau de succès ; « ecrit » seulement si l'écriture est partie.
         for (r in resultats) {
             assertFalse(r.ok)
-            assertTrue(r.debut == null && r.fin == null && r.plageActive == null && !r.immediat && !r.courte)
+            assertTrue(r.debut == null && r.fin == null && r.plageActive == null && !r.tardif && !r.courte)
             assertTrue(!r.ecrit || r.erreur == "relecture_differente" || r.erreur == "delai")
         }
         assertEquals(
@@ -512,7 +573,7 @@ class ClientCableTest {
 
     @Test fun veillePremiereEcritureJeteeSecondEnvoiPuisRelueConforme() {
         val f = fauxAvec(dps = dpsVeille(), veille = true)
-        val r = prog(f, Action.Allumage("00:15"))
+        val r = prog(f, alle("00:15"))
         assertTrue(r.toString(), r.ok)
         assertEquals("00:15", r.debut)
         assertEquals(2, f.ecritures.size)
@@ -521,20 +582,20 @@ class ClientCableTest {
 
     @Test fun cableEveilleQuiIgnoreLEcritureJamaisDeSecondEnvoi() {
         val f = fauxAvec(ignorerEcriture = true)
-        assertEquals(Resultat(false, "relecture_differente", ecrit = true), prog(f, Action.Allumage("00:15")))
+        assertEquals(Resultat(false, "relecture_differente", ecrit = true), prog(f, alle("00:15")))
         assertEquals(1, f.ecritures.size)
     }
 
     @Test fun enVeilleEtQuiIgnoreToujoursDeuxEnvoisAuPlus() {
         val f = fauxAvec(dps = dpsVeille(), veille = true, ignorerEcriture = true)
-        assertEquals(Resultat(false, "relecture_differente", ecrit = true), prog(f, Action.Allumage("00:15")))
+        assertEquals(Resultat(false, "relecture_differente", ecrit = true), prog(f, alle("00:15")))
         assertEquals(2, f.ecritures.size)
     }
 
     // --- Connexion coupée APRÈS l'envoi de l'écriture (jumeau de tests/local-ecriture-coupee.test.mjs) ---
 
     @Test fun connexionCoupeeApresLEcritureIncertainJamaisRienNAEteModifie() {
-        for (action in listOf(Action.Allumage("23:45"), Action.Desactiver)) {
+        for (action in listOf(alle("23:45"), Action.Desactiver)) {
             val dps = linkedMapOf<String, Any?>("101" to 202L, "109" to "WAIT", "150" to 16L, "151" to plage(2, "03:30", "06:00"), "152" to 16L)
             val f = fauxAvec(dps = dps)
             val coupe = object : Transport by f {

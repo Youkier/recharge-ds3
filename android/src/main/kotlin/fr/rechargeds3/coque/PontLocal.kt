@@ -127,11 +127,17 @@ class PontLocal(
     // OperationsCable, qui ne relance jamais une écriture partie. Absent = une seule tentative (page d'essai).
     private fun reessayer(q: JSONObject): Boolean = q.optBoolean("reessayer", false)
 
-    // Exactement une des deux actions du projet : { allumage: "HH:MM" } ou { desactiver: true }.
+    // Exactement une des deux actions du projet : { allumage: "HH:MM", fin: "HH:MM", duree_min: entier, depart: "HH:MM" }
+    // ou { desactiver: true }. Tout est revalidé ici : types exacts (chaînes, entier), formats, durée 1..900, fin dans la nuit.
     private fun programmer(q: JSONObject, repondre: (JSONObject) -> Unit) {
         val action: Action? = when {
-            q.has("allumage") && !q.has("desactiver") ->
-                (q.opt("allumage") as? String)?.takeIf { Plage.heureValide(it) }?.let { Action.Allumage(it) }
+            q.has("allumage") && !q.has("desactiver") -> {
+                val a = q.opt("allumage") as? String
+                val f = q.opt("fin") as? String
+                val d = q.opt("depart") as? String
+                val duree = q.opt("duree_min") as? Int // un décimal (Double) ou un grand entier (Long) est refusé
+                if (a != null && f != null && d != null && duree != null && Plage.demandeValide(a, f, duree, d)) Action.Allumage(a, f, duree, d) else null
+            }
             q.has("desactiver") && !q.has("allumage") ->
                 if (q.opt("desactiver") == true) Action.Desactiver else null
             else -> null

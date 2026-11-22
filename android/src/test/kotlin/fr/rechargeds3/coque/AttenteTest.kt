@@ -32,11 +32,16 @@ class AttenteTest {
         assertEquals(Issue.NON_FAITE, Attente.issue("ko", false))
         assertEquals(Issue.INCERTAINE, Attente.issue("ko", true))
         assertEquals(Issue.ANNULEE, Attente.issue("annulee", false))
+        assertEquals(Issue.TARDIVE, Attente.issue("tardif", false))
+        assertEquals(Issue.TROP_TARD, Attente.issue("trop_tard", false))
+        assertNull(Attente.issue("immediat", false)) // ancien résultat, supprimé
         for (r in listOf(null, "", "OK", "inconnu", "appli_fermee", "ok ")) assertNull(r.toString(), Attente.issue(r, false))
     }
 
     @Test fun textesAvecHeure() {
         assertEquals(R.string.resultat_ok_titre to R.string.resultat_ok_texte, Attente.textes(Issue.PROGRAMMEE, true))
+        assertEquals(R.string.resultat_tardif_titre to R.string.resultat_tardif_texte, Attente.textes(Issue.TARDIVE, true))
+        assertEquals(R.string.resultat_trop_tard_titre to R.string.resultat_trop_tard_texte, Attente.textes(Issue.TROP_TARD, true))
         assertEquals(R.string.resultat_ko_titre to R.string.resultat_a_la_main, Attente.textes(Issue.NON_FAITE, true))
         assertEquals(R.string.resultat_ko_titre to R.string.resultat_verifier, Attente.textes(Issue.INCERTAINE, true))
         assertEquals(R.string.resultat_annulee_titre to R.string.resultat_a_la_main, Attente.textes(Issue.ANNULEE, true))
@@ -45,7 +50,9 @@ class AttenteTest {
     }
 
     @Test fun textesSansHeure() {
-        assertEquals(R.string.resultat_ok_titre_sans_heure to R.string.resultat_ok_texte, Attente.textes(Issue.PROGRAMMEE, false))
+        assertEquals(R.string.resultat_ok_titre_sans_heure to R.string.resultat_ok_texte_sans_heure, Attente.textes(Issue.PROGRAMMEE, false))
+        assertEquals(R.string.resultat_tardif_titre_sans_heure to R.string.resultat_tardif_texte_sans_heure, Attente.textes(Issue.TARDIVE, false))
+        assertEquals(R.string.resultat_trop_tard_titre to R.string.resultat_trop_tard_texte, Attente.textes(Issue.TROP_TARD, false))
         assertEquals(R.string.resultat_ko_titre to R.string.resultat_a_la_main_sans_heure, Attente.textes(Issue.NON_FAITE, false))
         assertEquals(R.string.resultat_ko_titre to R.string.resultat_verifier_sans_heure, Attente.textes(Issue.INCERTAINE, false))
         assertEquals(R.string.resultat_annulee_titre to R.string.resultat_a_la_main_sans_heure, Attente.textes(Issue.ANNULEE, false))

@@ -75,7 +75,7 @@ class VecteursTest {
         val t = TransportVecteur(echanges("ecriture"))
         @Suppress("UNCHECKED_CAST")
         val demande = section("ecriture")["demande"] as Map<String, Any?>
-        val r = ClientCable.programmer(cfg(), t, Action.Allumage(demande["allumage"] as String), maintenant, sansPause, aleas().fn)
+        val r = ClientCable.programmer(cfg(), t, alle(demande["allumage"] as String), maintenant, sansPause, aleas().fn)
         assertEquals(Resultat(true, debut = "00:15", fin = "06:00", plageActive = true), r)
         assertEquals(clients("ecriture"), t.envoyes)
         assertEquals(cables("ecriture"), t.recus)
@@ -117,7 +117,7 @@ class VecteursTest {
                 return c
             }
         }
-        val r = ClientCable.programmer(cfg(), transport, Action.Allumage("00:15"), maintenant, sansPause, aleas().fn)
+        val r = ClientCable.programmer(cfg(), transport, alle("00:15"), maintenant, sansPause, aleas().fn)
         assertTrue(r.ok)
         assertEquals(clients("ecriture"), faux.envoyes.map { hex(it) })
         assertEquals(cables("ecriture"), recus) // négociation, lecture, accusé, annonce, relecture
