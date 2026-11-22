@@ -1,5 +1,5 @@
 {
- "_description": "Cas communs au Worker (worker/src/service.js, deciderPlage) et à la coque Android (Plage.decider) pour la règle du démarrage tardif (décision du 2026-11-22). Lus par tests/plage-tardif-cas.test.mjs et par PlageTardifTest.kt : les deux implémentations doivent donner EXACTEMENT les mêmes résultats. Heure de Paris, minutes murales ; aucune donnée réelle. Le module local/tuya-local.js (outil PC) garde l'ancienne règle et n'est pas concerné.",
+ "_description": "Cas communs au Worker (worker/src/service.js, deciderPlage) et à la coque Android (Plage.decider) pour la règle du démarrage tardif (décision du 2026-11-22). Lus par tests/plage-tardif-cas.test.mjs et par PlageTardifTest.kt : les deux implémentations doivent donner EXACTEMENT les mêmes résultats. Heure de Paris, minutes murales ; aucune donnée réelle. Désactiver : { fin } (fin des heures creuses) donne début = fin - 1 min et fin = fin, la fin relue du câble n'est plus recopiée. Le module local/tuya-local.js (outil PC) garde l'ancienne règle et n'est pas concerné.",
  "decider": [
   {
    "nom": "avant la fenêtre : 21:00, début 23:00",
@@ -472,8 +472,8 @@
  ],
  "desactiver": [
   {
-   "nom": "fin 06:00",
-   "fin_actuelle": "06:00",
+   "nom": "fin 06:00 (cas normal : la fin des heures creuses)",
+   "fin": "06:00",
    "attendu": {
     "debut": "05:59",
     "fin": "06:00"
@@ -481,18 +481,26 @@
   },
   {
    "nom": "fin minuit",
-   "fin_actuelle": "00:00",
+   "fin": "00:00",
    "attendu": {
     "debut": "23:59",
     "fin": "00:00"
    }
   },
   {
-   "nom": "fin repoussée par un démarrage tardif",
-   "fin_actuelle": "07:30",
+   "nom": "fin 07:00",
+   "fin": "07:00",
    "attendu": {
-    "debut": "07:29",
-    "fin": "07:30"
+    "debut": "06:59",
+    "fin": "07:00"
+   }
+  },
+  {
+   "nom": "fin 00:01",
+   "fin": "00:01",
+   "attendu": {
+    "debut": "00:00",
+    "fin": "00:01"
    }
   }
  ]

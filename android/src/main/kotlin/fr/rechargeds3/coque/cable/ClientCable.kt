@@ -21,11 +21,12 @@ class ConfigCable( // pas de data class : ni copy() ni composante qui exposerait
 
 /**
  * Les deux seules actions : régler la plage (début [hhmm], fin [fin], durée de charge [dureeMin] en minutes, heure de départ
- * [depart], voir Plage.decider pour le démarrage tardif), ou la rendre « courte » (début = fin relue moins une minute).
+ * [depart], voir Plage.decider pour le démarrage tardif), ou la rendre « courte » : fin = [Desactiver.fin] (fin des heures creuses),
+ * début = fin moins une minute.
  */
 sealed class Action {
     data class Allumage(val hhmm: String, val fin: String, val dureeMin: Int, val depart: String) : Action()
-    object Desactiver : Action()
+    data class Desactiver(val fin: String) : Action()
 }
 
 /**
@@ -80,6 +81,7 @@ object ClientCable {
         if (action is Action.Allumage && !Plage.demandeValide(action.hhmm, action.fin, action.dureeMin, action.depart)) {
             return Resultat(false, "requete_invalide")
         }
+        if (action is Action.Desactiver && !Plage.heureValide(action.fin)) return Resultat(false, "requete_invalide")
         return executer(cfg, t, aleas, pause, maintenant) { ctx -> programmerEnSession(ctx, action) }
     }
 
@@ -310,8 +312,9 @@ object ClientCable {
             }
             courte = false
         } else {
-            debut = Plage.moinsUneMinute(actuelle.se)
-            fin = actuelle.se // la fin relue est réécrite telle quelle
+            val des = action as Action.Desactiver
+            debut = Plage.moinsUneMinute(des.fin)
+            fin = des.fin // la fin des heures creuses est réécrite : une fin repoussée la veille ne reste pas
             tardif = false
             courte = true
         }

@@ -47,10 +47,11 @@ export function demandeValide(d) {
 }
 
 // statut : r.status du calcul ('none' = aucune charge nécessaire). heure : "HH:MM" du début de charge.
-// plan : { fin: "HH:MM" fin du plan, dureeMin: durée de charge du plan (chargeMin), depart: "HH:MM" réglage de départ }.
+// plan : { fin: "HH:MM" fin du plan, dureeMin: durée de charge du plan (chargeMin), depart: "HH:MM" réglage de départ,
+//         finHC: "HH:MM" fin des heures creuses (pour « pas de charge » : plage de finHC - 1 min à finHC) }.
 // Renvoie null si la demande ne peut pas être construite (rien n'est alors envoyé).
 export function choisirDemande(statut, heure, plan = {}) {
-  if (statut === 'none') return { desactiver: true };
+  if (statut === 'none') return typeof plan.finHC === 'string' && HEURE_RE.test(plan.finHC) ? { desactiver: true, fin: plan.finHC } : null;
   if ((statut === 'ok' || statut === 'short') && typeof heure === 'string' && HEURE_RE.test(heure)) {
     const d = { allumage: heure, fin: plan.fin, duree_min: plan.dureeMin, depart: plan.depart };
     return demandeValide(d) ? d : null;
@@ -194,7 +195,9 @@ function interpreter(demande, status, json, ko, finHC) {
 
   if (demande && demande.desactiver) {
     // Plage courte : OK seulement si activée, marquée courte, et début = fin - 1 min (relus sur le câble).
-    if (json.plage_active === true && json.courte === true && estHeure(json.debut) && estHeure(json.fin) && json.debut === moinsUneMinute(json.fin)) {
+    // La fin relue doit être celle demandée (fin des heures creuses) : une fin repoussée la veille est remise à sa valeur.
+    if (json.plage_active === true && json.courte === true && estHeure(json.debut) && estHeure(json.fin) && json.debut === moinsUneMinute(json.fin)
+      && (!estHeure(demande.fin) || json.fin === demande.fin)) {
       return { etat: 'ok', message: 'Le câble ne chargera pas cette nuit (' + json.debut + '–' + json.fin + '), inutile de brancher.', detail: null, rappel: RAPPEL_REPROGRAMMER, aucune: true, debut: json.debut, fin: json.fin };
     }
     return ko('relecture_differente');

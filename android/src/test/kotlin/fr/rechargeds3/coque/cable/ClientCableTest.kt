@@ -301,30 +301,38 @@ class ClientCableTest {
         assertEquals("03:30", r.debut)
     }
 
-    @Test fun plageCourteReecritLaFinRelue() {
-        val f = fauxAvec(dps = dpsBase(plage(2, "03:30", "07:30")))
-        val r = prog(f, Action.Desactiver)
-        assertEquals(Resultat(true, debut = "07:29", fin = "07:30", plageActive = true, courte = true), r)
-        assertEquals(plage(2, "07:29", "07:30"), valeur151(f))
+    @Test fun plageCourteRemetLaFinDemandeeApresUneFinRepoussee() {
+        val f = fauxAvec(dps = dpsBase(plage(2, "03:30", "07:30"))) // fin repoussée par un démarrage tardif la veille
+        val r = prog(f, Action.Desactiver("06:00"))
+        assertEquals(Resultat(true, debut = "05:59", fin = "06:00", plageActive = true, courte = true), r)
+        assertEquals(plage(2, "05:59", "06:00"), valeur151(f))
+    }
+
+    @Test fun plageCourteFinInvalideRienNEstOuvert() {
+        for (h in listOf("24:00", "6:00", "", "06:00 ")) {
+            val f = fauxAvec()
+            assertEquals(h, Resultat(false, "requete_invalide"), prog(f, Action.Desactiver(h)))
+            assertEquals(0, f.ouvertures.get())
+        }
     }
 
     @Test fun plageCourteDebutEgalFinMoinsUneMinute() {
         val f = fauxAvec()
-        val r = prog(f, Action.Desactiver)
+        val r = prog(f, Action.Desactiver("06:00"))
         assertEquals(Resultat(true, debut = "05:59", fin = "06:00", plageActive = true, courte = true), r)
         assertEquals(plage(2, "05:59", "06:00"), valeur151(f))
     }
 
     @Test fun plageCourteFinAMinuit() {
         val f = fauxAvec(dps = dpsBase(plage(2, "03:30", "00:00")))
-        val r = prog(f, Action.Desactiver)
+        val r = prog(f, Action.Desactiver("00:00"))
         assertEquals("23:59", r.debut)
         assertTrue(r.courte)
     }
 
     @Test fun plageCourtePlageInactiveMRepasseA2() {
         val f = fauxAvec(dps = dpsBase(plage(0, "03:30", "06:00")))
-        assertEquals(true, prog(f, Action.Desactiver).plageActive)
+        assertEquals(true, prog(f, Action.Desactiver("06:00")).plageActive)
     }
 
     // --- Rien n'est écrit quand la valeur du câble est inattendue ---
@@ -434,7 +442,7 @@ class ClientCableTest {
             plage(2, "03:30", "06:00"), plage(0, "03:30", "06:00", 5), plage(2, "22:00", "06:00", 1), plage(0, "00:00", "23:59", 9),
             plage(2, "05:59", "06:00"), plage(0, "12:00", "00:00"),
         )
-        val actions = listOf(alle("00:15"), alle("23:59"), alle("04:00"), Action.Desactiver)
+        val actions = listOf(alle("00:15"), alle("23:59"), alle("04:00"), Action.Desactiver("06:00"))
         val instants = listOf("2026-11-16T22:30:00Z", "2026-11-17T03:10:00Z", "2026-07-01T10:00:00Z")
         val heure = Regex("([01][0-9]|2[0-3]):[0-5][0-9]")
         var ecritures = 0
@@ -451,7 +459,7 @@ class ClientCableTest {
                 assertEquals(listOf("m", "dt", "ss", "se"), v.keys.toList())
                 assertEquals(2L, v["m"])
                 assertEquals(avant.dt.toLong(), v["dt"])
-                if (a is Action.Desactiver) assertEquals(avant.se, v["se"]) // la fin relue est réécrite telle quelle
+                if (a is Action.Desactiver) assertEquals(a.fin, v["se"]) // la fin demandée est écrite
                 assertTrue(heure.matches(v["se"] as String))
                 assertTrue(heure.matches(v["ss"] as String))
             }
@@ -491,7 +499,7 @@ class ClientCableTest {
                 override fun recevoir(delaiMs: Int): ByteArray { throw piege }
                 override fun fermer() { throw piege }
             }
-            resultats.add(prog(piegeurOuvrir, Action.Desactiver))
+            resultats.add(prog(piegeurOuvrir, Action.Desactiver("06:00")))
         } finally {
             System.setOut(ancienOut)
             System.setErr(ancienErr)
@@ -595,7 +603,7 @@ class ClientCableTest {
     // --- Connexion coupée APRÈS l'envoi de l'écriture (jumeau de tests/local-ecriture-coupee.test.mjs) ---
 
     @Test fun connexionCoupeeApresLEcritureIncertainJamaisRienNAEteModifie() {
-        for (action in listOf(alle("23:45"), Action.Desactiver)) {
+        for (action in listOf(alle("23:45"), Action.Desactiver("06:00"))) {
             val dps = linkedMapOf<String, Any?>("101" to 202L, "109" to "WAIT", "150" to 16L, "151" to plage(2, "03:30", "06:00"), "152" to 16L)
             val f = fauxAvec(dps = dps)
             val coupe = object : Transport by f {

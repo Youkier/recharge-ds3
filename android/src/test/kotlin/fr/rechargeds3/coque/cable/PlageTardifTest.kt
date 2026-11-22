@@ -56,11 +56,11 @@ class PlageTardifTest {
         }
     }
 
-    @Test fun desactiverDebutEgalFinMoinsUneMinute() {
+    @Test fun desactiverDebutEgalFinDemandeeMoinsUneMinute() {
         for (c in liste("desactiver")) {
             val a = objet(c["attendu"])
-            assertEquals(c["nom"] as String, a["debut"], Plage.moinsUneMinute(c["fin_actuelle"] as String))
-            assertEquals(c["nom"] as String, a["fin"], c["fin_actuelle"])
+            assertEquals(c["nom"] as String, a["debut"], Plage.moinsUneMinute(c["fin"] as String))
+            assertEquals(c["nom"] as String, a["fin"], c["fin"])
         }
     }
 

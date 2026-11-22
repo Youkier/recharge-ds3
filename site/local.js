@@ -134,7 +134,7 @@ export async function chercherCable(deps, surProgres = null) {
 }
 
 /**
- * Programme le câble (demande de service.js : { allumage, fin, duree_min, depart } ou { desactiver:true }). Ne lève jamais.
+ * Programme le câble (demande de service.js : { allumage, fin, duree_min, depart } ou { desactiver:true, fin }). Ne lève jamais.
  * -> même forme que service.js : { etat:'ok', message, detail?, rappel, tardif? } | resultatKo(...)
  */
 export async function programmerLocal(demande, deps, finHC) {
@@ -149,7 +149,7 @@ export async function programmerLocal(demande, deps, finHC) {
     if (reseau !== 'oui') return ko('local_hors_wifi');
     // Les deux seules actions du projet ; le natif les revalide.
     const action = demande.desactiver
-      ? { desactiver: true }
+      ? { desactiver: true, fin: demande.fin }
       : { allumage: demande.allumage, fin: demande.fin, duree_min: demande.duree_min, depart: demande.depart };
     // Le natif refait une tentative SEULEMENT si l'écriture n'est pas partie, dans un budget de 27 s (sous le plafond de
     // 30 s de la page, app.js) ; une écriture peut-être appliquée n'est jamais relancée (règle 2 : résultat incertain).

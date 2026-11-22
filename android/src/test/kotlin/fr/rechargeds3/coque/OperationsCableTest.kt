@@ -113,7 +113,7 @@ class OperationsCableTest {
     }
 
     @Test fun desactiverRendLaPlageCourte() {
-        val r = ops(Env(fabrique = { faux() })).programmer(null, Action.Desactiver, null)
+        val r = ops(Env(fabrique = { faux() })).programmer(null, Action.Desactiver("06:00"), null)
         assertEquals(true, r["ok"]); assertEquals("05:59", r["debut"]); assertEquals("06:00", r["fin"]); assertEquals(true, r["courte"])
     }
 
@@ -169,7 +169,7 @@ class OperationsCableTest {
         while (!o.enCours() && essais++ < 200) Thread.sleep(10)
         assertTrue(o.enCours())
         assertEquals("occupe", o.lire(null, null)["erreur"])
-        assertEquals("occupe", o.programmer(null, Action.Desactiver, null)["erreur"])
+        assertEquals("occupe", o.programmer(null, Action.Desactiver("06:00"), null)["erreur"])
         val enRecherche = o.chercher(null) { }
         assertEquals("occupe", enRecherche["erreur"])
         o.annulerTout() // coupe la connexion : la première opération rend la main

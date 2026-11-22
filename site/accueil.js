@@ -125,7 +125,7 @@ export function ligneCable(plage) {
 // pas si la voiture est branchée maintenant, il faut décaler le début (démarrage tardif).
 export function dejaProgramme(plage, demande, contexte) {
   if (!plage || !demande || plage.active !== true) return false; // seulement une plage lue ACTIVE
-  if (demande.desactiver) return plageSansCharge(plage);
+  if (demande.desactiver) return plageSansCharge(plage) && (typeof demande.fin !== 'string' || plage.fin === demande.fin);
   if (contexte === 'tardif') return false;
   return typeof demande.allumage === 'string' && plage.debut === demande.allumage && typeof demande.fin === 'string' && plage.fin === demande.fin;
 }

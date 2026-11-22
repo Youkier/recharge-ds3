@@ -267,7 +267,7 @@ import { confirmationValable, blocageCable, plageRelue, plageDuCable, ligneCable
     drawTimeline(r);
     drawAide(p, r);
     // Le plan fournit aussi la fin, la durée de charge et le départ : le câble décide au moment de l'envoi (démarrage tardif).
-    setDemande(choisirDemande(r.status, r.status === "none" ? null : fmt(r.start), { fin: fmt(r.end), dureeMin: r.chargeMin, depart: fmt(r.dep) }));
+    setDemande(choisirDemande(r.status, r.status === "none" ? null : fmt(r.start), { fin: fmt(r.end), dureeMin: r.chargeMin, depart: fmt(r.dep), finHC: fmt(hm(cur.hcEnd)) }));
   }
 
   // Frise : du début des heures creuses (plus tôt si la charge commence avant)

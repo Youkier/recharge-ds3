@@ -128,7 +128,7 @@ class PontLocal(
     private fun reessayer(q: JSONObject): Boolean = q.optBoolean("reessayer", false)
 
     // Exactement une des deux actions du projet : { allumage: "HH:MM", fin: "HH:MM", duree_min: entier, depart: "HH:MM" }
-    // ou { desactiver: true }. Tout est revalidé ici : types exacts (chaînes, entier), formats, durée 1..900, fin dans la nuit.
+    // ou { desactiver: true, fin: "HH:MM" }. Tout est revalidé ici : types exacts (chaînes, entier), formats, durée 1..900, fin dans la nuit.
     private fun programmer(q: JSONObject, repondre: (JSONObject) -> Unit) {
         val action: Action? = when {
             q.has("allumage") && !q.has("desactiver") -> {
@@ -138,8 +138,10 @@ class PontLocal(
                 val duree = q.opt("duree_min") as? Int // un décimal (Double) ou un grand entier (Long) est refusé
                 if (a != null && f != null && d != null && duree != null && Plage.demandeValide(a, f, duree, d)) Action.Allumage(a, f, duree, d) else null
             }
-            q.has("desactiver") && !q.has("allumage") ->
-                if (q.opt("desactiver") == true) Action.Desactiver else null
+            q.has("desactiver") && !q.has("allumage") -> {
+                val f = q.opt("fin") as? String
+                if (q.opt("desactiver") == true && f != null && Plage.heureValide(f)) Action.Desactiver(f) else null
+            }
             else -> null
         }
         if (action == null) return repondre(erreur("requete_invalide"))

@@ -64,7 +64,8 @@ describe('« Déjà programmé » : aucun envoi inutile', () => {
     assert.equal(dejaProgramme({ debut: '05:59', fin: '06:00', active: true }, { desactiver: true }, 'tardif'), true); // pas de charge : inchangé
   });
   test('pas de charge : seulement si le câble est déjà sur la plage d\'une minute', () => {
-    assert.equal(dejaProgramme({ debut: '05:59', fin: '06:00', active: true }, { desactiver: true }), true);
+    assert.equal(dejaProgramme({ debut: '05:59', fin: '06:00', active: true }, { desactiver: true, fin: '06:00' }), true);
+    assert.equal(dejaProgramme({ debut: '06:59', fin: '07:00', active: true }, { desactiver: true, fin: '06:00' }), false); // autre fin : à réécrire
     assert.equal(dejaProgramme(plage, { desactiver: true }), false);
     assert.equal(dejaProgramme({ debut: '05:59', fin: '06:00', active: true }, { allumage: '05:59', fin: '06:00', duree_min: 1, depart: '07:30' }), true);
   });

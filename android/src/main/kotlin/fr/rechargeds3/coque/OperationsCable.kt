@@ -208,6 +208,7 @@ class OperationsCable(
             if (action is Action.Allumage && !Plage.demandeValide(action.hhmm, action.fin, action.dureeMin, action.depart)) {
                 return@exclusif erreur("requete_invalide")
             }
+            if (action is Action.Desactiver && !Plage.heureValide(action.fin)) return@exclusif erreur("requete_invalide")
             avecConfig(ip, delaiMs) { cfg ->
                 val debut = horloge()
                 val t = nouveauTransport(op) ?: return@avecConfig causeSansTransport(op)

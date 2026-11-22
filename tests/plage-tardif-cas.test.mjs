@@ -13,7 +13,7 @@ const CAS = JSON.parse(readFileSync(new URL('./plage-tardif-cas.json', import.me
 describe('Fichier de cas du démarrage tardif', () => {
   test('les sections et les statuts attendus sont présents', () => {
     assert.ok(CAS.decider.length >= 30);
-    assert.ok(CAS.desactiver.length >= 3);
+    assert.ok(CAS.desactiver.length >= 4);
     const statuts = new Set(CAS.decider.map((c) => c.attendu.statut));
     for (const s of ['normal', 'tardif', 'trop_tard', 'invalide']) assert.ok(statuts.has(s), s);
     // maintenant : 21:00, 23:50, 00:20, 05:50, 07:40 et 14:00 (heure de Paris, hiver)
@@ -31,8 +31,8 @@ describe('deciderPlage (Worker) sur le fichier de cas', () => {
   }
 });
 
-describe('désactiver : début = fin relue moins une minute', () => {
+describe('désactiver : début = fin demandée moins une minute', () => {
   for (const c of CAS.desactiver) {
-    test(c.nom, () => assert.deepEqual({ debut: moinsUneMinute(c.fin_actuelle), fin: c.fin_actuelle }, c.attendu));
+    test(c.nom, () => assert.deepEqual({ debut: moinsUneMinute(c.fin), fin: c.fin }, c.attendu));
   }
 });

@@ -10,7 +10,7 @@ import {
 
 // Contrat du 2026-11-22 : début, fin du plan, durée de charge du plan (minutes) et heure de départ.
 const prog = { allumage: "00:35", fin: "06:00", duree_min: 325, depart: "07:30" };
-const desact = { desactiver: true };
+const desact = { desactiver: true, fin: "06:00" };
 const okRep = { ok: true, debut: "00:35", fin: "06:00", plage_active: true };
 const courteRep = { ok: true, debut: "05:59", fin: "06:00", plage_active: true, courte: true };
 
@@ -38,7 +38,15 @@ describe("Jeton", () => {
 });
 
 describe("Choix de la demande", () => {
-  test("aucune charge -> désactiver", () => assert.deepEqual(choisirDemande("none", null), desact));
+  test("aucune charge -> désactiver avec la fin des heures creuses", () => {
+    assert.deepEqual(choisirDemande("none", null, { finHC: "06:00" }), desact);
+    assert.equal(choisirDemande("none", null), null);
+    assert.equal(choisirDemande("none", null, { finHC: "6:00" }), null);
+  });
+  test("pas de charge : la fin relue doit être celle demandée", () => {
+    assert.equal(interpreterReponse(desact, 200, { ...courteRep, debut: "06:59", fin: "07:00" }).etat, "ko");
+    assert.equal(interpreterReponse(desact, 200, courteRep).etat, "ok");
+  });
   const plan = { fin: "06:00", dureeMin: 325, depart: "07:30" };
   test("charge -> allumage, fin, durée et départ", () => {
     assert.deepEqual(choisirDemande("ok", "00:35", plan), prog);
@@ -64,7 +72,7 @@ describe("Choix de la demande", () => {
     assert.equal(demandeValide({ ...prog, fin: "00:30" }), false); // avant l'allumage
     assert.equal(demandeValide({ ...prog, allumage: "07:30" }), false); // départ = allumage
     assert.equal(demandeValide(null), false);
-    assert.equal(demandeValide({ desactiver: true }), false);
+    assert.equal(demandeValide({ desactiver: true, fin: "06:00" }), false);
   });
   test("libellés", () => {
     assert.deepEqual(libelleBouton(prog), { principal: "Programmer la charge", secondaire: "démarrage 00:35" });
@@ -168,7 +176,7 @@ describe("Interprétation : OK seulement si tout est conforme", () => {
     assert.equal(r.etat, "ok");
     assert.equal(r.message, "Le câble ne chargera pas cette nuit (05:59–06:00), inutile de brancher.");
     assert.equal(r.rappel, "Demain soir, reprogrammez : sinon la voiture ne chargera pas.");
-    assert.equal(interpreterReponse(desact, 200, { ...courteRep, debut: "23:59", fin: "00:00" }).etat, "ok");
+    assert.equal(interpreterReponse({ ...desact, fin: "00:00" }, 200, { ...courteRep, debut: "23:59", fin: "00:00" }).etat, "ok");
   });
   test("plage courte : KO si courte absent, plage inactive ou début incohérent", () => {
     const { courte, ...sansCourte } = courteRep;
@@ -263,7 +271,7 @@ describe("Envoi (fetch simulé)", () => {
   test("corps de désactivation", async () => {
     let corps;
     await envoyer("https://a.workers.dev", "t", desact, { onLine: true, fetch: async (u, i) => { corps = i.body; return reponse(200, courteRep); } });
-    assert.equal(corps, '{"desactiver":true}');
+    assert.equal(corps, '{"desactiver":true,"fin":"06:00"}');
   });
   test("hors ligne : KO immédiat, aucun appel", async () => {
     let appels = 0;
@@ -384,7 +392,7 @@ describe("Critères 2c : alerte KO distincte, aide hors ligne, avertissement aff
     assert.match(app, /if \(res\.detail\) a\.appendChild/);
     assert.match(app, /if \(res\.rappel\) a\.appendChild/);
     assert.match(app, /finHC = fmt\(hm\(cur\.hcEnd\)\)/);
-    assert.match(app, /choisirDemande\(r\.status, [^\n]*\{ fin: fmt\(r\.end\), dureeMin: r\.chargeMin, depart: fmt\(r\.dep\) \}\)/);
+    assert.match(app, /choisirDemande\(r\.status, [^\n]*\{ fin: fmt\(r\.end\), dureeMin: r\.chargeMin, depart: fmt\(r\.dep\), finHC: fmt\(hm\(cur\.hcEnd\)\) \}\)/);
   });
   test("l'Aide est dans la page mise en cache : vue #aide dans index.html, index.html et app.js dans le précache", () => {
     assert.match(html, /id="v-aide"/);

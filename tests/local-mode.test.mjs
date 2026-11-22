@@ -22,7 +22,7 @@ function client({ configure = true, adresse = '192.168.1.48', prefixe = '192.168
     async lire(params, delai) { journal.lectures.push({ params, delai }); return rep(lire, params, delai); },
     async programmer(action, params, delai) {
       journal.programmes.push({ action, params, delai });
-      return rep(programmer ?? ((a) => ({ ok: true, debut: a.desactiver ? '05:59' : a.allumage, fin: a.desactiver ? '06:00' : a.fin, plage_active: true, tardif: false, courte: !!a.desactiver })), action, params, delai);
+      return rep(programmer ?? ((a) => ({ ok: true, debut: a.desactiver ? '05:59' : a.allumage, fin: a.desactiver ? a.fin : a.fin, plage_active: true, tardif: false, courte: !!a.desactiver })), action, params, delai);
     },
     async chercher(params, surProgres) { journal.recherches.push(params); return rep(chercher ?? { ok: false, erreur: 'introuvable' }, params, surProgres); },
   };
@@ -119,11 +119,11 @@ describe('Recherche à la demande', () => {
 describe('Programmer en local (règle 2 : jamais d\'échec silencieux)', () => {
   test('pas de charge ce soir : seule l\'action « desactiver » part, résultat vérifié par service.js', async () => {
     const c = client();
-    const r = await programmerLocal({ desactiver: true }, { client: c }, '06:00');
+    const r = await programmerLocal({ desactiver: true, fin: '06:00' }, { client: c }, '06:00');
     assert.equal(r.etat, 'ok', JSON.stringify(r));
     assert.match(r.message, /Le câble ne chargera pas cette nuit \(05:59–06:00\)/);
     assert.equal(r.rappel, 'Demain soir, reprogrammez : sinon la voiture ne chargera pas.');
-    assert.deepEqual(c.journal.programmes.map((x) => x.action), [{ desactiver: true }]);
+    assert.deepEqual(c.journal.programmes.map((x) => x.action), [{ desactiver: true, fin: '06:00' }]);
     assert.deepEqual(c.journal.programmes[0].params, { ip: '192.168.1.48', reessayer: true });
   });
   test('programmer une heure : ok seulement si relu conforme ; seuls début, fin, durée et départ partent', async () => {

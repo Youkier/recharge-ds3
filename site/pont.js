@@ -11,13 +11,14 @@
 //
 // Opérations sur le câble (une seule à la fois côté natif, sinon erreur occupe) :
 //   lire { ip?, delai?, reessayer? } -> { debut, fin, plage_active }   reessayer : seconde lecture (8 s) après un échec de contact
-//   programmer { allumage:"HH:MM", fin:"HH:MM", duree_min:<entier 1..900>, depart:"HH:MM" | desactiver:true, ip?, delai?, reessayer? }
+//   programmer { allumage:"HH:MM", fin:"HH:MM", duree_min:<entier 1..900>, depart:"HH:MM" | desactiver:true, fin:"HH:MM", ip?, delai?, reessayer? }
 //                                   -> { debut, fin, plage_active, tardif, courte }   (lit, écrit, relit)
 //                                      Démarrage tardif (décision du 2026-11-22), pris AU MOMENT DE L'ENVOI, en heure de Paris : si
 //                                      l'allumage est passé (entre l'allumage et le départ) ou dans moins de 10 min, le natif écrit
 //                                      début = maintenant + 10 min, fin = min(début + duree_min, depart) et répond tardif:true ;
 //                                      sinon il écrit allumage et fin. Si début >= départ : erreur trop_tard, rien n'est écrit.
 //                                      Le natif écrit ss, se et m (jamais dt) ; fin doit être entre l'allumage et le départ.
+//                                      desactiver : fin = fin des heures creuses ; le natif écrit ss = fin - 1 min, se = fin, m = activée.
 //                                      échec : { ok:false, erreur, ecrit? } ; ecrit:true = l'écriture est partie, ne jamais la relancer
 //   chercher { ip?, reessayer? }    -> { ip, trouve, debut, fin, plage_active } | erreur introuvable
 //                                      pendant la recherche : messages { n, progres:true, etape, appareils, lectures, echeance }

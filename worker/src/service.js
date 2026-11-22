@@ -279,11 +279,12 @@ export function moinsUneMinute(hhmm) {
   return `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
 }
 
-// Plage courte : début = fin relue - 1 min, plage activée ; la fin relue est réécrite telle quelle. Jamais de logique « tardif ».
-async function desactiver(env, deps) {
+// Plage courte : fin = celle demandée (fin des heures creuses), début = fin - 1 min, plage activée. Une fin repoussée par un démarrage
+// tardif est ainsi remise à sa valeur normale. Jamais de logique « tardif ».
+async function desactiver(env, deps, fin) {
   const cfg = configTuya(env);
   const actuelle = await lireValeurPlage(cfg, deps);
-  return ecrireEtVerifier(cfg, deps, actuelle, nouvellePlage(actuelle, moinsUneMinute(actuelle.se), actuelle.se), { tardif: false, courte: true });
+  return ecrireEtVerifier(cfg, deps, actuelle, nouvellePlage(actuelle, moinsUneMinute(fin), fin), { tardif: false, courte: true });
 }
 
 // --- Limite d'appels ---
@@ -328,14 +329,14 @@ function repondre(request, env, statut, corps, extra = {}) {
 const erreur = (request, env, code, statut = STATUTS[code] ?? 502) => repondre(request, env, statut, { ok: false, erreur: code });
 
 // Valide le corps de POST /api/programmer : exactement {"allumage":"HH:MM","fin":"HH:MM","duree_min":<entier 1..900>,"depart":"HH:MM"}
-// (fin comprise entre l'allumage et le départ), ou {"desactiver":true}.
+// (fin comprise entre l'allumage et le départ), ou {"desactiver":true,"fin":"HH:MM"} (fin des heures creuses).
 export function validerCorps(texte) {
   if (typeof texte !== 'string' || texte.length === 0 || texte.length > TAILLE_MAX_CORPS) return null;
   let obj;
   try { obj = JSON.parse(texte); } catch { return null; }
   if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return null;
   const cles = Object.keys(obj).sort().join(',');
-  if (cles === 'desactiver' && obj.desactiver === true) return { desactiver: true };
+  if (cles === 'desactiver,fin' && obj.desactiver === true && typeof obj.fin === 'string' && HEURE_VALIDE.test(obj.fin)) return { desactiver: true, fin: obj.fin };
   if (cles === 'allumage,depart,duree_min,fin' && validerDemande(obj)) {
     return { allumage: obj.allumage, fin: obj.fin, duree_min: obj.duree_min, depart: obj.depart };
   }
@@ -390,7 +391,7 @@ export async function traiter(request, env, deps = {}) {
     if (cl === null || !/^[0-9]+$/.test(cl) || Number(cl) > TAILLE_MAX_CORPS) return repondre(request, env, 400, { ok: false, erreur: 'requete_invalide' });
     const corps = validerCorps(await request.text());
     if (!corps) return repondre(request, env, 400, { ok: false, erreur: 'requete_invalide' });
-    return repondre(request, env, 200, corps.desactiver ? await desactiver(env, deps) : await programmer(env, deps, corps));
+    return repondre(request, env, 200, corps.desactiver ? await desactiver(env, deps, corps.fin) : await programmer(env, deps, corps));
   } catch (e) {
     const code = e instanceof ErreurService && STATUTS[e.code] ? e.code : 'tuya';
     if (!(e instanceof ErreurService)) console.error('erreur_interne');
