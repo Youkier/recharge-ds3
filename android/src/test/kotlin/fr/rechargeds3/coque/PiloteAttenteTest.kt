@@ -60,11 +60,12 @@ class PiloteAttenteTest {
     private class Banc(val env: Env, parisUtc: String = "2026-11-16T22:30:00Z", val stock: Stock = Stock()) {
         var t = 0L
         var surPause: (Long) -> Unit = {}
+        var surTrace: (String) -> Unit = {}
         val ecoute = Ecoute()
         var instant: ZonedDateTime = ZonedDateTime.parse(parisUtc) // l'heure de Paris peut avancer pendant l'attente
         private val maintenant = { instant }
         val ops = OperationsCable(env, 15 * 60_000L, { t }, maintenant, pause = {})
-        val pilote = PiloteAttente(ops, env, stock, { t }, maintenant, pause = { ms -> t += ms; surPause(ms) }).also { it.ecouteur = ecoute }
+        val pilote = PiloteAttente(ops, env, stock, { t }, maintenant, pause = { ms -> t += ms; surPause(ms) }, trace = { m -> surTrace(m) }).also { it.ecouteur = ecoute }
     }
 
     private val demande = Action.Allumage("00:35", "06:00", 300, "07:30")
@@ -130,6 +131,54 @@ class PiloteAttenteTest {
         val e = b.demarrerEtLancer()
         assertEquals(true, resultat(e)["ok"]); assertEquals(Issue.PROGRAMMEE, b.ecoute.fins.single().first)
         assertTrue(b.t in 340_000L..360_000L); assertEquals(1, ecritures())
+    }
+
+    /** Occupe le câble depuis la page : une lecture bloquée (PAGE) tient l'exclusivité jusqu'à annulerPage(). */
+    private fun occuperLeCableDepuisLaPage(b: Banc, bloque: java.util.concurrent.atomic.AtomicBoolean): Thread {
+        bloque.set(true)
+        val fil = Thread { b.ops.lire(null, 30_000) }.apply { isDaemon = true; start() }
+        var essais = 0
+        while (!b.ops.enCours() && essais++ < 300) Thread.sleep(10)
+        assertTrue(b.ops.enCours())
+        return fil
+    }
+
+    @Test fun occupeALaLectureNouvelEssaiCourtSansRienLancer() {
+        val bloque = java.util.concurrent.atomic.AtomicBoolean(false)
+        lateinit var b: Banc
+        b = banc({ if (bloque.getAndSet(false)) FauxCable(OptionsFaux(cle = cle, dps = dps(), bloquer = true)) else faux() })
+        val fil = occuperLeCableDepuisLaPage(b, bloque)
+        b.surPause = { if (b.t >= 2_000) b.ops.annulerPage() } // la page rend le câble
+        val e = b.demarrerEtLancer()
+        fil.join(5000)
+        assertEquals(true, resultat(e)["ok"]); assertEquals(Issue.PROGRAMMEE, b.ecoute.fins.single().first)
+        // Premier essai « occupe » à t = 0, nouvel essai après 1 s (et non 5 s) : l'envoi part avant 5 s.
+        assertTrue("envoi à " + b.t + " ms", b.t < 5_000); assertEquals(1, ecritures())
+    }
+
+    @Test fun occupeALEnvoiNouvelEssaiPuisEnvoiSansDoubleEcriture() {
+        val bloque = java.util.concurrent.atomic.AtomicBoolean(false)
+        lateinit var b: Banc
+        b = banc({ if (bloque.getAndSet(false)) FauxCable(OptionsFaux(cle = cle, dps = dps(), bloquer = true)) else faux() })
+        var fil: Thread? = null
+        b.surTrace = { m -> if (m == "envoi") fil = occuperLeCableDepuisLaPage(b, bloque) } // la page prend le câble juste avant l'envoi
+        b.surPause = { if (fil != null) b.ops.annulerPage() } // et le rend pendant la pause avant le nouvel essai
+        val e = b.demarrerEtLancer()
+        fil?.join(5000)
+        assertEquals(true, resultat(e)["ok"]); assertEquals(Issue.PROGRAMMEE, b.ecoute.fins.single().first)
+        assertEquals("une seule écriture", 1, ecritures())
+    }
+
+    @Test fun occupeALEnvoiAuDelaDesReessaisDonneNonFaiteSansEcriture() {
+        val bloque = java.util.concurrent.atomic.AtomicBoolean(false)
+        lateinit var b: Banc
+        b = banc({ if (bloque.getAndSet(false)) FauxCable(OptionsFaux(cle = cle, dps = dps(), bloquer = true)) else faux() })
+        var fil: Thread? = null
+        b.surTrace = { m -> if (m == "envoi") fil = occuperLeCableDepuisLaPage(b, bloque) }
+        val e = b.demarrerEtLancer() // la page ne rend jamais le câble
+        b.ops.annulerPage(); fil?.join(5000)
+        assertEquals("occupe", resultat(e)["erreur"]); assertEquals(Issue.NON_FAITE, b.ecoute.fins.single().first)
+        assertEquals(0, ecritures())
     }
 
     @Test fun leReseauDuWifiDoitEtreCeluiDeLAdresseRetenue() {

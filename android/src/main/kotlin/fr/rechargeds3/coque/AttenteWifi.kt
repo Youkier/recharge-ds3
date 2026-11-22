@@ -42,6 +42,7 @@ import android.os.PowerManager
 class AttenteWifi : Service(), EcouteurAttente {
 
     private val principal = Handler(Looper.getMainLooper())
+    private val demarrages = SuiviDemarrages()
     private var verrou: PowerManager.WakeLock? = null
     private var fil: Thread? = null
     private var suiviWifi = false
@@ -51,16 +52,17 @@ class AttenteWifi : Service(), EcouteurAttente {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        demarrages.enregistrer(startId)
         val proprietaire = ProprietaireCable.obtenir(this)
         pilote = proprietaire.pilote
         if (intent?.action == ACTION_ANNULER) {
             // Venu de la notification : seulement avant l'envoi (le pilote refuse ensuite) ; hors du fil principal (connexions).
-            Thread { pilote.annuler(); if (!pilote.enCours() && fil == null) principal.post { stopSelf() } }.start()
+            Thread { pilote.annuler(); if (!pilote.enCours() && fil == null) principal.post { stopSelf(startId) } }.start()
             return START_NOT_STICKY
         }
         // ACTION_DEBUT (startForegroundService) : startForeground() obligatoire, tout de suite.
         startForeground(ID_ATTENTE, notificationAttente(annulable = true), ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE)
-        if (pilote.phaseActuelle() != Phase.ATTENTE) { stopSelf(); return START_NOT_STICKY } // lancé pour rien
+        if (pilote.phaseActuelle() != Phase.ATTENTE) { stopSelf(startId); return START_NOT_STICKY } // lancé pour rien
         if (fil != null) return START_NOT_STICKY // second démarrage : la boucle tourne déjà
         proprietaire.wifi.demarrer() // le service suit le Wi-Fi lui-même (l'activité peut être arrêtée)
         suiviWifi = true
@@ -82,7 +84,8 @@ class AttenteWifi : Service(), EcouteurAttente {
     override fun termine(issue: Attente.Issue, debut: String?, fin: String?) {
         pilote.ecouteur = null
         if (!activiteVisible) publierResultat(applicationContext, issue, debut, fin)
-        principal.post { stopSelf() }
+        // Arrêt du dernier démarrage connu seulement : un démarrage plus récent (nouvelle attente) n'est jamais coupé par une fin tardive.
+        principal.post { stopSelf(demarrages.pourArret()) }
     }
 
     // Filet : connectedDevice n'a pas d'échéance système connue ; si elle venait à exister, on le dit et on s'arrête.

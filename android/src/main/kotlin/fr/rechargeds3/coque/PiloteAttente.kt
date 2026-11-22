@@ -280,6 +280,8 @@ class PiloteAttente(
                 if (!actif(s)) return
                 if (r["ok"] == true) { envoyer(s, a); return }
                 val e = r["erreur"] as? String
+                // « occupe » : la page tient le câble, rien n'est parti : nouvel essai court (1 s) au lieu d'attendre 5 s.
+                if (e == "occupe") derniere = derniere?.minus(LECTURE_MS - OCCUPE_LECTURE_MS)
                 if (e == "pas_de_cle") { terminer(s, Issue.NON_FAITE, erreur("attente_cle")); return }
                 // « cle » peut venir d'un câble qui redémarre (connexion fermée pendant la négociation) : deux refus d'affilée,
                 // chacun déjà relu une seconde fois, avant de conclure que la clé est refusée.
@@ -301,7 +303,17 @@ class PiloteAttente(
         if (perime) { terminer(s, Issue.NON_FAITE, erreur("attente_cable")); return }
         trace("envoi")
         ecouteur?.envoiCommence()
-        val r = operations.programmer(null, a, DELAI_ENVOI_MS, true, Origine.SERVICE)
+        var r = operations.programmer(null, a, DELAI_ENVOI_MS, true, Origine.SERVICE)
+        // « occupe » : une opération de la page tenait le câble, RIEN n'a été lancé ni écrit : un nouvel essai court est sans risque
+        // (jamais après une autre erreur : une écriture a pu partir). L'échéance de 10 min est ignorée ici : l'envoi est commencé.
+        var reessais = 0
+        while (r["ok"] != true && r["erreur"] == "occupe" && reessais < REESSAIS_OCCUPE) {
+            reessais++
+            trace("envoi occupe, nouvel essai " + reessais)
+            dormir(OCCUPE_ENVOI_MS)
+            if (synchronized(verrou) { session != s || phase != Phase.ENVOI }) return // terminée par ailleurs (filet, nouvelle clé)
+            r = operations.programmer(null, a, DELAI_ENVOI_MS, true, Origine.SERVICE)
+        }
         terminer(s, Attente.issue(a, r), r)
     }
 
@@ -430,6 +442,9 @@ class PiloteAttente(
         const val DELAI_ENVOI_MS = 20_000L
         const val REFUS_CLE_MAX = 2
         const val TRACE_MS = 10_000L
+        const val OCCUPE_LECTURE_MS = 1_000L // nouvel essai de lecture après « occupe »
+        const val OCCUPE_ENVOI_MS = 2_000L // nouvel essai d'envoi après « occupe » (rien n'a été lancé)
+        const val REESSAIS_OCCUPE = 3
         const val PEREMPTION_MS = 12L * 3600_000L
     }
 }

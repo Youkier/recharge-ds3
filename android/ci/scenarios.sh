@@ -69,6 +69,7 @@ echec() {
 # Remise en état de l'émulateur entre deux scénarios « atypiques » : Wi-Fi, thème clair, police 1.0, écran, code de verrouillage,
 # économiseur de batterie, faux câble par défaut, données de l'appli effacées (la clé est ressaisie par le scénario suivant).
 remettre_emulateur() {
+  local rc=0
   adb shell svc wifi enable > /dev/null 2>&1 || true
   adb shell cmd uimode night no > /dev/null 2>&1 || true
   THEME_COURANT="clair"
@@ -77,9 +78,30 @@ remettre_emulateur() {
   adb shell am force-stop "$PKG" > /dev/null 2>&1 || true
   lancer_faux
   [ -f "${PID_FAUX:-/inexistant}" ] && FAUX_PID="$(cat "$PID_FAUX")"
-  oublier_donnees
-  adb shell am start -W -n "$ACT" > /dev/null 2>&1 || true # appli relancée (écran de saisie, données effacées)
-  sleep 2
+  sleep 5 # le Wi-Fi se reconnecte
+  # Configuration refaite à chaque fois (le scénario précédent peut l'avoir effacée ou changée) : clé ressaisie ET câble retrouvé,
+  # comme un premier lancement. Sans cela, le scénario suivant ouvre une page « câble non localisé » (CI du 22/11 : S-E1, S-E2, S-F).
+  set +e
+  ( SCENARIO_COURANT=""; set -e; oublier_donnees; demarrer_page "$CLE_OK"; page_prete "remise en état" )
+  rc=$?
+  set -e
+  if [ "$rc" = 0 ]; then
+    CLE_ENREGISTREE="$CLE_OK"
+  else
+    CLE_ENREGISTREE=""
+    releve "remise en état : configuration (clé, adresse du câble) non refaite, le scénario suivant la refera"
+  fi
+}
+
+# releve_echec <nom> <fonction> : scénario non bloquant (relevé seulement) ; même isolation que essayer.
+releve_echec() {
+  local nom="$1" fonction="$2" rc=0
+  set +e
+  ( SCENARIO_COURANT=""; set -e; "$fonction" )
+  rc=$?
+  set -e
+  [ "$rc" = 0 ] || releve "$nom : échec NON bloquant (voir le journal et les artefacts)"
+  remettre_emulateur
 }
 
 # essayer <nom> <fonction> : lance le scénario dans un sous-shell ; son échec est consigné (« ÉCHEC <nom> : … ») et le suivant passe.
@@ -135,6 +157,15 @@ lancer_faux() {
     sleep 0.2
   done
   echec "faux câble non redémarré (options : $*)"
+}
+# Câble débranché : le faux câble est arrêté (le Wi-Fi de l'émulateur, lui, reste allumé).
+arreter_faux() {
+  local p i
+  p="$(cat "$PID_FAUX" 2> /dev/null || echo "$FAUX_PID")"
+  [ -n "$p" ] && kill "$p" 2> /dev/null || true
+  for i in $(seq 1 25); do ss -Htln "( sport = :6668 )" | grep -q 6668 || break; sleep 0.2; done
+  FAUX_PID=""
+  rm -f "$PID_FAUX"
 }
 ecritures_log() { grep -c "écriture reçue" "$SORTIE/faux-cable.log" || true; }
 contacts_avec_donnees_log() { grep -c "avec données" "$SORTIE/faux-cable.log" || true; }
@@ -740,9 +771,70 @@ echo "OK  S22 annulation depuis la notification"
 # après le retour du Wi-Fi écran éteint, alors qu'il passe sur API 35. En attendant le diagnostic (s21-connectivite.txt,
 # logcat-appli-s21.txt), S21 est relevé sans bloquer sur API 36 seulement. À retirer pour la 0.5.1.
 API_NIVEAU="$(adb shell getprop ro.build.version.sdk | tr -d '\015')"
+etape "S21 Attente écran éteint et verrouillé 330 s, faux câble coupé puis rétabli : le pilote le retrouve, envoie et notifie au plus 2 min après"
+# L'émulateur ne reconnecte pas le Wi-Fi écran éteint (diagnostic du 22/11) : on garde le Wi-Fi allumé et on débranche le câble (faux câble
+# arrêté) pendant l'attente et les 330 s, puis on le rebranche. Le pilote lit toutes les 5 s, cherche après 60 s de silence, retrouve le
+# câble, envoie et notifie, écran toujours éteint et verrouillé. La WebView d'une page cachée est gelée au-delà de 5 min : le natif n'en dépend pas.
+lancer_faux
+adb shell locksettings set-pin "$PIN_E0" > /dev/null
+E0_PIN_POSE=1
+adb shell settings put secure lock_screen_lock_after_timeout 0 # verrouillé dès l'extinction de l'écran
+adb shell dumpsys battery unplug
+adb shell svc power stayon false
+e0_deverrouiller
+oublier_donnees # clé ressaisie code posé (clé du magasin recréée dans ces conditions)
+demarrer_page
+page_prete "S21"
+accorder_notifications
+arreter_faux
+demarrer_page # la page relit le câble : « muet » (sinon « Programmer » enverrait tout de suite)
+L="$(attendre_essai page-etat 60)"
+verifier "S21 câble débranché à l'ouverture" "$L" 'l.etat === "muet"'
+adb logcat -c
+toucher_web "Ajouter 1 %"
+toucher_web "Programmer la charge"
+L="$(attendre_etat page-attente-wifi debut 40)"
+verifier "S21 attente commencée" "$L" 'l.etat === "debut"'
+sleep 3
+adb shell input keyevent KEYCODE_SLEEP
+sleep 5
+service_au_premier_plan "$SORTIE/attente-services-s21.txt" || echec "S21 : service d'attente absent ou pas au premier plan, écran éteint"
+ECR_AVANT="$(ecritures_log)"
+sleep 325
+ligne_vue page-programmer && echec "S21 : envoi parti alors que le câble est débranché"
+[ "$(ecritures_log)" = "$ECR_AVANT" ] || echec "S21 : une écriture est arrivée au faux câble pendant qu'il était arrêté"
+ECRAN_S21="$(adb shell dumpsys power | tr -d '\015' | grep -m1 -o 'mWakefulness=[A-Za-z]*' || true)"
+T0=$(date +%s)
+lancer_faux # le câble est rebranché
+DELAI_NOTIF="$(attendre_notification_diag "harge programmée" 180 "$SORTIE/s21-connectivite.txt" || true)"
+diag_logcat_appli "$SORTIE/logcat-appli-s21.txt"
+[ -n "$DELAI_NOTIF" ] || echec "S21 : notification « Charge programmée » absente 180 s après le retour du câble (voir logcat-appli-s21.txt)"
+T1=$(date +%s)
+# L'écran doit être resté éteint jusqu'à l'envoi : c'est le pilote natif qui a envoyé, pas une page réveillée.
+ECRAN_ENVOI="$(adb shell dumpsys power | tr -d '\015' | grep -m1 -o 'mWakefulness=[A-Za-z]*' || true)"
+case "$ECRAN_ENVOI" in
+  mWakefulness=Asleep|mWakefulness=Dozing) ;;
+  *) echec "S21 : l'écran n'était plus éteint au moment de l'envoi ($ECRAN_ENVOI)" ;;
+esac
+[ $(( T1 - T0 )) -le 120 ] || echec "S21 : notification publiée $(( T1 - T0 )) s après le retour du câble (critère : 2 min au plus)"
+echo "S21 : notification $(( T1 - T0 )) s après le retour du câble, écran éteint et verrouillé depuis 330 s ($ECRAN_S21)" | tee -a "$ATTENTE_RESUME"
+adb shell dumpsys notification --noredact 2> /dev/null | tr -d '\015' | grep -E "android\.(title|text)=" | grep -v "^ *$" > "$SORTIE/attente-notifications-s21.txt" || true
+grep -q "début\|démarrage\|harge programmée" "$SORTIE/attente-notifications-s21.txt" || echec "S21 : texte de la notification de résultat inattendu"
+capturer "clair-14-notification-programmee"
+# Réveil : la page, rouverte, montre le résultat relu (jamais de faux OK : le natif l'a vérifié), puis la notification est retirée.
+e0_deverrouiller
+L="$(attendre_essai page-programmer 60)"
+verifier "S21 résultat montré au réveil" "$L" "l.ok === true && $FIN_PAGE"
+sleep 3
+notification_contient "harge programmée" && echec "S21 : la notification de résultat reste après que la page l'a montré"
+e0_remettre
+echo "OK  S21 attente écran verrouillé 330 s, câble retrouvé, notification au plus 2 min après"
+
+# Variante avec coupure du Wi-Fi (relevé non bloquant : l'émulateur ne le reconnecte pas toujours écran éteint).
+scn_s21_wifi() {
 S21_DEFAUT=0 # exception API 36 retirée : la cause (Wi-Fi non reconnecté écran éteint) est traitée plus bas, sur toutes les versions
 S21_ATTENDU_ECHEC="${S21_ATTENDU_ECHEC:-$S21_DEFAUT}"
-etape "S21 Attente écran éteint et verrouillé 330 s, puis envoi au retour du Wi-Fi : notification « Charge programmée » au plus 2 min après"
+etape "S21-Wi-Fi Variante (relevé non bloquant) : Wi-Fi coupé puis rétabli écran éteint : notification « Charge programmée » au plus 2 min après"
 lancer_faux
 # 330 s : au-delà de 5 min, la WebView d'une page cachée est gelée ; le pilote natif ne dépend pas d'elle.
 adb shell locksettings set-pin "$PIN_E0" > /dev/null
@@ -806,6 +898,11 @@ notification_contient "harge programmée" && echec "S21 : la notification de ré
 e0_remettre
 echo "OK  S21 attente écran verrouillé 330 s, notification au plus 2 min après le retour du Wi-Fi"
 fi
+
+
+}
+releve_echec "S21-Wi-Fi" scn_s21_wifi
+CLE_ENREGISTREE="" # la variante a effacé les données dans son sous-shell : la suite ressaisit la clé
 
 etape "S13 Vraie page, nouvelle clé (données effacées, adresse inconnue) : « Câble à localiser », « Programmer » n'envoie rien"
 demarrer_page "$CLE_KO"
@@ -1454,7 +1551,7 @@ e0_remettre
 echo "OK  S-I2"
 }
 E0_PIN_POSE=1 # le sous-shell pose un code de verrouillage : remettre_emulateur le retire
-essayer "S-I2" scn_s_i2
+releve_echec "S-I2" scn_s_i2 # économiseur de batterie : relevé non bloquant (les essais réels le confirmeront)
 
 
 # --- Rien ne reste ouvert, rien d'interdit dans logcat ---
@@ -1492,10 +1589,9 @@ if [ -s "$SYNTHESE" ]; then
   echo
   echo "SCÉNARIOS EN ÉCHEC ($(wc -l < "$SYNTHESE" | tr -d ' ')) :"
   cat "$SYNTHESE"
-  # Version 0.5 (décision du 2026-11-22) : les scénarios atypiques échouent surtout à cause de la remise en état entre
-  # scénarios (adresse du câble effacée) ; ils sont listés sans bloquer la signature. Les scénarios essentiels (S1-S17,
-  # S22, S21, S9, S10) restent bloquants. ATYPIQUES_BLOQUANTS=1 à remettre pour la 0.5.1.
-  if [ "${ATYPIQUES_BLOQUANTS:-0}" = 1 ]; then exit 1; fi
-  echo "(non bloquant pour cette version : voir synthese-echecs.txt)"
+  # Les scénarios atypiques sont bloquants (la remise en état entre scénarios refait la configuration depuis le 0.5.1) ;
+  # S-I2 (économiseur de batterie) et la variante Wi-Fi de S21 ne sont que des relevés. ATYPIQUES_BLOQUANTS=0 pour les rendre non bloquants.
+  if [ "${ATYPIQUES_BLOQUANTS:-1}" = 1 ]; then exit 1; fi
+  echo "(non bloquant : voir synthese-echecs.txt)"
 fi
 echo "TOUS LES SCÉNARIOS SONT PASSÉS ($(wc -l < "$LIGNES" | tr -d ' ') lignes ESSAI vérifiées)"

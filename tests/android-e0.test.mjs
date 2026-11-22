@@ -114,7 +114,9 @@ test('pilote : bornes de l\'attente et clé gardée 15 min au plus', () => {
   assert.match(p, /avantEnvoiSeulement && phase != Phase\.ATTENTE\) return false/);
   assert.match(p, /if \(now < debutMs \|\| now - debutMs >= dureeMaxMs\) true\s*else \{ phase = Phase\.ENVOI; persister\(\); false \}/);
   // Un seul envoi, avec nouvelle tentative gérée par OperationsCable (jamais après une écriture partie).
-  assert.equal((p.match(/operations\.programmer\(/g) || []).length, 1);
+  // Un envoi, plus un nouvel essai SEULEMENT après « occupe » (rien n'a été lancé) : jamais après une autre erreur.
+  assert.equal((p.match(/operations\.programmer\(/g) || []).length, 2);
+  assert.match(p, /while \(r\["ok"\] != true && r\["erreur"\] == "occupe" && reessais < REESSAIS_OCCUPE\)/);
   assert.match(p, /operations\.programmer\(null, a, DELAI_ENVOI_MS, true, Origine\.SERVICE\)/);
   // La clé est effacée dans tous les cas à la fin ; le fichier de l'attente ne contient ni clé ni identifiant ni adresse.
   assert.match(p, /operations\.oublierMemoire\(\)\s*\n\s*val \(debut, fin\) = heuresDeLaNotification/);
