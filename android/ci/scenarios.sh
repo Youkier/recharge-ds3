@@ -55,6 +55,11 @@ echec() {
   exit 1
 }
 etape() { echo; echo "=== $*"; }
+# Utilisés dès S12 (et par les cas atypiques) : à définir avant tout scénario.
+RELEVES="$SORTIE/releves-cas-atypiques.txt" # constats non bloquants (comportement à décider par Mathieu)
+: > "$RELEVES"
+releve() { echo "RELEVÉ $*" | tee -a "$RELEVES"; }
+contient() { grep -F -q -- "$2" <<< "$1"; } # here-string : pas de SIGPIPE avec pipefail
 
 # --- Faux câble ---
 node "$RACINE/tools/faux-cable-tcp.mjs" > "$SORTIE/faux-cable.log" 2>&1 &
@@ -589,9 +594,6 @@ ATTENTE_RESUME="$SORTIE/attente-resume.txt"
 # Le faux câble est relancé avec les options voulues (lancer_faux) ; le bloc le remet par défaut et laisse l'application
 # configurée avec la clé factice, thème clair, police normale, batterie enregistrée à 39 %, pour la suite.
 # ======================================================================================================================
-RELEVES="$SORTIE/releves-cas-atypiques.txt" # constats non bloquants (comportement à décider par Mathieu)
-: > "$RELEVES"
-releve() { echo "RELEVÉ $*" | tee -a "$RELEVES"; }
 
 # Relance le faux câble avec ces options (aucune : plage 03:30-06:00, réponses immédiates). Les points de données repartent de zéro.
 lancer_faux() {
@@ -611,7 +613,6 @@ contacts_avec_donnees_log() { grep -c "avec données" "$SORTIE/faux-cable.log" |
 
 # --- Lecture de l'écran (uiautomator) : le texte de la page se cherche tel quel dans l'arbre, SANS apostrophe (échappée) ---
 DUMP=""
-contient() { grep -F -q -- "$2" <<< "$1"; } # here-string : pas de SIGPIPE avec pipefail
 attendre_texte_page() { # attendre_texte_page <texte> [délai en s] ; laisse le dernier dump dans DUMP
   local texte="$1" delai="${2:-40}" i
   for i in $(seq 1 "$delai"); do
