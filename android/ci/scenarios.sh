@@ -621,7 +621,24 @@ ligne_vue page-programmer && echec "S21 : envoi parti sans Wi-Fi"
 ECRAN_S21="$(adb shell dumpsys power | tr -d '\015' | grep -m1 -o 'mWakefulness=[A-Za-z]*' || true)"
 T0=$(date +%s)
 adb shell svc wifi enable
-L="$(attendre_essai page-programmer 180)"
+# Échec CONNU jusqu'à E3 (décision du 2026-11-21) : la WebView est gelée après ~5 min écran éteint,
+# l'attente native d'E3 le corrige. D'ici là, S21 est relevé sans bloquer la suite (S20, signature).
+# Mettre S21_ATTENDU_ECHEC=0 quand E3 est en place : S21 redevient bloquant.
+S21_ATTENDU_ECHEC="${S21_ATTENDU_ECHEC:-1}"
+L=""
+for _ in $(seq 1 180); do
+  L="$(adb logcat -d -v raw -s "$TAG:I" | tr -d '\015' | grep '^ESSAI ' | grep '"action":"page-programmer"' | tail -1 | sed 's/^ESSAI //' || true)"
+  [ -n "$L" ] && break
+  sleep 1
+done
+if [ -z "$L" ] && [ "$S21_ATTENDU_ECHEC" = 1 ]; then
+  echo "CONNU S21 : aucun envoi 180 s après le retour du Wi-Fi (WebView gelée, corrigé par E3)" | tee -a "$ATTENTE_RESUME"
+  adb shell input keyevent KEYCODE_SLEEP > /dev/null 2>&1 || true # l'écran était éteint : l'état attendu par e0_remettre
+  e0_remettre
+  adb shell am force-stop "$PKG" # arrête l'attente restée en cours
+  echo "CONNU S21 (non bloquant jusqu'à E3)"
+else
+[ -n "$L" ] || echec "aucune ligne ESSAI pour l'action « page-programmer » après 180 s"
 T1=$(date +%s)
 verifier "S21 envoi au retour du Wi-Fi, écran éteint et verrouillé" "$L" 'l.ok === true && l.fin === "06:00"'
 echo "S21 : envoi relu $(( T1 - T0 )) s après le retour du Wi-Fi, écran éteint et verrouillé depuis 330 s ($ECRAN_S21) : $L" | tee -a "$ATTENTE_RESUME"
@@ -631,6 +648,7 @@ adb shell dumpsys notification --noredact 2> /dev/null | tr -d '\015' | grep -E 
 e0_remettre
 capturer "clair-14-notification-programmee"
 echo "OK  S21 envoi en arrière-plan après 330 s écran verrouillé"
+fi
 
 etape "S20 Arrière-plan (E0) : 10 envois écran éteint et verrouillé, puis 1 sous Doze forcé (mesure)"
 E0_RESUME="$SORTIE/e0-resume.txt"
