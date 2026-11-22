@@ -39,10 +39,10 @@ test('tests/ et local/ : ni secrets, ni réseau, ni processus hors exceptions', 
 });
 
 // Écriture vers un fichier de sécurité : `node --test` et quelques outils se lancent sans demande, alors que
-// modifier .claude/, tools/hooks/, .github/, .gitignore, CLAUDE.md ou SECURITE.md en demande une.
+// modifier .claude/, tools/hooks/, .github/, .gitignore, worker/wrangler.toml, CLAUDE.md ou SECURITE.md en demande une.
 // Fil d'alarme : un fichier qui écrit ou supprime ET cite un de ces chemins est signalé.
 const ECRITURE = /writeFile|appendFile|createWriteStream|\brmSync\b|\bunlink|\brename(Sync)?\(|copyFile|\bcpSync\b|open\([^)]*['"][wax]\+?['"]/;
-const PROTEGES = /\.claude\b|tools[\\/]+hooks|\.github\b|\.gitignore|CLAUDE\.md|SECURITE\.md|hooksPath/;
+const PROTEGES = /\.claude\b|tools[\\/]+hooks|\.github\b|\.gitignore|CLAUDE\.md|SECURITE\.md|hooksPath|wrangler\.toml/;
 const ECRITURE_PERMIS = [
   'tests/assets-apk.test.mjs', // écrit et supprime dans un dossier temporaire ; .claude et .github n'y sont que dans une assertion de refus
   'tools/capture.mjs', // supprime une capture et un profil jetable dans dist/ ; CLAUDE.md n'est cité que dans un message
