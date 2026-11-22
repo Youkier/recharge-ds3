@@ -373,7 +373,8 @@ class OperationsCableTest {
     // --- origines : annuler la page ne touche pas ce que le service a lancé ---
 
     private fun lancerBloquee(o: OperationsCable, origine: Origine): Thread {
-        val fil = Thread { o.lire(null, 5000, origine = origine) }.apply { isDaemon = true; start() }
+        // 30 s : seule une annulation peut terminer l'opération dans les 2 s laissées par les tests.
+        val fil = Thread { o.lire(null, 30_000, origine = origine) }.apply { isDaemon = true; start() }
         var essais = 0
         while (!o.enCours() && essais++ < 200) Thread.sleep(10)
         assertTrue(o.enCours())
@@ -389,8 +390,8 @@ class OperationsCableTest {
         assertTrue("l'opération du service continue", fil.isAlive)
         assertEquals(0, bloque.fermetures.get())
         o.annuler(Origine.SERVICE)
-        fil.join(5000)
-        assertFalse(fil.isAlive)
+        fil.join(2000) // bien avant l'échéance de 30 s : c'est l'annulation qui coupe
+        assertFalse("annuler(SERVICE) coupe l'opération du service", fil.isAlive); assertTrue(bloque.fermetures.get() >= 1)
     }
 
     @Test fun annulerLeServiceNeCoupePasUneOperationDeLaPage() {
@@ -401,8 +402,8 @@ class OperationsCableTest {
         fil.join(300)
         assertTrue(fil.isAlive)
         o.annulerPage()
-        fil.join(5000)
-        assertFalse(fil.isAlive)
+        fil.join(2000)
+        assertFalse("annulerPage() coupe l'opération de la page", fil.isAlive); assertTrue(bloque.fermetures.get() >= 1)
     }
 
     @Test fun uneOperationDuServiceEtUneDeLaPageRestentExclusives() {
