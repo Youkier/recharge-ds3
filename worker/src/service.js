@@ -2,8 +2,8 @@
 // Point d'entrée : index.js. Ce module peut exporter des fonctions et constantes (tests) ;
 // le module principal, lui, ne doit exporter que le gestionnaire (chaque export y est un point d'entrée).
 // Routes : POST /api/programmer, GET /api/etat, OPTIONS (CORS). Tout le reste : 404.
-// Il n'agit que sur env.TUYA_DEVICE_ID et n'écrit que le début de la plage de charge
-// (x_charge_mode : ss et m). Jamais dt, se, courant, x_do_charge, ni une programmation Smart Life.
+// Il n'agit que sur env.TUYA_DEVICE_ID et n'écrit que la plage de charge (x_charge_mode : ss, se et m, règle 9
+// élargie le 2026-11-22). Jamais dt, courant, x_do_charge, ni une programmation Smart Life.
 // Chemins et formats validés sur le câble : voir docs/tuya-findings.md.
 
 export const HEURE_VALIDE = /^([01]\d|2[0-3]):[0-5]\d$/;
@@ -30,7 +30,7 @@ const CODES_ACCES = new Set([1004, 1013, 1106, 60009001, 28841002, 28841102, 288
 const CODES_HORS_LIGNE = new Set([2001, 40000801]);
 
 const STATUTS = {
-  hors_ligne: 502, jeton: 502, tuya: 502, relecture_differente: 502, delai: 504,
+  hors_ligne: 502, jeton: 502, tuya: 502, relecture_differente: 502, delai: 504, trop_tard: 409,
 };
 
 export class ErreurService extends Error {
@@ -72,7 +72,7 @@ export async function jetonValide(entete, attendu) {
   return diff === 0;
 }
 
-// --- Heure de Paris et règle de l'heure déjà passée (décision du 2026-11-14) ---
+// --- Heure de Paris et règle du démarrage tardif (décision du 2026-11-22) ---
 const formatParis = new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Paris', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
 
 export function heureParis(date) {
@@ -81,14 +81,48 @@ export function heureParis(date) {
 }
 
 const minutes = (hhmm) => Number(hhmm.slice(0, 2)) * 60 + Number(hhmm.slice(3));
+const mod24 = (x) => ((x % 1440) + 1440) % 1440;
+const formater = (total) => `${String(Math.floor(mod24(total) / 60)).padStart(2, '0')}:${String(mod24(total) % 60).padStart(2, '0')}`;
 
-// Fonction pure. Si l'heure actuelle (Paris) est dans [allumage, fin), le début écrit est l'heure
-// actuelle et immediat vaut true ; sinon on écrit allumage. Tient compte du passage de minuit.
-export function decider(allumage, fin, maintenant) {
-  const nowHHMM = heureParis(maintenant);
-  const a = minutes(allumage), f = minutes(fin), n = minutes(nowHHMM);
-  const dedans = a < f ? n >= a && n < f : a > f ? n >= a || n < f : false;
-  return dedans ? { debut: nowHHMM, immediat: true } : { debut: allumage, immediat: false };
+export const DUREE_MIN_MAX = 900; // durée de charge demandée : 1 à 900 minutes
+export const MARGE_TARDIF_MIN = 10; // un début qui tombe dans moins de 10 minutes est reporté à maintenant + 10 min
+
+// Demande de programmation : { allumage, fin, duree_min, depart }. Tout est revalidé ici (formats, durée entière 1..900,
+// et fin comprise entre l'allumage (exclu) et le départ (inclus), en heures murales, minuit compris).
+export function validerDemande(d) {
+  if (!d || typeof d !== 'object') return false;
+  if (![d.allumage, d.fin, d.depart].every((h) => typeof h === 'string' && HEURE_VALIDE.test(h))) return false;
+  if (!Number.isInteger(d.duree_min) || d.duree_min < 1 || d.duree_min > DUREE_MIN_MAX) return false;
+  const a = minutes(d.allumage);
+  const nuit = mod24(minutes(d.depart) - a); // de l'allumage au départ
+  const jusquaFin = mod24(minutes(d.fin) - a);
+  return nuit > 0 && jusquaFin > 0 && jusquaFin <= nuit;
+}
+
+// Minutes depuis minuit (heure murale de Paris), arrondies à la minute SUPÉRIEURE : 23:50:20 -> 23:51.
+function minutesParisSuperieures(date) {
+  const [h, m] = heureParis(date).split(':').map(Number);
+  const reste = date.getUTCSeconds() > 0 || date.getUTCMilliseconds() > 0 ? 1 : 0; // les fuseaux de Paris sont à la minute pile
+  return mod24(h * 60 + m + reste);
+}
+
+// Fonction pure, appliquée AU MOMENT DE L'ENVOI. Raisonne en heure murale de Paris : la plage se répète chaque nuit, il n'y a pas
+// de date. Les nuits de changement d'heure sont traitées en minutes murales, sans viser l'exactitude (60 min d'écart possibles).
+//  - 'normal'    : écrire l'allumage et la fin demandés ;
+//  - 'tardif'    : l'allumage est passé (maintenant est entre l'allumage et le départ) ou tombe dans moins de 10 min :
+//                  début = maintenant + 10 min, fin = min(début + durée, départ) ;
+//  - 'trop_tard' : début >= départ, rien n'est écrit ;
+//  - 'invalide'  : demande refusée.
+export function deciderPlage(demande, maintenant) {
+  if (!validerDemande(demande)) return { statut: 'invalide' };
+  const a = minutes(demande.allumage);
+  const n = minutesParisSuperieures(maintenant);
+  const nuit = mod24(minutes(demande.depart) - a);
+  const dansLaNuit = mod24(n - a) < nuit; // allumage déjà passé, départ pas encore atteint
+  if (!dansLaNuit && mod24(a - n) >= MARGE_TARDIF_MIN) return { statut: 'normal', debut: demande.allumage, fin: demande.fin };
+  const avantDepart = mod24(minutes(demande.depart) - n); // minutes jusqu'au prochain départ
+  if (avantDepart <= MARGE_TARDIF_MIN) return { statut: 'trop_tard' };
+  return { statut: 'tardif', debut: formater(n + MARGE_TARDIF_MIN), fin: formater(n + Math.min(MARGE_TARDIF_MIN + demande.duree_min, avantDepart)) };
 }
 
 // --- Valeur de la plage (même contrôles que tools/tuya-probe.mjs, formaterDebut) ---
@@ -102,9 +136,9 @@ export function lirePlage(valeur) {
   return obj;
 }
 
-// Ne change que ss et m. dt et se sont recopiés tels quels.
-export function nouvellePlage(actuelle, debut) {
-  return { ...actuelle, m: 2, ss: debut };
+// Ne change que m, ss et se (la fin est écrite à chaque fois : la plage se répète). dt est recopié tel quel.
+export function nouvellePlage(actuelle, debut, fin = actuelle.se) {
+  return { ...actuelle, m: 2, ss: debut, se: fin };
 }
 
 // --- Client Tuya ---
@@ -217,7 +251,7 @@ async function etat(env, deps) {
   return reponsePlage(await lireValeurPlage(cfg, deps));
 }
 
-// Écrit voulue (seuls ss et m changent), relit, ne conclut au succès que si la relecture est conforme.
+// Écrit voulue (seuls m, ss et se changent), relit, ne conclut au succès que si la relecture est conforme.
 async function ecrireEtVerifier(cfg, deps, actuelle, voulue, extra = {}) {
   if (!memePlage(actuelle, voulue)) await ecrirePlage(cfg, deps, voulue);
   for (const attente of deps.attentes ?? ATTENTES_RELECTURE_MS) {
@@ -230,11 +264,13 @@ async function ecrireEtVerifier(cfg, deps, actuelle, voulue, extra = {}) {
   throw new ErreurService('relecture_differente');
 }
 
-async function programmer(env, deps, allumage) {
+async function programmer(env, deps, demande) {
   const cfg = configTuya(env);
   const actuelle = await lireValeurPlage(cfg, deps);
-  const { debut, immediat } = decider(allumage, actuelle.se, deps.now());
-  return ecrireEtVerifier(cfg, deps, actuelle, nouvellePlage(actuelle, debut), immediat ? { immediat: true } : {});
+  const d = deciderPlage(demande, deps.now()); // heure prise au moment de l'envoi, après la lecture
+  if (d.statut === 'trop_tard') throw new ErreurService('trop_tard'); // rien n'est écrit
+  if (d.statut !== 'normal' && d.statut !== 'tardif') throw new ErreurService('tuya'); // invalide : déjà refusé par validerCorps
+  return ecrireEtVerifier(cfg, deps, actuelle, nouvellePlage(actuelle, d.debut, d.fin), { tardif: d.statut === 'tardif' });
 }
 
 // Fin de plage moins une minute (00:00 -> 23:59). Fonction pure, aucune heure en dur.
@@ -243,11 +279,11 @@ export function moinsUneMinute(hhmm) {
   return `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
 }
 
-// Plage courte : début = fin relue - 1 min, plage activée. Jamais de logique « heure déjà passée ».
+// Plage courte : début = fin relue - 1 min, plage activée ; la fin relue est réécrite telle quelle. Jamais de logique « tardif ».
 async function desactiver(env, deps) {
   const cfg = configTuya(env);
   const actuelle = await lireValeurPlage(cfg, deps);
-  return ecrireEtVerifier(cfg, deps, actuelle, nouvellePlage(actuelle, moinsUneMinute(actuelle.se)), { courte: true });
+  return ecrireEtVerifier(cfg, deps, actuelle, nouvellePlage(actuelle, moinsUneMinute(actuelle.se), actuelle.se), { tardif: false, courte: true });
 }
 
 // --- Limite d'appels ---
@@ -291,16 +327,18 @@ function repondre(request, env, statut, corps, extra = {}) {
 
 const erreur = (request, env, code, statut = STATUTS[code] ?? 502) => repondre(request, env, statut, { ok: false, erreur: code });
 
-// Valide le corps de POST /api/programmer : exactement {"allumage":"HH:MM"} ou {"desactiver":true}.
+// Valide le corps de POST /api/programmer : exactement {"allumage":"HH:MM","fin":"HH:MM","duree_min":<entier 1..900>,"depart":"HH:MM"}
+// (fin comprise entre l'allumage et le départ), ou {"desactiver":true}.
 export function validerCorps(texte) {
   if (typeof texte !== 'string' || texte.length === 0 || texte.length > TAILLE_MAX_CORPS) return null;
   let obj;
   try { obj = JSON.parse(texte); } catch { return null; }
   if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return null;
-  const cles = Object.keys(obj);
-  if (cles.length !== 1) return null;
-  if (cles[0] === 'allumage' && typeof obj.allumage === 'string' && HEURE_VALIDE.test(obj.allumage)) return { allumage: obj.allumage };
-  if (cles[0] === 'desactiver' && obj.desactiver === true) return { desactiver: true };
+  const cles = Object.keys(obj).sort().join(',');
+  if (cles === 'desactiver' && obj.desactiver === true) return { desactiver: true };
+  if (cles === 'allumage,depart,duree_min,fin' && validerDemande(obj)) {
+    return { allumage: obj.allumage, fin: obj.fin, duree_min: obj.duree_min, depart: obj.depart };
+  }
   return null;
 }
 
@@ -352,7 +390,7 @@ export async function traiter(request, env, deps = {}) {
     if (cl === null || !/^[0-9]+$/.test(cl) || Number(cl) > TAILLE_MAX_CORPS) return repondre(request, env, 400, { ok: false, erreur: 'requete_invalide' });
     const corps = validerCorps(await request.text());
     if (!corps) return repondre(request, env, 400, { ok: false, erreur: 'requete_invalide' });
-    return repondre(request, env, 200, corps.desactiver ? await desactiver(env, deps) : await programmer(env, deps, corps.allumage));
+    return repondre(request, env, 200, corps.desactiver ? await desactiver(env, deps) : await programmer(env, deps, corps));
   } catch (e) {
     const code = e instanceof ErreurService && STATUTS[e.code] ? e.code : 'tuya';
     if (!(e instanceof ErreurService)) console.error('erreur_interne');

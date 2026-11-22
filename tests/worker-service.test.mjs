@@ -1,7 +1,7 @@
 import { test, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  traiter, signer, decider, moinsUneMinute, heureParis, jetonValide, validerCorps, nouvellePlage,
+  traiter, signer, deciderPlage, moinsUneMinute, heureParis, jetonValide, validerCorps, nouvellePlage,
   reinitialiserCache, reinitialiserLimiteur,
 } from '../worker/src/service.js';
 import { signer as signerSonde } from '../tools/tuya-probe.mjs';
@@ -49,6 +49,8 @@ const appel = async (r, c, env = ENV, extra = {}) => {
   const rep = await traiter(r, env, deps(c, extra));
   return { statut: rep.status, corps: await rep.text().then((t) => (t ? JSON.parse(t) : null)), entetes: rep.headers };
 };
+// Demande complète : début, fin des heures creuses, durée de charge, départ (contrat du 2026-11-22).
+const dem = (allumage, o = {}) => ({ allumage, fin: '06:00', duree_min: 420, depart: '07:30', ...o });
 const post = (corps, opt = {}) => req('/api/programmer', { methode: 'POST', corps: typeof corps === 'string' ? corps : JSON.stringify(corps), ...opt });
 
 // --- Signature ---
@@ -77,8 +79,8 @@ test('401 sans jeton, avec mauvais jeton, ou sans secret configuré, et aucun ap
   for (const [r, env] of [
     [req('/api/etat', { jeton: null }), ENV],
     [req('/api/etat', { jeton: 'mauvais' }), ENV],
-    [post({ allumage: '22:30' }, { jeton: null }), ENV],
-    [post({ allumage: '22:30' }, { jeton: 'mauvais' }), ENV],
+    [post(dem('22:30'), { jeton: null }), ENV],
+    [post(dem('22:30'), { jeton: 'mauvais' }), ENV],
     [req('/api/inconnu', { jeton: null }), ENV],
     [req('/api/etat', { jeton: '' }), { ...ENV, JETON_ACCES: '' }],
     [req('/api/etat'), { ...ENV, JETON_ACCES: undefined }],
@@ -123,19 +125,35 @@ test('routage : 404, 405, 400', async () => {
     assert.deepEqual(a.corps, { ok: false, erreur: 'requete_invalide' });
   }
   assert.equal(c.ecritures.length, 0);
-  assert.deepEqual(validerCorps('{"allumage":"00:00"}'), { allumage: '00:00' });
-  assert.deepEqual(validerCorps('{"allumage":"23:59"}'), { allumage: '23:59' });
+  assert.deepEqual(validerCorps(JSON.stringify(dem('00:00'))), dem('00:00'));
+  assert.deepEqual(validerCorps(JSON.stringify(dem('23:59', { fin: '06:00' }))), dem('23:59'));
+  assert.deepEqual(validerCorps('{"desactiver":true}'), { desactiver: true });
+  // L'ancien contrat (allumage seul) et tout champ manquant, en trop ou mal typé sont refusés.
+  for (const o of ['{"allumage":"00:00"}', '{"allumage":"22:30","fin":"06:00"}', '{"allumage":"22:30","fin":"06:00","duree_min":420}',
+    JSON.stringify({ ...dem('22:30'), courant: 6 }), JSON.stringify({ ...dem('22:30'), desactiver: true }),
+    JSON.stringify(dem('22:30', { duree_min: '420' })), JSON.stringify(dem('22:30', { duree_min: 420.5 })), JSON.stringify(dem('22:30', { duree_min: 0 })),
+    JSON.stringify(dem('22:30', { duree_min: 901 })), JSON.stringify(dem('22:30', { duree_min: null })), JSON.stringify(dem('22:30', { fin: '08:00' })),
+    JSON.stringify(dem('22:30', { fin: '22:30' })), JSON.stringify(dem('22:30', { depart: '22:30' })), JSON.stringify(dem('22:30', { depart: '7:30' })),
+    JSON.stringify(dem('22:30', { fin: 600 })), JSON.stringify(dem('22:30', { depart: '07:30 ' }))]) assert.equal(validerCorps(o), null, o);
+});
+test('corps invalide sémantiquement : 400, aucun appel Tuya', async () => {
+  for (const corps of [dem('22:30', { fin: '08:00' }), dem('22:30', { duree_min: 901 }), dem('22:30', { depart: '05:00' }), { allumage: '22:30' }]) {
+    const c = cable();
+    const a = await appel(post(corps), c);
+    assert.equal(a.statut, 400); assert.deepEqual(a.corps, { ok: false, erreur: 'requete_invalide' });
+    assert.equal(c.appels.length, 0);
+  }
 });
 test('l\'identifiant de l\'appareil ne vient que de l\'environnement', async () => {
   const c = cable();
   await appel(req('/api/etat?device_id=autre&id=autre'), c);
-  await appel(post({ allumage: '22:30' }, { entetes: { 'X-Device-Id': 'autre' } }), c);
+  await appel(post(dem('22:30'), { entetes: { 'X-Device-Id': 'autre' } }), c);
   assert.ok(c.appels.length > 0);
   for (const a of c.appels) assert.ok(!a.url.includes('autre') && (a.chemin === '/v1.0/token' || a.chemin.includes(ENV.TUYA_DEVICE_ID)));
 });
 
 test('corps : Content-Length absent, non numérique ou > 512 -> 400 avant lecture du corps', async () => {
-  const c = cable(); const corps = JSON.stringify({ allumage: '22:30' });
+  const c = cable(); const corps = JSON.stringify(dem('22:30'));
   for (const cl of [undefined, 'abc', '-1', '1e2', '513', '99999999999']) {
     const r = post(corps); r.headers.delete('Content-Length');
     if (cl !== undefined) r.headers.set('Content-Length', cl);
@@ -172,11 +190,11 @@ test('GET /api/etat : valeur de plage inattendue -> tuya, sans fuite', async () 
 });
 
 // --- Écriture ---
-test('écriture : ne change que ss et m, corps au format validé, signé avec le jeton Tuya', async () => {
+test('écriture : ne change que m, ss et se, corps au format validé, signé avec le jeton Tuya', async () => {
   const c = cable({ valeur: { m: 0, dt: 7, ss: '04:00', se: '06:00' } });
-  const a = await appel(post({ allumage: '22:30' }), c);
+  const a = await appel(post(dem('22:30')), c);
   assert.equal(a.statut, 200);
-  assert.deepEqual(a.corps, { ok: true, debut: '22:30', fin: '06:00', plage_active: true });
+  assert.deepEqual(a.corps, { ok: true, debut: '22:30', fin: '06:00', plage_active: true, tardif: false });
   assert.equal(c.ecritures.length, 1);
   assert.deepEqual(Object.keys(c.ecritures[0]), ['x_charge_mode']);
   assert.deepEqual(JSON.parse(c.ecritures[0].x_charge_mode), { m: 2, dt: 7, ss: '22:30', se: '06:00' });
@@ -188,27 +206,72 @@ test('écriture : ne change que ss et m, corps au format validé, signé avec le
   assert.equal(ecr.entetes.sign, await signer({ clientId: ENV.TUYA_ACCESS_ID, secret: ENV.TUYA_ACCESS_SECRET, t: ecr.entetes.t, nonce: ecr.entetes.nonce, accessToken: ACCESS_TOKEN_TUYA, methode: 'POST', chemin: ecr.chemin, corps: ecr.corps }));
   assert.ok(ecr.url.startsWith('https://openapi.tuyaeu.com/'));
   assert.deepEqual(nouvellePlage({ m: 2, dt: 1, ss: '01:00', se: '02:00' }, '03:00'), { m: 2, dt: 1, ss: '03:00', se: '02:00' });
+  assert.deepEqual(nouvellePlage({ m: 0, dt: 1, ss: '01:00', se: '02:00' }, '03:00', '05:30'), { m: 2, dt: 1, ss: '03:00', se: '05:30' });
+});
+test('écriture : la fin demandée est écrite (la fin du câble est remplacée, dt recopié)', async () => {
+  const c = cable({ valeur: { m: 2, dt: 3, ss: '04:00', se: '07:30' } }); // fin repoussée un soir précédent
+  const a = await appel(post(dem('22:30', { fin: '06:00' })), c);
+  assert.equal(a.statut, 200);
+  assert.deepEqual(JSON.parse(c.ecritures[0].x_charge_mode), { m: 2, dt: 3, ss: '22:30', se: '06:00' });
+  assert.equal(a.corps.fin, '06:00');
+  const c2 = cable();
+  await appel(post(dem('22:00', { fin: '03:30', duree_min: 330 })), c2);
+  assert.deepEqual(JSON.parse(c2.ecritures[0].x_charge_mode), { m: 2, dt: 0, ss: '22:00', se: '03:30' });
+});
+test('démarrage tardif : début = maintenant + 10 min, fin bornée par le départ, tardif: true', async () => {
+  const c = cable();
+  const a = await appel(post(dem('23:00')), c, ENV, { now: () => new Date('2026-11-16T22:50:00Z') }); // 23:50 à Paris
+  assert.equal(a.statut, 200);
+  assert.deepEqual(a.corps, { ok: true, debut: '00:00', fin: '07:00', plage_active: true, tardif: true });
+  assert.deepEqual(JSON.parse(c.ecritures[0].x_charge_mode), { m: 2, dt: 0, ss: '00:00', se: '07:00' });
+  assert.deepEqual(Object.keys(c.ecritures[0]), ['x_charge_mode']);
+  const c2 = cable();
+  const b = await appel(post(dem('23:00')), c2, ENV, { now: () => new Date('2026-11-17T04:50:00Z') }); // 05:50
+  assert.deepEqual(b.corps, { ok: true, debut: '06:00', fin: '07:30', plage_active: true, tardif: true });
+  // À plus de 10 minutes du début : écriture normale.
+  const c3 = cable();
+  const n = await appel(post(dem('23:00')), c3, ENV, { now: () => new Date('2026-11-16T21:50:00Z') }); // 22:50 : pile +10
+  assert.deepEqual(n.corps, { ok: true, debut: '23:00', fin: '06:00', plage_active: true, tardif: false });
+});
+test('trop tard : rien n\'est écrit, erreur trop_tard (409)', async () => {
+  const c = cable();
+  const a = await appel(post(dem('23:00')), c, ENV, { now: () => new Date('2026-11-17T06:20:00Z') }); // 07:20, départ 07:30
+  assert.equal(a.statut, 409);
+  assert.deepEqual(a.corps, { ok: false, erreur: 'trop_tard' });
+  assert.equal(c.ecritures.length, 0);
+  assert.ok(c.appels.every((x) => x.methode === 'GET' || x.chemin === '/v1.0/token'));
+});
+test('démarrage tardif : relecture différente -> relecture_differente', async () => {
+  const c = cable({ ignorerEcriture: true });
+  const a = await appel(post(dem('23:00')), c, ENV, { now: () => new Date('2026-11-16T22:50:00Z') });
+  assert.deepEqual(a.corps, { ok: false, erreur: 'relecture_differente' });
+});
+test('deciderPlage : quelques cas directs (le fichier commun est dans plage-tardif-cas.test.mjs)', () => {
+  assert.deepEqual(deciderPlage(dem('23:00'), new Date('2026-11-16T20:00:00Z')), { statut: 'normal', debut: '23:00', fin: '06:00' });
+  assert.deepEqual(deciderPlage(dem('23:00'), new Date('2026-11-16T22:50:00Z')), { statut: 'tardif', debut: '00:00', fin: '07:00' });
+  assert.deepEqual(deciderPlage(dem('23:00'), new Date('2026-11-17T06:20:00Z')), { statut: 'trop_tard' });
+  assert.deepEqual(deciderPlage({ allumage: '23:00' }, new Date('2026-11-16T20:00:00Z')), { statut: 'invalide' });
 });
 test('écriture : jamais d\'autre point que x_charge_mode, jamais m = 0 ni x_do_charge', async () => {
   const c = cable();
-  for (const h of ['00:00', '22:30', '23:59', '05:59']) await appel(post({ allumage: h }), c, ENV, { now: () => NUIT });
+  for (const h of ['00:00', '22:30', '23:59', '05:59']) await appel(post(dem(h)), c, ENV, { now: () => NUIT });
   for (const e of c.ecritures) { assert.deepEqual(Object.keys(e), ['x_charge_mode']); assert.equal(JSON.parse(e.x_charge_mode).m, 2); }
   assert.ok(c.appels.every((x) => !x.corps || !x.corps.includes('x_do_charge')));
 });
 test('déjà réglé : pas d\'écriture, succès après relecture', async () => {
   const c = cable({ valeur: { m: 2, dt: 0, ss: '22:30', se: '06:00' } });
-  const a = await appel(post({ allumage: '22:30' }), c);
+  const a = await appel(post(dem('22:30')), c);
   assert.equal(a.statut, 200); assert.equal(c.ecritures.length, 0); assert.equal(a.corps.debut, '22:30');
 });
 test('relecture différente -> relecture_differente, jamais de faux succès', async () => {
   const c = cable({ ignorerEcriture: true });
-  const a = await appel(post({ allumage: '22:30' }), c);
+  const a = await appel(post(dem('22:30')), c);
   assert.equal(a.statut, 502);
   assert.deepEqual(a.corps, { ok: false, erreur: 'relecture_differente' });
   // Le câble corrige dt/se de son côté : aussi refusé.
   const c2 = cable(); const f = c2.fetch;
   c2.fetch = async (u, i) => { const r = await f(u, i); if (i?.method === 'POST') c2.valeur = JSON.stringify({ m: 2, dt: 0, ss: '22:30', se: '07:00' }); return r; };
-  assert.equal((await appel(post({ allumage: '22:30' }), c2)).corps.erreur, 'relecture_differente');
+  assert.equal((await appel(post(dem('22:30')), c2)).corps.erreur, 'relecture_differente');
 });
 test('relecture : la valeur peut mettre un peu de temps à changer', async () => {
   const c = cable(); const f = c.fetch; let lectures = 0;
@@ -218,17 +281,17 @@ test('relecture : la valeur peut mettre un peu de temps à changer', async () =>
     if (i?.method === 'GET' && new URL(u).pathname.endsWith('/properties')) { lectures++; if (lectures === 2) return new Response(JSON.stringify({ success: true, result: { properties: [{ code: 'x_charge_mode', value: JSON.stringify({ m: 2, dt: 0, ss: '04:00', se: '06:00' }) }] } })); }
     void nouvelle; return r;
   };
-  const a = await appel(post({ allumage: '22:30' }), c, ENV, { attentes: [0, 0, 0] });
+  const a = await appel(post(dem('22:30')), c, ENV, { attentes: [0, 0, 0] });
   assert.equal(a.statut, 200); assert.equal(a.corps.debut, '22:30');
 });
 
 // --- Désactiver ---
-test('désactiver : plage courte, début = se - 1 min, seuls ss et m changent', async () => {
+test('désactiver : plage courte, début = se - 1 min, la fin relue est réécrite telle quelle', async () => {
   for (const [se, debut] of [['06:00', '05:59'], ['07:00', '06:59'], ['00:00', '23:59'], ['00:01', '00:00']]) {
     const c = cable({ valeur: { m: 0, dt: 7, ss: '22:30', se } });
     const a = await appel(post({ desactiver: true }), c);
     assert.equal(a.statut, 200);
-    assert.deepEqual(a.corps, { ok: true, debut, fin: se, plage_active: true, courte: true });
+    assert.deepEqual(a.corps, { ok: true, debut, fin: se, plage_active: true, tardif: false, courte: true });
     assert.equal(c.ecritures.length, 1);
     assert.deepEqual(Object.keys(c.ecritures[0]), ['x_charge_mode']);
     assert.deepEqual(JSON.parse(c.ecritures[0].x_charge_mode), { m: 2, dt: 7, ss: debut, se });
@@ -236,10 +299,11 @@ test('désactiver : plage courte, début = se - 1 min, seuls ss et m changent', 
   }
   assert.equal(moinsUneMinute('10:00'), '09:59');
 });
-test('désactiver : jamais immediat, même si l’heure est dans la plage', async () => {
+test('désactiver : jamais tardif, même si l’heure est dans la nuit', async () => {
   const c = cable({ valeur: { m: 2, dt: 0, ss: '22:30', se: '06:00' } });
   const a = await appel(post({ desactiver: true }), c, ENV, { now: () => new Date('2026-01-15T23:10:00Z') }); // 00:10 Paris, dans la plage
   assert.equal(a.statut, 200);
+  assert.equal(a.corps.tardif, false);
   assert.ok(!('immediat' in a.corps));
   assert.equal(a.corps.debut, '05:59');
 });
@@ -278,7 +342,7 @@ test('mapping des erreurs Tuya', async () => {
   }
   // Erreur à l'écriture : câble hors ligne.
   const c = cable({ erreurEcriture: { success: false, code: 2001, msg: 'device is offline' } });
-  const a = await appel(post({ allumage: '22:30' }), c);
+  const a = await appel(post(dem('22:30')), c);
   assert.deepEqual(a.corps, { ok: false, erreur: 'hors_ligne' });
 });
 test('jeton Tuya expiré : un nouveau est demandé, une seule nouvelle tentative', async () => {
@@ -309,7 +373,7 @@ test('délai de 10 s dépassé -> delai (simulé en 30 ms)', async () => {
   const a = await appel(req('/api/etat'), c, ENV, { delaiMs: 30 });
   assert.equal(a.statut, 504);
   assert.deepEqual(a.corps, { ok: false, erreur: 'delai' });
-  const b = await appel(post({ allumage: '22:30' }), c, ENV, { delaiMs: 30 });
+  const b = await appel(post(dem('22:30')), c, ENV, { delaiMs: 30 });
   assert.equal(b.corps.erreur, 'delai');
 });
 test('panne réseau, réponse non JSON, configuration incomplète -> tuya', async () => {
@@ -327,56 +391,18 @@ test('heureParis : été, hiver, minuit', () => {
   assert.equal(heureParis(new Date('2026-07-01T22:00:00Z')), '00:00');
   assert.equal(heureParis(new Date('2026-01-15T23:00:00Z')), '00:00');
 });
-test('decider : hors plage, dans la plage, minuit', () => {
-  const T = (iso) => new Date(iso);
-  // 22:30 -> 06:00, hiver (UTC+1)
-  assert.deepEqual(decider('22:30', '06:00', T('2026-01-15T20:00:00Z')), { debut: '22:30', immediat: false }); // 21:00
-  assert.deepEqual(decider('22:30', '06:00', T('2026-01-15T21:30:00Z')), { debut: '22:30', immediat: true }); // 22:30 pile
-  assert.deepEqual(decider('22:30', '06:00', T('2026-01-15T22:10:00Z')), { debut: '23:10', immediat: true });
-  assert.deepEqual(decider('22:30', '06:00', T('2026-01-15T23:00:00Z')), { debut: '00:00', immediat: true }); // minuit
-  assert.deepEqual(decider('22:30', '06:00', T('2026-01-16T04:59:00Z')), { debut: '05:59', immediat: true });
-  assert.deepEqual(decider('22:30', '06:00', T('2026-01-16T05:00:00Z')), { debut: '22:30', immediat: false }); // 06:00 : fin exclue
-  // plage sans passage de minuit
-  assert.deepEqual(decider('01:00', '06:00', T('2026-01-15T23:30:00Z')), { debut: '01:00', immediat: false }); // 00:30 : avant le début
-  assert.deepEqual(decider('01:00', '06:00', T('2026-01-16T00:30:00Z')), { debut: '01:30', immediat: true });
-  assert.deepEqual(decider('01:00', '06:00', T('2026-01-16T05:00:00Z')), { debut: '01:00', immediat: false });
-  // début = fin : plage vide, jamais immédiat
-  assert.equal(decider('06:00', '06:00', T('2026-01-16T03:00:00Z')).immediat, false);
-});
-test('decider : passage à l\'heure d\'été (dimanche 2026-03-29, 02:00 -> 03:00)', () => {
+test('heure d\'été et d\'hiver : heureParis suit le changement d\'heure (dimanche 2026-03-29 et 2026-10-25)', () => {
   assert.equal(heureParis(new Date('2026-03-29T00:59:00Z')), '01:59');
   assert.equal(heureParis(new Date('2026-03-29T01:00:00Z')), '03:00');
-  assert.deepEqual(decider('22:30', '06:00', new Date('2026-03-28T22:30:00Z')), { debut: '23:30', immediat: true }); // veille, encore CET
-  assert.deepEqual(decider('02:30', '06:00', new Date('2026-03-29T01:30:00Z')), { debut: '03:30', immediat: true }); // 02:30 n'existe pas
-  assert.deepEqual(decider('03:30', '06:00', new Date('2026-03-29T00:59:00Z')), { debut: '03:30', immediat: false }); // 01:59
-  assert.deepEqual(decider('22:30', '06:00', new Date('2026-03-29T03:59:00Z')), { debut: '05:59', immediat: true }); // 05:59 CEST
-  assert.deepEqual(decider('22:30', '06:00', new Date('2026-03-29T04:00:00Z')), { debut: '22:30', immediat: false }); // 06:00 CEST
-});
-test('decider : retour à l\'heure d\'hiver (dimanche 2026-10-25, 03:00 -> 02:00)', () => {
   assert.equal(heureParis(new Date('2026-10-25T00:30:00Z')), '02:30'); // CEST
   assert.equal(heureParis(new Date('2026-10-25T01:30:00Z')), '02:30'); // CET : 02:30 existe deux fois
-  assert.deepEqual(decider('22:30', '06:00', new Date('2026-10-25T00:30:00Z')), { debut: '02:30', immediat: true });
-  assert.deepEqual(decider('22:30', '06:00', new Date('2026-10-25T01:30:00Z')), { debut: '02:30', immediat: true });
-  assert.deepEqual(decider('02:45', '06:00', new Date('2026-10-25T01:30:00Z')), { debut: '02:45', immediat: false });
-  assert.deepEqual(decider('22:30', '06:00', new Date('2026-10-25T04:59:00Z')), { debut: '05:59', immediat: true }); // CET
-  assert.deepEqual(decider('22:30', '06:00', new Date('2026-10-25T05:00:00Z')), { debut: '22:30', immediat: false }); // 06:00 CET
 });
-test('heure passée : le service écrit l\'heure actuelle et renvoie immediat', async () => {
-  const c = cable({ valeur: { m: 2, dt: 0, ss: '04:00', se: '06:00' } });
-  const a = await appel(post({ allumage: '22:30' }), c, ENV, { now: () => new Date('2026-01-15T22:10:00Z') });
-  assert.equal(a.statut, 200);
-  assert.deepEqual(a.corps, { ok: true, debut: '23:10', fin: '06:00', plage_active: true, immediat: true });
-  assert.equal(JSON.parse(c.ecritures[0].x_charge_mode).ss, '23:10');
-  // heure à venir : pas de champ immediat
-  const c2 = cable();
-  const b = await appel(post({ allumage: '22:30' }), c2);
-  assert.ok(!('immediat' in b.corps));
-});
-test('heure passée : la fin utilisée est celle relue sur le câble', async () => {
-  const c = cable({ valeur: { m: 2, dt: 0, ss: '04:00', se: '23:00' } });
-  // 22:10 UTC en hiver = 23:10 Paris, après la fin 23:00 : pas immédiat
-  const a = await appel(post({ allumage: '22:30' }), c, ENV, { now: () => new Date('2026-01-15T22:10:00Z') });
-  assert.equal(a.corps.debut, '22:30'); assert.ok(!a.corps.immediat);
+test('nuit de changement d\'heure : minutes murales, sans viser l\'exactitude (documenté)', () => {
+  // 29 mars 2026, 01:50 CET : début = 02:00 (heure qui n'existe pas), fin bornée par le départ ; le câble l'interprète selon son horloge.
+  assert.deepEqual(deciderPlage(dem('23:00'), new Date('2026-03-29T00:50:00Z')), { statut: 'tardif', debut: '02:00', fin: '07:30' });
+  // 25 octobre 2026, 02:30 existe deux fois : même résultat pour les deux.
+  assert.deepEqual(deciderPlage(dem('23:00'), new Date('2026-10-25T00:30:00Z')), { statut: 'tardif', debut: '02:40', fin: '07:30' });
+  assert.deepEqual(deciderPlage(dem('23:00'), new Date('2026-10-25T01:30:00Z')), { statut: 'tardif', debut: '02:40', fin: '07:30' });
 });
 
 // --- CORS ---
@@ -461,7 +487,7 @@ test('limiteur en panne : réponse JSON du contrat, aucun appel Tuya', async () 
   const c = cable(); const orig = console.error; console.error = () => {};
   try {
     const env = { ...ENV, LIMITEUR: { limit: async () => { throw new Error('panne'); } } };
-    const r = await appel(post({ allumage: '01:00' }), c, env);
+    const r = await appel(post(dem('01:00')), c, env);
     assert.equal(r.corps.ok, false); assert.equal(r.corps.erreur, 'tuya'); assert.equal(c.appels.length, 0);
   } finally { console.error = orig; }
 });
@@ -488,8 +514,8 @@ test('aucune fuite de secret dans les réponses ni dans les journaux', async () 
       [req('/api/etat'), cable()],
       [req('/api/etat', { jeton: 'mauvais' }), cable()],
       [req('/api/nimporte'), cable()],
-      [post({ allumage: '22:30' }), cable()],
-      [post({ allumage: '22:30' }), cable({ ignorerEcriture: true })],
+      [post(dem('22:30')), cable()],
+      [post(dem('22:30')), cable({ ignorerEcriture: true })],
       [post({ desactiver: true }), cable()],
       [post('{oups'), cable()],
       [req('/api/etat'), cable({ erreurLecture: { success: false, code: 999999, msg: 'secret-interne ' + ENV.TUYA_ACCESS_SECRET } })],
@@ -534,7 +560,7 @@ test('bon jeton : toute autre méthode HTTP est refusée (405), aucun appel Tuya
 test('appareil : toutes les actions (état, programmer, désactiver) ne visent que TUYA_DEVICE_ID', async () => {
   const c = cable();
   await appel(req('/api/etat'), c);
-  await appel(post({ allumage: '23:00' }), c);
+  await appel(post(dem('23:00')), c);
   await appel(post({ desactiver: true }), c);
   const chemins = c.appels.map((a) => a.chemin);
   assert.ok(chemins.length >= 5);
@@ -559,7 +585,7 @@ test('erreurs à l\'écriture (POST) : chaque cause reste distincte, jamais ok:t
   for (const [opt, code] of cas) {
     reinitialiserCache();
     const { delai, ...o } = opt;
-    for (const corps of [{ allumage: '22:30' }, { desactiver: true }]) {
+    for (const corps of [dem('22:30'), { desactiver: true }]) {
       const c = cable(o);
       const a = await appel(post(corps), c, ENV, delai ? { delaiMs: 30 } : {});
       assert.equal(a.corps.ok, false, code);
@@ -606,7 +632,7 @@ test('limite horaire : un refus du binding ne consomme pas le quota horaire', as
 });
 test('échéance globale : appels Tuya lents -> « delai » avant 20 s, jamais de succès', async () => {
   // Horloge simulée : chaque appel Tuya « dure » 8 s ; chaque attente avance aussi l'horloge.
-  for (const corps of [{ allumage: '01:00' }, { desactiver: true }]) {
+  for (const corps of [dem('01:00'), { desactiver: true }]) {
     reinitialiserCache();
     const c = cable(); let t = 0; const fetchLent = c.fetch;
     c.fetch = async (...a) => { t += 8000; return fetchLent(...a); };
@@ -627,6 +653,6 @@ test('échéance globale : le délai de chaque appel Tuya est réduit au temps r
 });
 test('échéance globale : requête rapide inchangée (succès normal)', async () => {
   const c = cable(); let t = 0;
-  const r = await appel(post({ allumage: '01:00' }), c, ENV, { horloge: () => t, sleep: async (ms) => { t += ms; }, attentes: [1500, 2000, 2500] });
+  const r = await appel(post(dem('01:00')), c, ENV, { horloge: () => t, sleep: async (ms) => { t += ms; }, attentes: [1500, 2000, 2500] });
   assert.equal(r.corps.ok, true); assert.equal(r.corps.debut, '01:00');
 });

@@ -1,0 +1,499 @@
+{
+ "_description": "Cas communs au Worker (worker/src/service.js, deciderPlage) et à la coque Android (Plage.decider) pour la règle du démarrage tardif (décision du 2026-11-22). Lus par tests/plage-tardif-cas.test.mjs et par PlageTardifTest.kt : les deux implémentations doivent donner EXACTEMENT les mêmes résultats. Heure de Paris, minutes murales ; aucune donnée réelle. Le module local/tuya-local.js (outil PC) garde l'ancienne règle et n'est pas concerné.",
+ "decider": [
+  {
+   "nom": "avant la fenêtre : 21:00, début 23:00",
+   "maintenant": "2026-11-16T20:00:00Z",
+   "allumage": "23:00",
+   "fin": "06:00",
+   "duree_min": 420,
+   "depart": "07:30",
+   "attendu": {
+    "statut": "normal",
+    "debut": "23:00",
+    "fin": "06:00"
+   }
+  },
+  {
+   "nom": "pile à +10 min : 22:50, début 23:00",
+   "maintenant": "2026-11-16T21:50:00Z",
+   "allumage": "23:00",
+   "fin": "06:00",
+   "duree_min": 420,
+   "depart": "07:30",
+   "attendu": {
+    "statut": "normal",
+    "debut": "23:00",
+    "fin": "06:00"
+   }
+  },
+  {
+   "nom": "à +9 min : 22:51, début 23:00",
+   "maintenant": "2026-11-16T21:51:00Z",
+   "allumage": "23:00",
+   "fin": "06:00",
+   "duree_min": 420,
+   "depart": "07:30",
+   "attendu": {
+    "statut": "tardif",
+    "debut": "23:01",
+    "fin": "06:01"
+   }
+  },
+  {
+   "nom": "pile au début : 23:00",
+   "maintenant": "2026-11-16T22:00:00Z",
+   "allumage": "23:00",
+   "fin": "06:00",
+   "duree_min": 420,
+   "depart": "07:30",
+   "attendu": {
+    "statut": "tardif",
+    "debut": "23:10",
+    "fin": "06:10"
+   }
+  },
+  {
+   "nom": "déjà passé : 23:50",
+   "maintenant": "2026-11-16T22:50:00Z",
+   "allumage": "23:00",
+   "fin": "06:00",
+   "duree_min": 420,
+   "depart": "07:30",
+   "attendu": {
+    "statut": "tardif",
+    "debut": "00:00",
+    "fin": "07:00"
+   }
+  },
+  {
+   "nom": "après minuit : 00:20, fin = départ",
+   "maintenant": "2026-11-16T23:20:00Z",
+   "allumage": "23:00",
+   "fin": "06:00",
+   "duree_min": 420,
+   "depart": "07:30",
+   "attendu": {
+    "statut": "tardif",
+    "debut": "00:30",
+    "fin": "07:30"
+   }
+  },
+  {
+   "nom": "fin bornée par le départ : 05:50",
+   "maintenant": "2026-11-17T04:50:00Z",
+   "allumage": "23:00",
+   "fin": "06:00",
+   "duree_min": 420,
+   "depart": "07:30",
+   "attendu": {
+    "statut": "tardif",
+    "debut": "06:00",
+    "fin": "07:30"
+   }
+  },
+  {
+   "nom": "une minute avant la limite : 07:19",
+   "maintenant": "2026-11-17T06:19:00Z",
+   "allumage": "23:00",
+   "fin": "06:00",
+   "duree_min": 420,
+   "depart": "07:30",
+   "attendu": {
+    "statut": "tardif",
+    "debut": "07:29",
+    "fin": "07:30"
+   }
+  },
+  {
+   "nom": "trop tard : 07:20 (début 07:30 = départ)",
+   "maintenant": "2026-11-17T06:20:00Z",
+   "allumage": "23:00",
+   "fin": "06:00",
+   "duree_min": 420,
+   "depart": "07:30",
+   "attendu": {
+    "statut": "trop_tard"
+   }
+  },
+  {
+   "nom": "trop tard : 07:25",
+   "maintenant": "2026-11-17T06:25:00Z",
+   "allumage": "23:00",
+   "fin": "06:00",
+   "duree_min": 420,
+   "depart": "07:30",
+   "attendu": {
+    "statut": "trop_tard"
+   }
+  },
+  {
+   "nom": "pile au départ : 07:30, retour à la nuit suivante",
+   "maintenant": "2026-11-17T06:30:00Z",
+   "allumage": "23:00",
+   "fin": "06:00",
+   "duree_min": 420,
+   "depart": "07:30",
+   "attendu": {
+    "statut": "normal",
+    "debut": "23:00",
+    "fin": "06:00"
+   }
+  },
+  {
+   "nom": "après le départ : 07:40",
+   "maintenant": "2026-11-17T06:40:00Z",
+   "allumage": "23:00",
+   "fin": "06:00",
+   "duree_min": 420,
+   "depart": "07:30",
+   "attendu": {
+    "statut": "normal",
+    "debut": "23:00",
+    "fin": "06:00"
+   }
+  },
+  {
+   "nom": "en journée : 14:00",
+   "maintenant": "2026-11-17T13:00:00Z",
+   "allumage": "23:00",
+   "fin": "06:00",
+   "duree_min": 420,
+   "depart": "07:30",
+   "attendu": {
+    "statut": "normal",
+    "debut": "23:00",
+    "fin": "06:00"
+   }
+  },
+  {
+   "nom": "arrondi supérieur : 23:50:30 donne 23:51",
+   "maintenant": "2026-11-16T22:50:30Z",
+   "allumage": "23:00",
+   "fin": "06:00",
+   "duree_min": 420,
+   "depart": "07:30",
+   "attendu": {
+    "statut": "tardif",
+    "debut": "00:01",
+    "fin": "07:01"
+   }
+  },
+  {
+   "nom": "arrondi : 22:49:30 donne 22:50, soit +10 : normal",
+   "maintenant": "2026-11-16T21:49:30Z",
+   "allumage": "23:00",
+   "fin": "06:00",
+   "duree_min": 420,
+   "depart": "07:30",
+   "attendu": {
+    "statut": "normal",
+    "debut": "23:00",
+    "fin": "06:00"
+   }
+  },
+  {
+   "nom": "arrondi : 22:50:30 donne 22:51, soit +9 : tardif",
+   "maintenant": "2026-11-16T21:50:30Z",
+   "allumage": "23:00",
+   "fin": "06:00",
+   "duree_min": 420,
+   "depart": "07:30",
+   "attendu": {
+    "statut": "tardif",
+    "debut": "23:01",
+    "fin": "06:01"
+   }
+  },
+  {
+   "nom": "durée courte : 23:50, 60 min",
+   "maintenant": "2026-11-16T22:50:00Z",
+   "allumage": "23:00",
+   "fin": "06:00",
+   "duree_min": 60,
+   "depart": "07:30",
+   "attendu": {
+    "statut": "tardif",
+    "debut": "00:00",
+    "fin": "01:00"
+   }
+  },
+  {
+   "nom": "passage de minuit sur le début : 23:55",
+   "maintenant": "2026-11-16T22:55:00Z",
+   "allumage": "23:00",
+   "fin": "06:00",
+   "duree_min": 422,
+   "depart": "07:30",
+   "attendu": {
+    "statut": "tardif",
+    "debut": "00:05",
+    "fin": "07:07"
+   }
+  },
+  {
+   "nom": "allumage avant les heures creuses : 21:00, début 20:00",
+   "maintenant": "2026-11-16T20:00:00Z",
+   "allumage": "20:00",
+   "fin": "06:00",
+   "duree_min": 600,
+   "depart": "07:30",
+   "attendu": {
+    "statut": "tardif",
+    "debut": "21:10",
+    "fin": "07:10"
+   }
+  },
+  {
+   "nom": "allumage le matin : 23:50, début 05:00 (pas encore passé)",
+   "maintenant": "2026-11-16T22:50:00Z",
+   "allumage": "05:00",
+   "fin": "06:00",
+   "duree_min": 60,
+   "depart": "07:30",
+   "attendu": {
+    "statut": "normal",
+    "debut": "05:00",
+    "fin": "06:00"
+   }
+  },
+  {
+   "nom": "allumage le matin : 05:50, début 05:00 (passé)",
+   "maintenant": "2026-11-17T04:50:00Z",
+   "allumage": "05:00",
+   "fin": "06:00",
+   "duree_min": 60,
+   "depart": "07:30",
+   "attendu": {
+    "statut": "tardif",
+    "debut": "06:00",
+    "fin": "07:00"
+   }
+  },
+  {
+   "nom": "fin demandée plus tôt que 06:00 (mode début)",
+   "maintenant": "2026-11-16T20:00:00Z",
+   "allumage": "22:00",
+   "fin": "03:30",
+   "duree_min": 330,
+   "depart": "07:30",
+   "attendu": {
+    "statut": "normal",
+    "debut": "22:00",
+    "fin": "03:30"
+   }
+  },
+  {
+   "nom": "départ plus tôt : 05:50, départ 06:00",
+   "maintenant": "2026-11-17T04:50:00Z",
+   "allumage": "22:00",
+   "fin": "05:30",
+   "duree_min": 420,
+   "depart": "06:00",
+   "attendu": {
+    "statut": "trop_tard"
+   }
+  },
+  {
+   "nom": "changement d'heure de printemps (2027-03-28), 01:50 CET : minutes murales",
+   "maintenant": "2027-03-28T00:50:00Z",
+   "allumage": "23:00",
+   "fin": "06:00",
+   "duree_min": 420,
+   "depart": "07:30",
+   "attendu": {
+    "statut": "tardif",
+    "debut": "02:00",
+    "fin": "07:30"
+   }
+  },
+  {
+   "nom": "changement d'heure de printemps, 03:10 CEST",
+   "maintenant": "2027-03-28T01:10:00Z",
+   "allumage": "23:00",
+   "fin": "06:00",
+   "duree_min": 420,
+   "depart": "07:30",
+   "attendu": {
+    "statut": "tardif",
+    "debut": "03:20",
+    "fin": "07:30"
+   }
+  },
+  {
+   "nom": "changement d'heure d'automne (2027-10-31), 02:30 CEST",
+   "maintenant": "2027-10-31T00:30:00Z",
+   "allumage": "23:00",
+   "fin": "06:00",
+   "duree_min": 420,
+   "depart": "07:30",
+   "attendu": {
+    "statut": "tardif",
+    "debut": "02:40",
+    "fin": "07:30"
+   }
+  },
+  {
+   "nom": "invalide : fin après le départ",
+   "maintenant": "2026-11-16T20:00:00Z",
+   "allumage": "23:00",
+   "fin": "08:00",
+   "duree_min": 420,
+   "depart": "07:30",
+   "attendu": {
+    "statut": "invalide"
+   }
+  },
+  {
+   "nom": "invalide : fin égale à l'allumage",
+   "maintenant": "2026-11-16T20:00:00Z",
+   "allumage": "23:00",
+   "fin": "23:00",
+   "duree_min": 420,
+   "depart": "07:30",
+   "attendu": {
+    "statut": "invalide"
+   }
+  },
+  {
+   "nom": "invalide : fin avant l'allumage dans la nuit (22:00 < 23:00)",
+   "maintenant": "2026-11-16T20:00:00Z",
+   "allumage": "23:00",
+   "fin": "22:00",
+   "duree_min": 420,
+   "depart": "07:30",
+   "attendu": {
+    "statut": "invalide"
+   }
+  },
+  {
+   "nom": "invalide : départ = allumage",
+   "maintenant": "2026-11-16T20:00:00Z",
+   "allumage": "23:00",
+   "fin": "06:00",
+   "duree_min": 420,
+   "depart": "23:00",
+   "attendu": {
+    "statut": "invalide"
+   }
+  },
+  {
+   "nom": "invalide : départ avant la fin",
+   "maintenant": "2026-11-16T20:00:00Z",
+   "allumage": "23:00",
+   "fin": "06:00",
+   "duree_min": 420,
+   "depart": "05:00",
+   "attendu": {
+    "statut": "invalide"
+   }
+  },
+  {
+   "nom": "invalide : durée 0",
+   "maintenant": "2026-11-16T20:00:00Z",
+   "allumage": "23:00",
+   "fin": "06:00",
+   "duree_min": 0,
+   "depart": "07:30",
+   "attendu": {
+    "statut": "invalide"
+   }
+  },
+  {
+   "nom": "invalide : durée 901",
+   "maintenant": "2026-11-16T20:00:00Z",
+   "allumage": "23:00",
+   "fin": "06:00",
+   "duree_min": 901,
+   "depart": "07:30",
+   "attendu": {
+    "statut": "invalide"
+   }
+  },
+  {
+   "nom": "invalide : durée négative",
+   "maintenant": "2026-11-16T20:00:00Z",
+   "allumage": "23:00",
+   "fin": "06:00",
+   "duree_min": -5,
+   "depart": "07:30",
+   "attendu": {
+    "statut": "invalide"
+   }
+  },
+  {
+   "nom": "valide : durée 900",
+   "maintenant": "2026-11-16T20:00:00Z",
+   "allumage": "23:00",
+   "fin": "06:00",
+   "duree_min": 900,
+   "depart": "07:30",
+   "attendu": {
+    "statut": "normal",
+    "debut": "23:00",
+    "fin": "06:00"
+   }
+  },
+  {
+   "nom": "valide : durée 1",
+   "maintenant": "2026-11-16T20:00:00Z",
+   "allumage": "23:00",
+   "fin": "06:00",
+   "duree_min": 1,
+   "depart": "07:30",
+   "attendu": {
+    "statut": "normal",
+    "debut": "23:00",
+    "fin": "06:00"
+   }
+  },
+  {
+   "nom": "invalide : heure mal formée",
+   "maintenant": "2026-11-16T20:00:00Z",
+   "allumage": "24:00",
+   "fin": "06:00",
+   "duree_min": 420,
+   "depart": "07:30",
+   "attendu": {
+    "statut": "invalide"
+   }
+  },
+  {
+   "nom": "invalide : heure sans zéro",
+   "maintenant": "2026-11-16T20:00:00Z",
+   "allumage": "23:00",
+   "fin": "06:00",
+   "duree_min": 420,
+   "depart": "7:30",
+   "attendu": {
+    "statut": "invalide"
+   }
+  }
+ ],
+ "desactiver": [
+  {
+   "nom": "fin 06:00",
+   "fin_actuelle": "06:00",
+   "attendu": {
+    "debut": "05:59",
+    "fin": "06:00"
+   }
+  },
+  {
+   "nom": "fin minuit",
+   "fin_actuelle": "00:00",
+   "attendu": {
+    "debut": "23:59",
+    "fin": "00:00"
+   }
+  },
+  {
+   "nom": "fin repoussée par un démarrage tardif",
+   "fin_actuelle": "07:30",
+   "attendu": {
+    "debut": "07:29",
+    "fin": "07:30"
+   }
+  }
+ ]
+}
