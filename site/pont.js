@@ -11,7 +11,7 @@
 //
 // Opérations sur le câble (une seule à la fois côté natif, sinon erreur occupe) :
 //   lire { ip?, delai?, reessayer? } -> { debut, fin, plage_active }   reessayer : seconde lecture (8 s) après un échec de contact
-//   programmer { allumage:"HH:MM", fin:"HH:MM", duree_min:<entier 1..900>, depart:"HH:MM" | desactiver:true, fin:"HH:MM", ip?, delai?, reessayer? }
+//   programmer { allumage:"HH:MM", fin:"HH:MM", duree_min:<entier 1..1439>, depart:"HH:MM" | desactiver:true, fin:"HH:MM", ip?, delai?, reessayer? }
 //                                   -> { debut, fin, plage_active, tardif, courte }   (lit, écrit, relit)
 //                                      Démarrage tardif (décision du 2026-11-22), pris AU MOMENT DE L'ENVOI, en heure de Paris : si
 //                                      l'allumage est passé (entre l'allumage et le départ) ou dans moins de 10 min, le natif écrit

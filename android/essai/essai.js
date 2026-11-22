@@ -196,7 +196,7 @@ async function actionFiltre() {
     const r = await client.programmer(demande(h), { ip: '10.0.2.2' }, 1000);
     if (r.ok || r.erreur !== 'requete_invalide') echecs.push(`heure:${h}`);
   }
-  for (const action of [{}, { allumage: '05:00' }, { ...demande('05:00'), fin: '08:00' }, { ...demande('05:00'), duree_min: 901 }, { allumage: '05:00', desactiver: true }, { desactiver: false }]) {
+  for (const action of [{}, { allumage: '05:00' }, { ...demande('05:00'), fin: '08:00' }, { ...demande('05:00'), duree_min: 1440 }, { allumage: '05:00', desactiver: true }, { desactiver: false }]) {
     const r = await client.programmer(action, { ip: '10.0.2.2' }, 1000);
     if (r.ok || r.erreur !== 'requete_invalide') echecs.push(`action:${JSON.stringify(action)}`);
   }

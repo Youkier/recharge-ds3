@@ -42,3 +42,9 @@ test('page : lue avant tout setConfirme, enregistrée à chaque confirmation, ef
   assert.match(app, /setConfirme\(confirmationReprise !== null \|\|/);
   assert.match(app, /if \(brut\) lsSet\(CLE_CONFIRMATION, brut\); else lsDel\(CLE_CONFIRMATION\);/);
 });
+
+test('page : updateSend chaque minute quand la page est visible, et au retour au premier plan', () => {
+  const app = readFileSync(new URL('../site/app.js', import.meta.url), 'utf8');
+  assert.match(app, /setInterval\(function \(\) \{ if \(!document\.hidden\) \{ try \{ updateSend\(\); \} catch \(e\)[^}]*\} \} \}, 60000\);/);
+  assert.match(app, /verifierConfirmation\(\);\s*updateSend\(\);/);
+});

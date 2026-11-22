@@ -148,8 +148,11 @@ describe('Rappels et messages d\'échec', () => {
     }
   });
   test('résultat incertain : où vérifier', () => {
-    assert.equal(resultatKo({ allumage: '00:35' }, 'local_delai', '06:00').verifier, 'Vérifiez dans Smart Life > charge différée : début 00:35, activée.');
-    assert.equal(resultatKo({ desactiver: true }, 'relecture_differente', '06:00').verifier, 'Vérifiez dans Smart Life > charge différée : début 05:59, activée.');
+    // Instant fixé : 21:00 à Paris, avant l'heure de début (règle normale, déterministe).
+    const soir = new Date('2027-01-12T20:00:00Z');
+    assert.equal(resultatKo(D, 'local_delai', '06:00', soir).verifier, 'Vérifiez dans Smart Life > charge différée : début 00:35, fin 06:00, activée.');
+    assert.equal(resultatKo({ allumage: '00:35' }, 'local_delai', '06:00', soir).verifier, 'Vérifiez dans Smart Life > charge différée : début 00:35, activée.'); // ancienne demande, sans fin
+    assert.equal(resultatKo({ desactiver: true, fin: '06:00' }, 'relecture_differente', '06:00').verifier, 'Vérifiez dans Smart Life > charge différée : début 05:59, fin 06:00, activée.');
     assert.equal(resultatKo({ desactiver: true }, 'relecture_differente', undefined).verifier, 'Vérifiez dans Smart Life > charge différée.');
     assert.equal(resultatKo({ allumage: '00:35' }, 'local_cle', '06:00').verifier, null); // rien n'a été modifié
   });

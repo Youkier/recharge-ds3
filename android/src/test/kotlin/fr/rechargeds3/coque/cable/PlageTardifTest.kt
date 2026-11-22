@@ -67,10 +67,10 @@ class PlageTardifTest {
     @Test fun demandeValide() {
         assertTrue(Plage.demandeValide("23:00", "06:00", 420, "07:30"))
         assertTrue(Plage.demandeValide("23:00", "07:30", 1, "07:30")) // fin = départ
-        assertTrue(Plage.demandeValide("23:00", "06:00", 900, "07:30"))
+        assertTrue(Plage.demandeValide("23:00", "06:00", 1439, "07:30"))
         for ((fin, duree, depart) in listOf(
             Triple("08:00", 420, "07:30"), Triple("23:00", 420, "07:30"), Triple("22:00", 420, "07:30"),
-            Triple("06:00", 0, "07:30"), Triple("06:00", 901, "07:30"), Triple("06:00", -1, "07:30"),
+            Triple("06:00", 0, "07:30"), Triple("06:00", 1440, "07:30"), Triple("06:00", -1, "07:30"),
             Triple("06:00", 420, "23:00"), Triple("06:00", 420, "05:00"), Triple("06:00", 420, "7:30"), Triple("6:00", 420, "07:30"),
         )) assertTrue("$fin $duree $depart", !Plage.demandeValide("23:00", fin, duree, depart))
         assertTrue(!Plage.demandeValide("24:00", "06:00", 420, "07:30"))

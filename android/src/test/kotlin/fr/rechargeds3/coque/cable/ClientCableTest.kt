@@ -290,7 +290,7 @@ class ClientCableTest {
         val f = fauxAvec()
         assertEquals(Resultat(false, "requete_invalide"), prog(f, alle("23:00", fin = "08:00")))
         assertEquals(Resultat(false, "requete_invalide"), prog(f, alle("23:00", dureeMin = 0)))
-        assertEquals(Resultat(false, "requete_invalide"), prog(f, alle("23:00", dureeMin = 901)))
+        assertEquals(Resultat(false, "requete_invalide"), prog(f, alle("23:00", dureeMin = 1440)))
         assertEquals(0, f.ouvertures.get())
     }
 

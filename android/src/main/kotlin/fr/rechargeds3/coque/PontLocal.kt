@@ -128,7 +128,7 @@ class PontLocal(
     private fun reessayer(q: JSONObject): Boolean = q.optBoolean("reessayer", false)
 
     // Exactement une des deux actions du projet : { allumage: "HH:MM", fin: "HH:MM", duree_min: entier, depart: "HH:MM" }
-    // ou { desactiver: true, fin: "HH:MM" }. Tout est revalidé ici : types exacts (chaînes, entier), formats, durée 1..900, fin dans la nuit.
+    // ou { desactiver: true, fin: "HH:MM" }. Tout est revalidé ici : types exacts (chaînes, entier), formats, durée 1..1439, fin dans la nuit.
     private fun programmer(q: JSONObject, repondre: (JSONObject) -> Unit) {
         val action: Action? = when {
             q.has("allumage") && !q.has("desactiver") -> {

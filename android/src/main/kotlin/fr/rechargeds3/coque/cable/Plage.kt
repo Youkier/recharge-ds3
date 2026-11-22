@@ -31,8 +31,8 @@ object Plage {
     val DP_VOLATILS = setOf("101", "102", "105", "109")
     const val DP_ETAT = "109"
 
-    /** Durée de charge demandée : 1 à 900 minutes. */
-    const val DUREE_MIN_MAX = 900
+    /** Durée de charge demandée : 1 à 1439 minutes. */
+    const val DUREE_MIN_MAX = 1439
 
     /** Un début qui tombe dans moins de 10 minutes est reporté à maintenant + 10 minutes. */
     const val MARGE_TARDIF_MIN = 10
@@ -73,7 +73,7 @@ object Plage {
     private fun mod24(x: Int): Int = ((x % 1440) + 1440) % 1440
 
     /**
-     * Demande de programmation valide : trois heures HH:MM strictes, durée entière de 1 à 900 minutes, et fin comprise entre
+     * Demande de programmation valide : trois heures HH:MM strictes, durée entière de 1 à 1439 minutes, et fin comprise entre
      * l'allumage (exclu) et le départ (inclus), en heures murales, minuit compris. Allumage = départ est refusé.
      */
     fun demandeValide(allumage: String, fin: String, dureeMin: Int, depart: String): Boolean {

@@ -400,11 +400,11 @@
    }
   },
   {
-   "nom": "invalide : durée 901",
+   "nom": "invalide : durée 1440 (24 h)",
    "maintenant": "2026-11-16T20:00:00Z",
    "allumage": "23:00",
    "fin": "06:00",
-   "duree_min": 901,
+   "duree_min": 1440,
    "depart": "07:30",
    "attendu": {
     "statut": "invalide"
@@ -422,11 +422,11 @@
    }
   },
   {
-   "nom": "valide : durée 900",
+   "nom": "valide : durée 1439",
    "maintenant": "2026-11-16T20:00:00Z",
    "allumage": "23:00",
    "fin": "06:00",
-   "duree_min": 900,
+   "duree_min": 1439,
    "depart": "07:30",
    "attendu": {
     "statut": "normal",
@@ -467,6 +467,19 @@
    "depart": "7:30",
    "attendu": {
     "statut": "invalide"
+   }
+  },
+  {
+   "nom": "valide : durée 1320 (22 h)",
+   "maintenant": "2026-11-16T20:00:00Z",
+   "allumage": "23:00",
+   "fin": "06:00",
+   "duree_min": 1320,
+   "depart": "07:30",
+   "attendu": {
+    "statut": "normal",
+    "debut": "23:00",
+    "fin": "06:00"
    }
   }
  ],

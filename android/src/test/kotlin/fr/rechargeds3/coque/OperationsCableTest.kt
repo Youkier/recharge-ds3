@@ -129,7 +129,7 @@ class OperationsCableTest {
     @Test fun demandeAvecFinOuDureeInvalideNEnvoieRien() {
         val f = faux()
         val o = ops(Env(fabrique = { f }))
-        for (a in listOf(alle("05:00", fin = "08:00"), alle("05:00", dureeMin = 0), alle("05:00", dureeMin = 901), alle("05:00", depart = "05:00"), alle("05:00", fin = "05:00"))) {
+        for (a in listOf(alle("05:00", fin = "08:00"), alle("05:00", dureeMin = 0), alle("05:00", dureeMin = 1440), alle("05:00", depart = "05:00"), alle("05:00", fin = "05:00"))) {
             assertEquals(a.toString(), "requete_invalide", o.programmer(null, a, null)["erreur"])
         }
         assertEquals(0, f.ouvertures.get())

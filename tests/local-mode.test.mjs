@@ -178,8 +178,14 @@ describe('Programmer en local (règle 2 : jamais d\'échec silencieux)', () => {
     }
   });
   test('délai : incertain, « Vérifiez dans Smart Life » ; exception : ko local_format ; relu différent : ko', async () => {
-    const d = await programmerLocal(dem('23:45'), { client: client({ programmer: { ok: false, erreur: 'delai', ecrit: true } }) }, '06:00');
-    assert.deepEqual([d.code, d.incertain, d.verifier], ['local_delai', true, 'Vérifiez dans Smart Life > charge différée : début 23:45, activée.']);
+    const soir = () => new Date('2027-01-12T20:00:00Z'); // 21:00 à Paris : avant le début, règle normale
+    const d = await programmerLocal(dem('23:45'), { client: client({ programmer: { ok: false, erreur: 'delai', ecrit: true } }), maintenant: soir }, '06:00');
+    assert.deepEqual([d.code, d.incertain, d.verifier], ['local_delai', true, 'Vérifiez dans Smart Life > charge différée : début 23:45, fin 06:00, activée.']);
+    assert.match(d.manuel, /début 23:45, fin 06:00\./);
+    // Échec alors que l'heure de début est passée : la consigne donne l'heure tardive (début = maintenant + 10 min, fin bornée par le départ).
+    const tard = await programmerLocal(dem('23:00', { duree_min: 420 }), { client: client({ programmer: { ok: false, erreur: 'delai', ecrit: true } }), maintenant: () => new Date('2027-01-12T22:50:00Z') }, '06:00'); // 23:50
+    assert.match(tard.manuel, /début 00:00, fin 07:00 \(heure de début dépassée : début dans 10 min\)/);
+    assert.equal(tard.verifier, 'Vérifiez dans Smart Life > charge différée : début 00:00, fin 07:00, activée.');
     assert.match(d.message, /Fermez Smart Life s'il est ouvert, puis réessayez\.$/);
     const x = await programmerLocal(dem('23:45'), { client: client({ programmer: () => { throw new Error('boum'); } }) }, '06:00');
     assert.equal(x.code, 'local_format');

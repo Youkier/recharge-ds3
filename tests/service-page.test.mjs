@@ -5,7 +5,7 @@ import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import {
   validerAdresse, validerJeton, choisirDemande, libelleBouton, consigneManuelle,
-  interpreterReponse, envoyer, envoyerEtAfficher, resultatKo, demandeValide, minutesHeuresPleines,
+  interpreterReponse, envoyer, envoyerEtAfficher, resultatKo, demandeValide, minutesHeuresPleines, deciderDemande,
 } from "../site/service.js";
 
 // Contrat du 2026-11-22 : début, fin du plan, durée de charge du plan (minutes) et heure de départ.
@@ -60,7 +60,7 @@ describe("Choix de la demande", () => {
   });
   test("plan incomplet ou hors de la nuit -> rien n'est envoyé", () => {
     assert.equal(choisirDemande("ok", "00:35"), null); // ancien appel sans plan
-    for (const p of [{ ...plan, fin: "08:00" }, { ...plan, dureeMin: 0 }, { ...plan, dureeMin: 901 }, { ...plan, dureeMin: 12.5 }, { ...plan, dureeMin: "325" },
+    for (const p of [{ ...plan, fin: "08:00" }, { ...plan, dureeMin: 0 }, { ...plan, dureeMin: 1440 }, { ...plan, dureeMin: 12.5 }, { ...plan, dureeMin: "325" },
       { ...plan, depart: "00:35" }, { ...plan, depart: "7:30" }, { ...plan, fin: undefined }, { fin: "06:00", dureeMin: 325 }]) {
       assert.equal(choisirDemande("ok", "00:35", p), null, JSON.stringify(p));
     }
@@ -160,6 +160,31 @@ describe("Interprétation : OK seulement si tout est conforme", () => {
   });
   test("l'ancien champ immediat n'ouvre plus aucun chemin vers « ok »", () => {
     assert.equal(interpreterReponse(prog, 200, { ...okRep, debut: "23:58", immediat: true }).etat, "ko");
+  });
+  test("démarrage tardif : alerte avec la reprogrammation du lendemain (la plage se répète)", () => {
+    const r = interpreterReponse(prog, 200, { ...okRep, debut: "23:58", fin: "07:30", tardif: true }, "06:00");
+    assert.equal(r.rappel2, "Demain soir, reprogrammez : cette plage se répète chaque nuit.");
+    assert.equal(interpreterReponse(prog, 200, okRep).rappel2, undefined);
+  });
+  test("consigne manuelle : toujours début ET fin ; heure tardive si le début est passé", () => {
+    const soir = new Date("2027-01-12T20:00:00Z"); // 21:00 à Paris
+    assert.equal(consigneManuelle(prog, "06:00", soir), "À régler à la main dans Smart Life : plage de charge du câble, début 00:35, fin 06:00.");
+    assert.match(consigneManuelle(desact, "06:00", soir), /\(05:59\), fin 06:00, ou ne branchez pas la voiture\.$/);
+    // 01:00 à Paris : 00:35 est passé, début = 01:10, fin = min(01:10 + 325 min, 07:30) = 06:35
+    const nuit = new Date("2027-01-12T00:00:00Z");
+    assert.equal(consigneManuelle(prog, "06:00", nuit), "À régler à la main dans Smart Life : plage de charge du câble, début 01:10, fin 06:35 (heure de début dépassée : début dans 10 min).");
+    assert.match(resultatKo(prog, "delai", "06:00", nuit).verifier, /début 01:10, fin 06:35, activée\.$/);
+    assert.match(resultatKo(prog, "tuya", "06:00", soir).manuel, /début 00:35, fin 06:00\./);
+  });
+  test("deciderDemande (page) = deciderPlage (Worker) sur le fichier de cas commun", async () => {
+    const { readFileSync } = await import("node:fs");
+    const { deciderPlage } = await import("../worker/src/service.js");
+    const cas = JSON.parse(readFileSync(new URL("./plage-tardif-cas.json", import.meta.url), "utf8")).decider;
+    for (const c of cas) {
+      const d = { allumage: c.allumage, fin: c.fin, duree_min: c.duree_min, depart: c.depart };
+      assert.deepEqual(deciderDemande(d, new Date(c.maintenant)), c.attendu, c.nom);
+      assert.deepEqual(deciderDemande(d, new Date(c.maintenant)), deciderPlage(d, new Date(c.maintenant)), c.nom);
+    }
   });
   test("trop tard : KO sans incertitude, message avec le départ, heure à la main", () => {
     const r = interpreterReponse(prog, 409, { ok: false, erreur: "trop_tard" });

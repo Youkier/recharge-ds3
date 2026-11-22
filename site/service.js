@@ -30,11 +30,11 @@ export function validerJeton(saisie) {
 
 // --- Choix de la demande ---
 
-export const DUREE_MIN_MAX = 900;
+export const DUREE_MIN_MAX = 1439; // une nuit entière au plus (moins de 24 h)
 const minutesDe = (hhmm) => Number(hhmm.slice(0, 2)) * 60 + Number(hhmm.slice(3));
 const mod24 = (x) => ((x % 1440) + 1440) % 1440;
 
-// Demande de programmation { allumage, fin, duree_min, depart } valide : trois heures HH:MM, durée entière de 1 à 900 minutes,
+// Demande de programmation { allumage, fin, duree_min, depart } valide : trois heures HH:MM, durée entière de 1 à 1439 minutes,
 // fin comprise entre l'allumage (exclu) et le départ (inclus), en heures murales, minuit compris. Même règle que le Worker et
 // que la coque Android (qui la revalident : cette fonction ne sert qu'à ne rien envoyer d'invalide).
 export function demandeValide(d) {
@@ -64,6 +64,8 @@ export function choisirDemande(statut, heure, plan = {}) {
 // préalable : la programmation peut précéder ou suivre le branchement de la voiture.
 export const brancherAvant = (h) => 'Branchez la voiture avant ' + h + ' : sinon la charge ne démarrera pas.';
 export const brancherAvantTardif = (h) => 'Branchez la voiture avant ' + h + '.';
+// Une plage tardive se rejoue les nuits suivantes (la plage se répète) : on le dit.
+export const REPROGRAMMER_TARDIF = 'Demain soir, reprogrammez : cette plage se répète chaque nuit.';
 export const RAPPEL_REPROGRAMMER = 'Demain soir, reprogrammez : sinon la voiture ne chargera pas.';
 const FERMER_SMART_LIFE = " Fermez Smart Life s'il est ouvert, puis réessayez.";
 
@@ -84,14 +86,49 @@ export function moinsUneMinute(hhmm) {
   return String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0');
 }
 
-// Ce que l'utilisateur doit faire à la main dans Smart Life si le service échoue.
-// finHC : fin des heures creuses des Paramètres ("HH:MM"), pour le cas « aucune charge ».
-// Ne jamais conseiller de désactiver la plage : sur ce câble, cela lance la charge immédiate.
-export function consigneManuelle(demande, finHC) {
-  const avant = moinsUneMinute(finHC);
-  return demande && demande.desactiver
-    ? 'À régler à la main dans Smart Life : début de la plage à une minute avant la fin des heures creuses' + (avant ? ' (' + avant + ')' : '') + ', ou ne branchez pas la voiture.'
-    : 'À régler à la main dans Smart Life : plage de charge du câble, début ' + (demande ? demande.allumage : '--:--') + '.';
+// Heure de Paris, minutes depuis minuit, arrondies à la minute SUPÉRIEURE (comme le Worker et la coque : 23:50:20 -> 23:51).
+const formatParis = new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Paris', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
+function minutesParisSuperieures(date) {
+  const p = Object.fromEntries(formatParis.formatToParts(date).map((x) => [x.type, x.value]));
+  return mod24(Number(p.hour) * 60 + Number(p.minute) + (date.getUTCSeconds() > 0 || date.getUTCMilliseconds() > 0 ? 1 : 0));
+}
+const formater = (total) => String(Math.floor(mod24(total) / 60)).padStart(2, '0') + ':' + String(mod24(total) % 60).padStart(2, '0');
+
+// Copie, côté page, de la règle du démarrage tardif du Worker (deciderPlage) et de la coque (Plage.decider) : mêmes résultats, vérifiés
+// sur tests/plage-tardif-cas.json. Sert aux consignes manuelles : en cas d'échec, l'heure à régler est celle que le câble aurait reçue.
+// -> { statut: 'normal' | 'tardif', debut, fin } | { statut: 'trop_tard' } | { statut: 'invalide' }
+export function deciderDemande(demande, maintenant = new Date()) {
+  if (!demandeValide(demande)) return { statut: 'invalide' };
+  const a = minutesDe(demande.allumage);
+  const n = minutesParisSuperieures(maintenant);
+  const nuit = mod24(minutesDe(demande.depart) - a);
+  if (!(mod24(n - a) < nuit) && mod24(a - n) >= 10) return { statut: 'normal', debut: demande.allumage, fin: demande.fin };
+  const avantDepart = mod24(minutesDe(demande.depart) - n);
+  if (avantDepart <= 10) return { statut: 'trop_tard' };
+  return { statut: 'tardif', debut: formater(n + 10), fin: formater(n + Math.min(10 + demande.duree_min, avantDepart)) };
+}
+
+// Début et fin à régler à la main pour une demande d'allumage : ceux que le câble aurait reçus (démarrage tardif compris), sinon ceux de la
+// demande ; fin absente (demande ancienne) : seulement le début.
+function heuresManuelles(demande, maintenant) {
+  const d = deciderDemande(demande, maintenant);
+  if (d.statut === 'normal' || d.statut === 'tardif') return { debut: d.debut, fin: d.fin, tardif: d.statut === 'tardif' };
+  return { debut: demande && demande.allumage, fin: demande && estHeure(demande.fin) ? demande.fin : null, tardif: false };
+}
+const debutFin = (h) => 'début ' + (h.debut || '--:--') + (h.fin ? ', fin ' + h.fin : '');
+
+// Ce que l'utilisateur doit faire à la main dans Smart Life si le service échoue : toujours le début ET la fin de la plage.
+// finHC : fin des heures creuses des Paramètres ("HH:MM"), pour le cas « aucune charge » (sinon demande.fin).
+// Si l'heure de début est déjà passée (démarrage tardif), c'est l'heure tardive qui est donnée, pas l'heure calculée.
+// maintenant : pour les tests. Ne jamais conseiller de désactiver la plage : sur ce câble, cela lance la charge immédiate.
+export function consigneManuelle(demande, finHC, maintenant = new Date()) {
+  if (demande && demande.desactiver) {
+    const fin = estHeure(finHC) ? finHC : demande.fin;
+    const avant = moinsUneMinute(fin);
+    return 'À régler à la main dans Smart Life : début de la plage à une minute avant la fin des heures creuses' + (avant ? ' (' + avant + ')' : '') + (estHeure(fin) ? ', fin ' + fin : '') + ', ou ne branchez pas la voiture.';
+  }
+  const h = heuresManuelles(demande, maintenant);
+  return 'À régler à la main dans Smart Life : plage de charge du câble, ' + debutFin(h) + (h.tardif ? ' (heure de début dépassée : début dans 10 min)' : '') + '.';
 }
 
 // --- Interprétation des réponses ---
@@ -133,7 +170,7 @@ const CAUSES = {
   local_format: { message: 'Le câble a donné une réponse inattendue : le réglage n\'est pas confirmé.', incertain: true },
 };
 
-export function resultatKo(demande, code, finHC) {
+export function resultatKo(demande, code, finHC, maintenant = new Date()) {
   const c = CAUSES[code] || CAUSES.inattendue;
   const tropTard = code === 'trop_tard';
   return {
@@ -142,9 +179,9 @@ export function resultatKo(demande, code, finHC) {
     message: tropTard && demande && estHeure(demande.depart)
       ? 'Trop tard pour charger avant le départ (' + demande.depart + ') : rien n\'a été modifié sur le câble.'
       : c.message,
-    manuel: tropTard ? consigneTropTard(demande) : consigneManuelle(demande, finHC),
+    manuel: tropTard ? consigneTropTard(demande) : consigneManuelle(demande, finHC, maintenant),
     incertain: c.incertain,
-    verifier: c.incertain ? ouVerifier(demande, finHC) : null,
+    verifier: c.incertain ? ouVerifier(demande, finHC, maintenant) : null,
   };
 }
 
@@ -154,10 +191,14 @@ function consigneTropTard(demande) {
 }
 
 // Où vérifier quand le résultat est incertain : l'écran et la valeur à comparer.
-function ouVerifier(demande, finHC) {
-  const h = demande && demande.desactiver ? moinsUneMinute(finHC) : demande && demande.allumage;
-  return typeof h === 'string' && HEURE_RE.test(h)
-    ? 'Vérifiez dans Smart Life > charge différée : début ' + h + ', activée.'
+function ouVerifier(demande, finHC, maintenant) {
+  let h;
+  if (demande && demande.desactiver) {
+    const fin = estHeure(finHC) ? finHC : demande.fin;
+    h = { debut: moinsUneMinute(fin), fin: estHeure(fin) ? fin : null };
+  } else h = heuresManuelles(demande, maintenant);
+  return typeof h.debut === 'string' && HEURE_RE.test(h.debut)
+    ? 'Vérifiez dans Smart Life > charge différée : ' + debutFin(h) + ', activée.'
     : 'Vérifiez dans Smart Life > charge différée.';
 }
 
@@ -218,6 +259,7 @@ function interpreter(demande, status, json, ko, finHC) {
       message: 'Heure de début dépassée : charge programmée de ' + json.debut + ' à ' + json.fin + '.',
       detail: hp > 0 ? 'Dont ' + hp + ' min en heures pleines.' : null,
       rappel: brancherAvantTardif(json.debut),
+      rappel2: REPROGRAMMER_TARDIF,
     };
   }
   if (json.debut !== demande.allumage || json.fin !== demande.fin) return ko('relecture_differente');
@@ -230,10 +272,10 @@ function interpreter(demande, status, json, ko, finHC) {
 export async function envoyer(adresse, jeton, demande, deps = {}) {
   const f = deps.fetch || ((...a) => fetch(...a));
   const enLigne = deps.onLine === undefined ? (typeof navigator !== 'undefined' ? navigator.onLine : true) : deps.onLine;
-  if (!demande) return resultatKo(demande, 'inattendue', deps.finHC);
-  if (enLigne === false) return resultatKo(demande, 'hors_ligne_navigateur', deps.finHC);
+  if (!demande) return resultatKo(demande, 'inattendue', deps.finHC, deps.maintenant && deps.maintenant());
+  if (enLigne === false) return resultatKo(demande, 'hors_ligne_navigateur', deps.finHC, deps.maintenant && deps.maintenant());
   const a = validerAdresse(adresse), j = validerJeton(jeton);
-  if (!a.ok || !j.ok) return resultatKo(demande, 'inattendue', deps.finHC); // la page empêche déjà ce cas
+  if (!a.ok || !j.ok) return resultatKo(demande, 'inattendue', deps.finHC, deps.maintenant && deps.maintenant()); // la page empêche déjà ce cas
 
   const ctrl = new AbortController();
   let delaiAtteint = false;
@@ -251,12 +293,12 @@ export async function envoyer(adresse, jeton, demande, deps = {}) {
     });
     let json;
     try { json = JSON.parse(await rep.text()); } catch (e) {
-      if (delaiAtteint) return resultatKo(demande, 'delai_page', deps.finHC);
+      if (delaiAtteint) return resultatKo(demande, 'delai_page', deps.finHC, deps.maintenant && deps.maintenant());
       json = undefined;
     }
     return interpreterReponse(demande, rep.status, json, deps.finHC);
   } catch (e) {
-    return resultatKo(demande, delaiAtteint ? 'delai_page' : 'injoignable', deps.finHC);
+    return resultatKo(demande, delaiAtteint ? 'delai_page' : 'injoignable', deps.finHC, deps.maintenant && deps.maintenant());
   } finally {
     clearTimeout(minuteur);
   }
@@ -298,8 +340,8 @@ export async function lireEtatService(adresse, jeton, deps = {}) {
 // d'afficher un KO générique avec l'heure à régler à la main (règle n°2, pas d'échec silencieux).
 export async function envoyerEtAfficher(adresse, jeton, demande, afficher, deps = {}) {
   let res;
-  try { res = await envoyer(adresse, jeton, demande, deps); } catch (e) { res = resultatKo(demande, 'inattendue', deps.finHC); }
+  try { res = await envoyer(adresse, jeton, demande, deps); } catch (e) { res = resultatKo(demande, 'inattendue', deps.finHC, deps.maintenant && deps.maintenant()); }
   try { afficher(res); } catch (e) {
-    try { afficher(resultatKo(demande, 'inattendue', deps.finHC)); } catch (e2) { /* rien de plus à faire */ }
+    try { afficher(resultatKo(demande, 'inattendue', deps.finHC, deps.maintenant && deps.maintenant())); } catch (e2) { /* rien de plus à faire */ }
   }
 }

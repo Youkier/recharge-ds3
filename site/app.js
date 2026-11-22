@@ -679,6 +679,7 @@ import { confirmationValable, confirmationAEnregistrer, confirmationRestauree, C
       a.appendChild(el("p", "alert-title", res.message));
       if (res.detail) a.appendChild(el("p", null, res.detail));
       if (res.rappel) a.appendChild(el("p", null, res.rappel));
+      if (res.rappel2) a.appendChild(el("p", null, res.rappel2));
     } else {
       a.appendChild(el("p", "alert-title", res.titre || "Programmation non confirmée"));
       a.appendChild(el("p", null, res.message));
@@ -1097,6 +1098,7 @@ import { confirmationValable, confirmationAEnregistrer, confirmationRestauree, C
     }
     verifierPlafondEnvoi();
     verifierConfirmation();
+    updateSend(); // l'heure a pu changer pendant l'absence
     if (soirAffiche !== null && soirAffiche !== cleSoir() && !busy && !att) render(); // page restée ouverte d'un soir à l'autre : bandeau et calcul
     else updateSend(); // « pour cette nuit » / « démarre tout de suite » dépendent de l'heure
     if (pontOk && !busy && !att) majEtatCable();
@@ -1125,6 +1127,8 @@ import { confirmationValable, confirmationAEnregistrer, confirmationRestauree, C
     }).then(function () { suiviEnCours = false; }, function () { suiviEnCours = false; });
   }
   if (pontOk) setInterval(suivreWifiPastille, SUIVI_PASTILLE_MS);
+  // Chaque minute, page visible : « Déjà programmé » et la sous-ligne du bouton suivent l'heure (une heure de début qui passe change la décision).
+  setInterval(function () { if (!document.hidden) { try { updateSend(); } catch (e) { /* sans effet */ } } }, 60000);
   // Confirmation du % périmée (nouveau jour, ou plus de 6 h) : on redemande, et les anciens résultats disparaissent.
   function verifierConfirmation() {
     if (busy || !confirme || confirmationValable(confirmeLe, Date.now())) return;

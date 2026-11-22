@@ -138,7 +138,7 @@ export async function chercherCable(deps, surProgres = null) {
  * -> même forme que service.js : { etat:'ok', message, detail?, rappel, tardif? } | resultatKo(...)
  */
 export async function programmerLocal(demande, deps, finHC) {
-  const ko = (code) => resultatKo(demande, code, finHC);
+  const ko = (code) => resultatKo(demande, code, finHC, deps && deps.maintenant ? deps.maintenant() : undefined);
   try {
     if (!demande) return ko('inattendue');
     const { client } = deps;

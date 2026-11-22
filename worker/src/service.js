@@ -84,10 +84,10 @@ const minutes = (hhmm) => Number(hhmm.slice(0, 2)) * 60 + Number(hhmm.slice(3));
 const mod24 = (x) => ((x % 1440) + 1440) % 1440;
 const formater = (total) => `${String(Math.floor(mod24(total) / 60)).padStart(2, '0')}:${String(mod24(total) % 60).padStart(2, '0')}`;
 
-export const DUREE_MIN_MAX = 900; // durée de charge demandée : 1 à 900 minutes
+export const DUREE_MIN_MAX = 1439; // durée de charge demandée : 1 à 1439 minutes
 export const MARGE_TARDIF_MIN = 10; // un début qui tombe dans moins de 10 minutes est reporté à maintenant + 10 min
 
-// Demande de programmation : { allumage, fin, duree_min, depart }. Tout est revalidé ici (formats, durée entière 1..900,
+// Demande de programmation : { allumage, fin, duree_min, depart }. Tout est revalidé ici (formats, durée entière 1..1439,
 // et fin comprise entre l'allumage (exclu) et le départ (inclus), en heures murales, minuit compris).
 export function validerDemande(d) {
   if (!d || typeof d !== 'object') return false;
@@ -328,7 +328,7 @@ function repondre(request, env, statut, corps, extra = {}) {
 
 const erreur = (request, env, code, statut = STATUTS[code] ?? 502) => repondre(request, env, statut, { ok: false, erreur: code });
 
-// Valide le corps de POST /api/programmer : exactement {"allumage":"HH:MM","fin":"HH:MM","duree_min":<entier 1..900>,"depart":"HH:MM"}
+// Valide le corps de POST /api/programmer : exactement {"allumage":"HH:MM","fin":"HH:MM","duree_min":<entier 1..1439>,"depart":"HH:MM"}
 // (fin comprise entre l'allumage et le départ), ou {"desactiver":true,"fin":"HH:MM"} (fin des heures creuses).
 export function validerCorps(texte) {
   if (typeof texte !== 'string' || texte.length === 0 || texte.length > TAILLE_MAX_CORPS) return null;

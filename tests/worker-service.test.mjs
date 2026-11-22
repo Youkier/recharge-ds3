@@ -134,12 +134,12 @@ test('routage : 404, 405, 400', async () => {
   for (const o of ['{"allumage":"00:00"}', '{"allumage":"22:30","fin":"06:00"}', '{"allumage":"22:30","fin":"06:00","duree_min":420}',
     JSON.stringify({ ...dem('22:30'), courant: 6 }), JSON.stringify({ ...dem('22:30'), desactiver: true }),
     JSON.stringify(dem('22:30', { duree_min: '420' })), JSON.stringify(dem('22:30', { duree_min: 420.5 })), JSON.stringify(dem('22:30', { duree_min: 0 })),
-    JSON.stringify(dem('22:30', { duree_min: 901 })), JSON.stringify(dem('22:30', { duree_min: null })), JSON.stringify(dem('22:30', { fin: '08:00' })),
+    JSON.stringify(dem('22:30', { duree_min: 1440 })), JSON.stringify(dem('22:30', { duree_min: null })), JSON.stringify(dem('22:30', { fin: '08:00' })),
     JSON.stringify(dem('22:30', { fin: '22:30' })), JSON.stringify(dem('22:30', { depart: '22:30' })), JSON.stringify(dem('22:30', { depart: '7:30' })),
     JSON.stringify(dem('22:30', { fin: 600 })), JSON.stringify(dem('22:30', { depart: '07:30 ' }))]) assert.equal(validerCorps(o), null, o);
 });
 test('corps invalide sémantiquement : 400, aucun appel Tuya', async () => {
-  for (const corps of [dem('22:30', { fin: '08:00' }), dem('22:30', { duree_min: 901 }), dem('22:30', { depart: '05:00' }), { allumage: '22:30' }]) {
+  for (const corps of [dem('22:30', { fin: '08:00' }), dem('22:30', { duree_min: 1440 }), dem('22:30', { depart: '05:00' }), { allumage: '22:30' }]) {
     const c = cable();
     const a = await appel(post(corps), c);
     assert.equal(a.statut, 400); assert.deepEqual(a.corps, { ok: false, erreur: 'requete_invalide' });
