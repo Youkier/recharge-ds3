@@ -260,3 +260,7 @@ Hypothèses : réutiliser le `CLIENT_ID` de Home Assistant dans une appli diffus
 ## Répétition de la plage de charge différée (2026-11-22)
 
 La plage de charge différée du câble (dp 151, `ss`/`se`, `m` activée) **se répète chaque nuit** tant qu'elle n'est pas modifiée ou désactivée. Source : constat d'usage de Mathieu (Smart Life et charges nocturnes), rapporté le 2026-11-22 ; non vérifié par lecture des dp un matin après exécution. Conséquence : « Déjà programmé » (plage lue active et identique) est fondé ; un soir sans programmation, le câble rejoue la dernière plage.
+
+## Voiture branchée après l'heure de début (2026-11-22)
+
+Si la voiture est branchée **après** l'heure de début de la plage, **la charge ne démarre pas**. Source : constat d'usage de Mathieu, rapporté le 2026-11-22 ; non vérifié par lecture des dp. Conséquences : le « démarrage immédiat » actuel (début réglé à l'heure courante quand l'heure calculée est passée) ne charge pas si la voiture est branchée ensuite ; la confirmation doit dire « branchez la voiture avant HH:MM ». Règle proposée par Mathieu : si le début nécessaire est déjà passé, début = maintenant + 10 min, fin déplacée pour finir au mieux, et alerte (détails à trancher).
