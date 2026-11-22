@@ -96,8 +96,10 @@ test("err : le champ fautif est désigné", () => {
   }
 });
 
-test("le rendement se déduit du courant (90 % à 16 A) et une saisie manuelle prime", () => {
-  assert.equal(A.effAuto(16, 230), 90);
+test("le rendement se déduit du courant (90 % à 16 A) et une saisie manuelle prime", async () => {
+  const { effAuto } = await import(pathToFileURL(join(d, "calc.js")).href); // une seule copie : calc.js
+  assert.equal(effAuto(16, 230), 90);
+  assert.equal(A.effAuto, undefined);
   assert.equal(A.lireReglages(sansPrix()).p.eff, 90);
   assert.equal(A.lireReglages(sansPrix({ eff: "80" })).p.eff, 80);
 });

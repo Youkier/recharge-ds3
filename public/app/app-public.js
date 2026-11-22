@@ -1,6 +1,6 @@
 // Interface du site public : lecture des réglages, calcul (calc.js partagé), présentation du résultat.
 // Les fonctions du haut sont pures (sans DOM) et testées ; la partie DOM démarre seulement dans un navigateur.
-import { plan, hm, fmt, fdur, fr, eur } from "../calc.js";
+import { plan, hm, fmt, fdur, fr, eur, effAuto, nuitChangementHeure, soirDe, soirSimule, texteChangementHeure } from "../calc.js";
 import { lignesValides, marques, modeles, versions, trouver } from "../vehicules.js";
 
 export const CLE = "recharge-public-v1"; // différente de la clé de la page personnelle
@@ -9,12 +9,6 @@ export const DEFAUTS = { marque: "", modele: "", version: "", cap: "", courant: 
 export const MESSAGE_LIEN = "Réglages du lien appliqués : vérifiez-les.";
 export const MESSAGE_MODELE = "Voiture de cette page déjà choisie : vérifiez la version et vos autres réglages.";
 export const LIBELLES = { cap: "Capacité utile", amp: "Courant de charge", volt: "Tension", eff: "Rendement de charge", hcStart: "Début des heures creuses", hcEnd: "Fin des heures creuses", dep: "Heure de départ", target: "Batterie visée", soh: "État de santé de la batterie", pHC: "Prix en heures creuses", pHP: "Prix en heures pleines", nuits: "Recharges par an", soc: "Batterie à l'arrivée" };
-
-// Rendement proposé selon la puissance : pertes = 3 % + 250 W fixes (même règle que la page personnelle).
-export function effAuto(amp, volt) {
-  var P = amp * volt / 1000;
-  return P > 0 ? Math.max(1, Math.round(100 * (1 - 0.03 - 0.25 / P))) : NaN;
-}
 
 function vide(s) { return s === undefined || s === null || String(s).trim() === ""; }
 // Décimal simple seulement : « 1e1 », « 0x1A » ou « 0b11 » sont refusés.

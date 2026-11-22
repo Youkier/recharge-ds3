@@ -8,7 +8,7 @@ import { readFileSync, writeFileSync, mkdirSync, rmSync, copyFileSync, readdirSy
 import { resolve, dirname, join, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { lignesValides } from "../site/vehicules.js";
-import { fr, fdur } from "../site/calc.js";
+import { fr, fdur, effAuto } from "../site/calc.js";
 
 const RACINE = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 export const SORTIE_PAR_DEFAUT = join(RACINE, "dist", "public");
@@ -227,7 +227,7 @@ function lireModeles(dossier, lignes) {
 // Durée d'une recharge de 20 à 80 % à 16 A, 230 V, rendement proposé par le site, arrondie aux 5 minutes au-dessus (comme calc.js).
 function dureeType(cap) {
   const P = 16 * 230 / 1000;
-  const rate = P * Math.max(1, Math.round(100 * (1 - 0.03 - 0.25 / P))) / 100; // rendement proposé : mêmes pertes que effAuto() de la page (3 % + 250 W)
+  const rate = P * effAuto(16, 230) / 100; // rendement proposé par le site (effAuto, calc.js)
   return Math.ceil(0.6 * cap / rate * 60 / 5) * 5;
 }
 const LIB_LIMITE = { true: "Oui", false: "Non", inconnu: "Nous ne savons pas encore" };

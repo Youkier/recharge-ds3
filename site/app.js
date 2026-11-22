@@ -1,4 +1,4 @@
-import { plan, hm, fmt, fdur, fr, eur } from "./calc.js";
+import { plan, hm, fmt, fdur, fr, eur, effAuto, nuitChangementHeure, soirDe, soirSimule, texteChangementHeure } from "./calc.js";
 import { lignesValides, marques, modeles, versions, trouver } from "./vehicules.js";
 import { validerAdresse, validerJeton, choisirDemande, libelleBouton, envoyer, resultatKo } from "./service.js";
 import { confirmationValable, blocageCable, plageRelue, sousLigneBouton, socValide, moyenEnvoi, boutonActif, programmerSelonMoyen, pastille, secondesRestantes, rechercheAutomatique, decisionEnvoi, attenteExpiree, suiviWifiActif, etapeAttente, lectureDue, quitterSiCache, confValable, plafondDepasse, PREPARATION_MAX_MS, ENVOI_PLAFOND_MS, resultatNotification, heureNotification, suiteLecture, codeEcheance, LIBELLES_ATTENTE, ATTENTE_SONDE_MS, SUIVI_PASTILLE_MS } from "./accueil.js";
@@ -10,13 +10,6 @@ import { confirmationValable, blocageCable, plageRelue, sousLigneBouton, socVali
   var ids = ["cap", "soh", "target", "dep", "hcStart", "hcEnd", "amp", "volt", "eff", "pHC", "pHP", "mode"];
   var NUMS = ["cap", "soh", "target", "amp", "volt", "eff", "pHC", "pHP"];
   var CAR = ["cap", "soh"], CABLE = ["amp", "volt", "eff"];
-  // Rendement proposé selon la puissance (courant × tension) : pertes = 3 % + 250 W fixes.
-  // Source : ADAC, mesure du 06/08/2026 (100 à 300 W pour l'électronique de charge ;
-  // 12,7 à 24,2 % de pertes à 2,3 kW). Donne 90 % à 16 A, valeur validée de la page.
-  function effAuto(amp, volt) {
-    var P = amp * volt / 1000;
-    return P > 0 ? Math.max(1, Math.round(100 * (1 - 0.03 - 0.25 / P))) : NaN;
-  }
   var $ = function (id) { return document.getElementById(id); };
   var radios = function () { return document.querySelectorAll('input[name="mode"]'); };
 
