@@ -99,12 +99,13 @@ centre() {
 toucher() { local c; c="$(centre "$1")"; adb shell input tap $c; }
 
 # Même chose pour un élément de la page (WebView) : uiautomator n'expose pas les id HTML (resource-id vide), seulement
-# le texte accessible ; on cherche donc le nœud dont le texte COMMENCE par <texte> (ex. « Programmer la charge »).
+# le texte accessible ; on cherche donc le nœud dont le texte (ou la description, pour un lien à icône comme « Paramètres », dont
+# le libellé est un aria-label) COMMENCE par <texte> (ex. « Programmer la charge »).
 centre_web() {
   local nom="$1" xml noeud nombres
   for _ in $(seq 1 20); do
     xml="$(ui_dump || true)"
-    noeud="$(printf '%s' "$xml" | grep -o "<node [^>]* text=\"${nom}[^>]*>" | head -1 || true)"
+    noeud="$(printf '%s' "$xml" | grep -o -E "<node [^>]* (text|content-desc)=\"${nom}[^>]*>" | head -1 || true)"
     if [ -n "$noeud" ]; then
       nombres="$(printf '%s' "$noeud" | grep -o 'bounds="[^"]*"' | grep -o '[0-9]\+' | tr '\n' ' ')"
       # shellcheck disable=SC2086
@@ -841,11 +842,12 @@ L="$(attendre_essai page-etat 60)"
 sleep 3
 capturer "sombre-K-apres-bascule-du-theme"
 DUMP="$(ui_dump || true)"
-if contient "$DUMP" "Déjà programmé à $A39"; then
-  releve "S-K : la confirmation du % survit à la bascule du thème (le bouton reste « Déjà programmé »)"
-else
-  releve "S-K : après la bascule du thème, la page est rechargée et le % doit être confirmé de nouveau (le bouton redemande la batterie)"
+# Vérification bloquante : la confirmation du % survit à la bascule du thème (la page est rechargée, la WebView recréée).
+contient "$DUMP" "confirmez la batterie" && echec "S-K : après la bascule du thème, le % doit être confirmé de nouveau (la confirmation n'a pas survécu au rechargement)"
+if [ "$DECISION_F1" = normal ]; then
+  contient "$DUMP" "Déjà programmé à $A39" || echec "S-K : après la bascule du thème, le bouton n'est plus « Déjà programmé à $A39 »"
 fi
+echo "OK  S-K la confirmation du % survit à la bascule du thème"
 mode_theme clair
 # F2 : plage différente (celle du faux câble par défaut) : « Câble réglé : 03:30 → 06:00 », bouton actif.
 lancer_faux

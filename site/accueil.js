@@ -61,6 +61,22 @@ export function confirmationValable(confirmeLe, maintenant) {
   return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
 }
 
+// La confirmation survit à un rechargement de la page (changement de thème : l'activité est recréée, la WebView aussi), mais
+// jamais d'un soir à l'autre : mêmes conditions de validité que ci-dessus, et le % affiché doit être celui qui a été confirmé.
+// Stockage : localStorage et non sessionStorage, car une WebView recréée repart d'un sessionStorage vide.
+export const CLE_CONFIRMATION = 'recharge-ds3-confirmation';
+export function confirmationAEnregistrer(confirmeLe, soc) {
+  return Number.isFinite(confirmeLe) && Number.isFinite(soc) ? JSON.stringify({ le: confirmeLe, soc }) : null;
+}
+// -> l'instant de la confirmation à reprendre, ou null (absente, illisible, périmée, autre jour, % différent).
+export function confirmationRestauree(brut, maintenant, soc) {
+  if (typeof brut !== 'string' || !Number.isFinite(soc)) return null;
+  let o;
+  try { o = JSON.parse(brut); } catch (e) { return null; }
+  if (!o || typeof o !== 'object' || o.soc !== soc || !confirmationValable(o.le, maintenant)) return null;
+  return o.le;
+}
+
 // Dans l'appli, tant que le câble n'est pas relié ou localisé, le bouton ne peut rien envoyer : il ouvre
 // le panneau de la pastille. Renvoie la phrase de la sous-ligne, ou null si l'envoi peut être tenté
 // (câble muet, hors Wi-Fi ou en erreur : l'envoi échoue proprement, avec l'heure manuelle).

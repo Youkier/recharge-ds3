@@ -135,7 +135,7 @@ Statuts HTTP du Worker : `hors_ligne`, `jeton`, `tuya`, `relecture_differente` :
 
 À confirmer par un essai réel : le code renvoyé par l'écriture quand le câble est hors ligne ; le caractère immédiat de la répercussion (le Worker relit jusqu'à 3 fois, 1,5 s, 2 s puis 2,5 s après l'écriture, la sonde attendait 5 s) ; l'effet sur la charge d'un début de plage réglé à l'heure actuelle (cas « heure déjà passée »).
 
-Worker (révisé le 2026-11-14 après T7) : plus de `charge_active` ; `{"desactiver":true}` écrit la plage courte (début = `se` relu − 1 min, `m` = 2), relue comme une programmation normale, jamais `immediat`.
+Worker (révisé le 2026-11-14 après T7) : plus de `charge_active` ; `{"desactiver":true}` écrivait la plage courte (début = `se` relu − 1 min, `m` = 2), relue comme une programmation normale, jamais `immediat`. **Mis à jour le 2026-11-22** : le contrat est `{"desactiver":true,"fin":"HH:MM"}` (fin des heures creuses) ; le Worker écrit `ss` = fin − 1 min, `se` = fin, `m` = 2 (une fin repoussée par un démarrage tardif revient à sa valeur) ; la règle « heure déjà passée / immédiat » est remplacée par le démarrage tardif (section ci-dessous).
 
 ## Pilotage local, sans cloud (piste du 2026-11-12 ; L1 et L2 faits le 2026-11-15)
 
@@ -264,3 +264,7 @@ La plage de charge différée du câble (dp 151, `ss`/`se`, `m` activée) **se r
 ## Voiture branchée après l'heure de début (2026-11-22)
 
 Si la voiture est branchée **après** l'heure de début de la plage, **la charge ne démarre pas**. Source : constat d'usage de Mathieu, rapporté le 2026-11-22 ; non vérifié par lecture des dp. Conséquences : le « démarrage immédiat » actuel (début réglé à l'heure courante quand l'heure calculée est passée) ne charge pas si la voiture est branchée ensuite ; la confirmation doit dire « branchez la voiture avant HH:MM ». Règle proposée par Mathieu : si le début nécessaire est déjà passé, début = maintenant + 10 min, fin déplacée pour finir au mieux, et alerte (détails à trancher).
+
+## Démarrage tardif : remplace le « démarrage immédiat » (2026-11-22)
+
+Décision de Mathieu (`docs/decisions-produit.md`). Au moment de l'envoi, en heure de Paris : si l'heure de début est passée (entre l'allumage et le départ) ou dans moins de 10 min, le service écrit **début = maintenant + 10 min** et **fin = min(début + durée de charge, heure de départ)**, réponse `tardif: true` ; si le début tombe à 10 min ou moins du départ, rien n'est écrit (erreur `trop_tard`). Sinon il écrit l'allumage et la fin demandés. La **fin `se` est écrite à chaque fois** (la plage se répète chaque nuit). Le champ `immediat` n'existe plus dans les réponses du Worker et de la coque ; **seul l'outil PC `local/tuya-local.js` garde l'ancienne règle** (écart connu, documenté dans `tests/tuya-local.test.mjs`). Cas communs : `tests/plage-tardif-cas.json`. Source : décision de conception, non observée sur le câble : à vérifier en réel (début écrit à maintenant + 10 min, charge démarrée si la voiture est branchée après la programmation).

@@ -1,7 +1,7 @@
 import { plan, hm, fmt, fdur, fr, eur, effAuto, nuitChangementHeure, soirDe, soirSimule, texteChangementHeure } from "./calc.js";
 import { lignesValides, marques, modeles, versions, trouver } from "./vehicules.js";
 import { validerAdresse, validerJeton, choisirDemande, libelleBouton, envoyer, resultatKo, lireEtatService, RAPPEL_REPROGRAMMER } from "./service.js";
-import { confirmationValable, blocageCable, plageRelue, plageDuCable, ligneCable, dejaProgramme, libelleDejaProgramme, contexteHoraire, LIBELLES_SOC, mentionProvisoire, sousLigneBouton, socValide, moyenEnvoi, boutonActif, programmerSelonMoyen, pastille, secondesRestantes, rechercheAutomatique, decisionEnvoi, attenteExpiree, suiviWifiActif, etapeAttente, lectureDue, quitterSiCache, confValable, plafondDepasse, PREPARATION_MAX_MS, ENVOI_PLAFOND_MS, resultatNotification, heureNotification, suiteLecture, codeEcheance, LIBELLES_ATTENTE, ATTENTE_SONDE_MS, SUIVI_PASTILLE_MS } from "./accueil.js";
+import { confirmationValable, confirmationAEnregistrer, confirmationRestauree, CLE_CONFIRMATION, blocageCable, plageRelue, plageDuCable, ligneCable, dejaProgramme, libelleDejaProgramme, contexteHoraire, LIBELLES_SOC, mentionProvisoire, sousLigneBouton, socValide, moyenEnvoi, boutonActif, programmerSelonMoyen, pastille, secondesRestantes, rechercheAutomatique, decisionEnvoi, attenteExpiree, suiviWifiActif, etapeAttente, lectureDue, quitterSiCache, confValable, plafondDepasse, PREPARATION_MAX_MS, ENVOI_PLAFOND_MS, resultatNotification, heureNotification, suiteLecture, codeEcheance, LIBELLES_ATTENTE, ATTENTE_SONDE_MS, SUIVI_PASTILLE_MS } from "./accueil.js";
 
 (function () {
   var DEFAULTS = { cap: 46, soh: 95, target: 80, dep: "07:30", hcStart: "22:00", hcEnd: "06:00", amp: 16, volt: 230, eff: 90, pHC: 0.146688, pHP: 0.196476, mode: "end", soc: 38 };
@@ -345,9 +345,12 @@ import { confirmationValable, blocageCable, plageRelue, plageDuCable, ligneCable
   // (Les propositions des dernières valeurs ont été retirées le 2026-11-21, à la demande de Mathieu : inutiles.)
   var confirme = false, confirmeLe = null;
   try { localStorage.removeItem("recharge-ds3-soc-recents"); } catch (e) {} // ancienne liste, plus utilisée
-  function setConfirme(oui) {
+  function setConfirme(oui, le) {
     confirme = oui;
-    confirmeLe = oui ? Date.now() : null;
+    confirmeLe = oui ? (Number.isFinite(le) ? le : Date.now()) : null;
+    // Conservée pour un rechargement de la page (thème) : voir accueil.js, confirmationRestauree.
+    var brut = oui ? confirmationAEnregistrer(confirmeLe, socValide($("soc").value)) : null;
+    if (brut) lsSet(CLE_CONFIRMATION, brut); else lsDel(CLE_CONFIRMATION);
     $("socCard").className = "card soc-card" + (oui ? "" : " unconfirmed");
     $("socHint").hidden = oui;
     majProvisoire();
@@ -623,6 +626,16 @@ import { confirmationValable, blocageCable, plageRelue, plageDuCable, ligneCable
     updateSend();
   }
 
+  // Hauteur réelle de la barre fixe du bas (police agrandie, attente) -> marge du contenu (--sendbar-h, voir style.css).
+  var barreObs = null;
+  function mesurerBarre() {
+    var b = $("sendBar");
+    try {
+      if (!b.hidden) document.documentElement.style.setProperty("--sendbar-h", b.offsetHeight + "px");
+      if (!barreObs && typeof ResizeObserver === "function") { barreObs = new ResizeObserver(mesurerBarre); barreObs.observe(b); }
+    } catch (e) { /* marge par défaut */ }
+  }
+
   function updateSend() {
     svcSummary();
     var b = $("sendBtn"), help = $("sendHelp");
@@ -645,6 +658,7 @@ import { confirmationValable, blocageCable, plageRelue, plageDuCable, ligneCable
     b.classList.toggle("attente", !b.disabled && moyen === "local" && !!blocageCable(etatCable));
     // Sans moyen d'envoi, la barre est masquée : réglage manuel avec l'heure affichée (voir Aide).
     $("sendBar").hidden = !moyen;
+    mesurerBarre();
     document.body.classList.toggle("has-sendbar", !!moyen);
     $("attenteBox").hidden = !att;
     $("attenteInfo").textContent = att && att.info ? att.info : "";
@@ -1141,7 +1155,10 @@ import { confirmationValable, blocageCable, plageRelue, plageDuCable, ligneCable
   // Essais et captures, seulement sur la machine locale : ?soc=38 simule une dernière valeur, &confirme=1 la confirme.
   var essai = (location.hostname === "127.0.0.1" || location.hostname === "localhost") ? new URLSearchParams(location.search) : null;
   if (essai && socValide(essai.get("soc")) !== null) { $("soc").value = socValide(essai.get("soc")); socEnregistre = true; }
-  loadService(); chargerVehicules(); render(); setConfirme(!!essai && essai.get("confirme") === "1" && socValide($("soc").value) !== null); route(false);
+  var confirmationReprise = confirmationRestauree(lsGet(CLE_CONFIRMATION), Date.now(), socValide($("soc").value)); // avant tout setConfirme
+  loadService(); chargerVehicules(); render();
+  setConfirme(confirmationReprise !== null || (!!essai && essai.get("confirme") === "1" && socValide($("soc").value) !== null), confirmationReprise);
+  route(false);
   if (pontOk) { $("svcBox").hidden = true; majEtatCable(); } // dans l'appli, le service n'est pas joignable : pas de carte service
   else lirePlageService(); // Mode service (GitHub Pages) : lecture de la plage au chargement, puis à chaque retour sur la page
   afficherBandeauDefauts();

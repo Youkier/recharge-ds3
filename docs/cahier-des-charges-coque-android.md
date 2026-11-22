@@ -67,13 +67,13 @@ ouvrir(ip, port, delaiMs) · envoyer(octets) · recevoir(delaiMs) → octets · 
 
 **Mêmes garanties que le Worker** (`worker/src/service.js`, contrat de `PLAN.md` phase 2a) :
 
-- N'écrit **que** `ss` et `m` du dp 151. Jamais `se`, `dt`, le courant, ni un autre point de données.
+- N'écrit **que** `ss`, `se` et `m` du dp 151 (`se` ajouté le 2026-11-22, règle 9 élargie). Jamais `dt`, le courant, ni un autre point de données.
 - Avant d'écrire : relit la valeur, vérifie que c'est un objet aux clés exactes `m`, `dt`, `ss`, `se`, avec des heures valides. Sinon, **rien n'est envoyé**.
-- Heure validée au format strict `HH:MM`. Heure déjà passée dans la plage : démarrage immédiat, signalé par `immediat: true`. Fuseau Europe/Paris, quel que soit le réglage du téléphone.
+- Heure validée au format strict `HH:MM`. Demande `{ allumage, fin, duree_min, depart }` ou `{ desactiver, fin }`. Heure déjà passée ou dans moins de 10 min (décision du 2026-11-22, remplace le démarrage immédiat) : démarrage tardif, début = maintenant + 10 min, fin = min(début + durée, départ), signalé par `tardif: true` ; départ trop proche : erreur `trop_tard`, rien n'est écrit. Fuseau Europe/Paris, quel que soit le réglage du téléphone.
 - Après l'écriture : relecture. Succès seulement si la valeur relue est celle demandée et qu'aucun autre point de réglage n'a changé (mêmes points volatils ignorés que dans `tools/tuya-local-test.py`).
 - **Réponses au même format que le Worker**, pour que `interpreterReponse()` de `site/service.js` et les alertes OK / KO servent telles quelles :
-  - succès : `{ ok: true, debut, fin, plage_active }`, plus `immediat` ou `courte` ;
-  - échec : `{ ok: false, erreur }` avec `hors_ligne` (connexion impossible), `delai`, `relecture_differente`, et deux codes nouveaux : `cle` (négociation ou déchiffrement refusés : clé fausse ou câble réappairé) et `format` (valeur du câble inattendue, rien n'a été écrit).
+  - succès : `{ ok: true, debut, fin, plage_active, tardif, courte }` ;
+  - échec : `{ ok: false, erreur }` avec `hors_ligne` (connexion impossible), `delai`, `relecture_differente`, `trop_tard`, et deux codes nouveaux : `cle` (négociation ou déchiffrement refusés : clé fausse ou câble réappairé) et `format` (valeur du câble inattendue, rien n'a été écrit).
 - Une seule connexion à la fois, fermée dans tous les cas. Délai global de 20 s, comme le Worker.
 - La clé n'apparaît jamais dans un message d'erreur, un journal ou une exception.
 
