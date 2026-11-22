@@ -3,43 +3,37 @@ package fr.rechargeds3.coque
 import android.net.Uri
 import android.os.Handler
 import android.os.Looper
-import android.util.Base64
 import android.webkit.WebView
 import androidx.webkit.JavaScriptReplyProxy
 import androidx.webkit.WebMessageCompat
 import androidx.webkit.WebViewCompat
+import fr.rechargeds3.coque.cable.Action
+import fr.rechargeds3.coque.cable.Plage
 import org.json.JSONException
 import org.json.JSONObject
-import java.io.IOException
-import java.net.InetAddress
-import java.net.InetSocketAddress
-import java.net.Socket
-import java.net.SocketTimeoutException
 import java.util.concurrent.ArrayBlockingQueue
 import java.util.concurrent.RejectedExecutionException
-import java.util.concurrent.ScheduledExecutorService
-import java.util.concurrent.ScheduledFuture
-import java.util.concurrent.ScheduledThreadPoolExecutor
 import java.util.concurrent.ThreadPoolExecutor
 import java.util.concurrent.TimeUnit
 
 /**
- * Pont entre la page (WebView) et le réseau : une connexion TCP vers une adresse IPv4 privée, port 6668, rien d'autre
- * (règle n°9 de CLAUDE.md, exception du 2026-11-15). Toute la logique (quoi lire, quoi écrire) reste dans
- * local/tuya-local.js ; ici, seulement des octets.
+ * Pont entre la page (WebView) et le câble : des OPÉRATIONS de haut niveau (lire l'état, programmer, chercher le câble),
+ * exécutées par le protocole local en Kotlin (paquet cable, via OperationsCable). Plus aucune route générique : la page
+ * ne peut ni ouvrir une connexion, ni envoyer d'octets, ni lire la clé (décision du 2026-11-21). Seul TransportTcp ouvre
+ * une connexion, vers une adresse IPv4 privée, port 6668 (règle n°9 de CLAUDE.md).
  *
  * Mécanisme : WebViewCompat.addWebMessageListener, asynchrone, origine https://appassets.androidplatform.net seulement
  * (developer.android.com, WebViewCompat.addWebMessageListener ; WebMessageListener.onPostMessage s'exécute sur le fil
  * principal et JavaScriptReplyProxy est @UiThread : les réponses repartent par le fil principal).
  * Le contrat des messages est décrit en tête de android/essai/transport-pont.js.
  *
- * Garanties : filtre d'adresse sans DNS (FiltreReseau), port 6668 seulement, messages de 2 Ko au plus, délais bornés partout,
- * une seule connexion de données à la fois (Registre : un identifiant par connexion, fermer idempotent), sondes plafonnées
- * à 32 en parallèle, durée de vie d'une connexion limitée à 30 s, connexions liées au réseau Wi-Fi. Rien n'est journalisé.
+ * Garanties : messages de 4 Ko au plus, opérations hors du fil principal, une seule opération sur le câble à la fois
+ * (« occupe » sinon), délais bornés, valeurs de la page revalidées côté natif (adresse, heure HH:MM, délai), la clé jamais
+ * rendue. Rien n'est journalisé.
  */
 class PontLocal(
     private val wifi: ReseauWifi,
-    private val coffre: CoffreCable,
+    private val operations: OperationsCable,
     private val estDebug: Boolean,
     private val surSaisirCle: () -> Unit,
     private val prendreActionAuto: () -> JSONObject?,
@@ -52,19 +46,9 @@ class PontLocal(
 ) : WebViewCompat.WebMessageListener {
 
     private val principal = Handler(Looper.getMainLooper())
-    private val registre = Registre<Socket>()
 
-    // Sondes : au plus 32 en parallèle, 64 en attente ; au-delà, « occupe ».
-    private val sondes = ThreadPoolExecutor(
-        32, 32, 5, TimeUnit.SECONDS, ArrayBlockingQueue(64),
-    ).apply { allowCoreThreadTimeOut(true) }
-
-    // Connexion de données : un seul fil, donc les opérations d'une connexion restent dans l'ordre.
-    private val donnees = ThreadPoolExecutor(1, 1, 5, TimeUnit.SECONDS, ArrayBlockingQueue(16)).apply { allowCoreThreadTimeOut(true) }
-
-    // Fermetures et limite de durée de vie : jamais bloquées par une lecture en cours.
-    private val controle: ScheduledExecutorService = ScheduledThreadPoolExecutor(1)
-    private var vieMax: ScheduledFuture<*>? = null
+    // Opérations lentes (coffre, réseau) : jamais sur le fil principal. L'exclusivité sur le câble est dans OperationsCable.
+    private val travail = ThreadPoolExecutor(4, 4, 5, TimeUnit.SECONDS, ArrayBlockingQueue(8)).apply { allowCoreThreadTimeOut(true) }
 
     override fun onPostMessage(view: WebView, message: WebMessageCompat, sourceOrigin: Uri, isMainFrame: Boolean, replyProxy: JavaScriptReplyProxy) {
         // Défense en profondeur : la règle d'origine de addWebMessageListener est déjà restrictive. Pas de réponse sinon.
@@ -81,17 +65,22 @@ class PontLocal(
                 "demarrage" -> demarrage(rep)
                 "variante" -> rep(JSONObject().put("ok", true).put("variante", variante()))
                 "prefixeWifi" -> prefixeWifi(rep)
-                "cable" -> cable(rep)
-                "retenirAdresse" -> retenirAdresse(q, rep)
                 "saisirCle" -> { surSaisirCle(); rep(ok()) }
-                "sonder" -> sonder(q, rep)
-                "ouvrir" -> ouvrir(q, rep)
-                "envoyer" -> envoyer(q, rep)
-                "recevoir" -> recevoir(q, rep)
-                "fermer" -> fermer(q, rep)
-                // Réservée à la version de mise au point, comme les actions adb : refusée dans la version publiée.
+                "cable" -> enArrierePlan(rep) { enJson(operations.cable()) }
+                "lire" -> enArrierePlan(rep) { enJson(operations.lire(adresse(q), delai(q))) }
+                "programmer" -> programmer(q, rep)
+                "chercher" -> chercher(q, rep)
+                "memoriser" -> enArrierePlan(rep) { enJson(operations.memoriser()) }
+                "oublierMemoire" -> enArrierePlan(rep) { operations.oublierMemoire(); ok() }
+                // Réservées à la version de mise au point, comme les actions adb : refusées dans la version publiée.
                 "essaiArrierePlan" -> rep(if (estDebug) essaiArrierePlan(q.optString("quoi", "")) else erreur("operation_inconnue"))
-                "notifications", "demanderNotifications", "attenteDebut", "attenteEtat", "attenteFin" -> attente(op, q, rep)
+                "essaiFiltre" -> if (estDebug) enArrierePlan(rep) { essaiFiltre() } else rep(erreur("operation_inconnue"))
+                "attenteFin" -> {
+                    operations.oublierMemoire() // la configuration gardée pour l'attente n'a plus d'usage
+                    attente(op, q, rep)
+                }
+                "notifications", "demanderNotifications", "attenteDebut", "attenteEtat" -> attente(op, q, rep)
+                // Toute autre opération, dont les anciennes routes génériques (ouvrir, envoyer, recevoir, sonder…) : refusée.
                 else -> rep(erreur("operation_inconnue"))
             }
         } catch (e: RejectedExecutionException) {
@@ -106,7 +95,7 @@ class PontLocal(
     private fun variante() = if (estDebug) "debug" else "release"
 
     private fun demarrage(repondre: (JSONObject) -> Unit) {
-        fermerToutAsync() // une nouvelle page repart sans connexion héritée de la précédente
+        fermerToutAsync() // une nouvelle page repart sans opération héritée de la précédente
         val r = ok().put("variante", variante())
         r.put("auto", if (estDebug) prendreActionAuto() ?: JSONObject.NULL else JSONObject.NULL)
         repondre(r)
@@ -117,159 +106,94 @@ class PontLocal(
         repondre(if (p == null) erreur("pas_wifi") else ok().put("prefixe", p))
     }
 
-    // La clé n'est rendue qu'à la page, au moment d'une action ; elle n'est ni journalisée ni conservée ici. Déchiffrement
-    // hors du fil principal (magasin de clés). « illisible » : un bloc existe mais ne se déchiffre pas (rien n'est effacé).
-    private fun cable(repondre: (JSONObject) -> Unit) {
-        controle.execute {
-            val v = coffre.lire()
-            val r = if (v == null) ok().put("configure", false).put("illisible", coffre.configure())
-            else ok().put("configure", true).put("deviceId", v.first).put("cle", v.second)
-            coffre.adresse()?.let { r.put("adresse", it) }
+    // --- Opérations sur le câble (fil de travail) ---
+
+    private fun enArrierePlan(repondre: (JSONObject) -> Unit, corps: () -> JSONObject) {
+        travail.execute {
+            val r = try { corps() } catch (e: Exception) { erreur("requete_invalide") }
             repondre(r)
         }
     }
 
-    // Adresse du câble retenue, seulement une IPv4 privée et seulement si un câble est enregistré. La page n'appelle cette
-    // opération qu'après une lecture réussie avec la bonne clé. Aucune opération d'effacement n'est ouverte à la page.
-    private fun retenirAdresse(q: JSONObject, repondre: (JSONObject) -> Unit) {
-        val ip = q.optString("ip", "")
-        if (FiltreReseau.adressePrivee(ip) == null) return repondre(erreur("refuse"))
-        controle.execute {
-            if (!coffre.configure()) repondre(erreur("pas_de_cle"))
-            else { coffre.retenirAdresse(ip); repondre(ok()) }
+    // Adresse facultative : absente = adresse retenue. Une valeur qui n'est pas une chaîne est refusée par le filtre.
+    private fun adresse(q: JSONObject): String? = if (q.has("ip")) q.optString("ip", "") else null
+
+    private fun delai(q: JSONObject): Long? = if (q.has("delai")) q.optLong("delai") else null
+
+    // Exactement une des deux actions du projet : { allumage: "HH:MM" } ou { desactiver: true }.
+    private fun programmer(q: JSONObject, repondre: (JSONObject) -> Unit) {
+        val action: Action? = when {
+            q.has("allumage") && !q.has("desactiver") ->
+                (q.opt("allumage") as? String)?.takeIf { Plage.heureValide(it) }?.let { Action.Allumage(it) }
+            q.has("desactiver") && !q.has("allumage") ->
+                if (q.opt("desactiver") == true) Action.Desactiver else null
+            else -> null
+        }
+        if (action == null) return repondre(erreur("requete_invalide"))
+        enArrierePlan(repondre) { enJson(operations.programmer(adresse(q), action, delai(q))) }
+    }
+
+    // Réponses de progression { n, progres: true, etape, appareils, lectures, echeance } puis la réponse finale.
+    private fun chercher(q: JSONObject, repondre: (JSONObject) -> Unit) {
+        val ip = adresse(q)
+        enArrierePlan(repondre) {
+            enJson(operations.chercher(ip) { p ->
+                repondre(
+                    JSONObject().put("progres", true).put("etape", p.etape).put("appareils", p.appareils)
+                        .put("lectures", p.lectures).put("echeance", p.echeanceMs),
+                )
+            })
         }
     }
 
-    // --- Sonde : connexion puis fermeture, sans envoyer d'octet ---
-
-    private fun sonder(q: JSONObject, repondre: (JSONObject) -> Unit) {
-        val octets = FiltreReseau.adressePrivee(q.optString("ip", null)) ?: return repondre(erreur("refuse"))
-        val reseau = wifi.courant() ?: return repondre(erreur("pas_wifi"))
-        val delai = FiltreReseau.delaiBorne(if (q.has("delai")) q.optLong("delai") else null, 50, 1000, 400).toInt()
-        sondes.execute {
-            var ouvert = false
-            val s = Socket()
-            try {
-                reseau.bindSocket(s)
-                s.connect(InetSocketAddress(InetAddress.getByAddress(octets), FiltreReseau.PORT), delai)
-                ouvert = true
-            } catch (e: IOException) {
-                ouvert = false
-            } finally {
-                fermerSansErreur(s)
-            }
-            repondre(ok().put("ouvert", ouvert))
+    // Mise au point : le transport natif refuse tout sauf IPv4 privée:6668, sans qu'aucun octet ne parte.
+    private fun essaiFiltre(): JSONObject {
+        val echecs = org.json.JSONArray()
+        val refus = listOf(
+            "port6669" to ("10.0.2.2" to 6669), "loopback" to ("127.0.0.1" to 6668),
+            "zeroDeTete" to ("010.0.0.1" to 6668), "publique" to ("8.8.8.8" to 6668),
+            "lienLocal" to ("169.254.1.1" to 6668), "nom" to ("exemple.test" to 6668),
+        )
+        for ((nom, cible) in refus) {
+            val refuse = try {
+                TransportTcp { }.ouvrir(cible.first, cible.second, 1000); false
+            } catch (e: fr.rechargeds3.coque.cable.TransportException) { e.code == "hors_ligne" }
+            if (!refuse) echecs.put(nom)
         }
-    }
-
-    // --- Connexion de données ---
-
-    private fun ouvrir(q: JSONObject, repondre: (JSONObject) -> Unit) {
-        val octets = FiltreReseau.adressePrivee(q.optString("ip", null)) ?: return repondre(erreur("refuse"))
-        if (!FiltreReseau.portAutorise(q.optInt("port", -1))) return repondre(erreur("refuse"))
-        val reseau = wifi.courant() ?: return repondre(erreur("pas_wifi"))
-        val delai = FiltreReseau.delaiBorne(if (q.has("delai")) q.optLong("delai") else null, 200, 5000, 5000).toInt()
-        val id = registre.reserver() ?: return repondre(erreur("occupe"))
-        try {
-            donnees.execute {
-                val s = Socket()
-                try {
-                    reseau.bindSocket(s)
-                    s.tcpNoDelay = true
-                    s.connect(InetSocketAddress(InetAddress.getByAddress(octets), FiltreReseau.PORT), delai)
-                    if (registre.installer(id, s)) {
-                        planifierFermeture(id)
-                        repondre(ok().put("cx", id))
-                    } else {
-                        repondre(erreur("ferme")) // fermée pendant l'ouverture : installer() a déjà fermé le socket
-                    }
-                } catch (e: IOException) {
-                    fermerSansErreur(s)
-                    registre.liberer(id)
-                    repondre(erreur("injoignable"))
-                }
-            }
-        } catch (e: RejectedExecutionException) {
-            registre.liberer(id)
-            throw e
-        }
-    }
-
-    private fun envoyer(q: JSONObject, repondre: (JSONObject) -> Unit) {
-        val socket = registre.obtenir(q.optInt("cx", -1)) ?: return repondre(erreur("cx_inconnu"))
-        val d = q.optString("d", null) ?: return repondre(erreur("requete_invalide"))
-        if (d.length > BASE64_MAX) return repondre(erreur("refuse"))
-        val octets = try { Base64.decode(d, Base64.NO_WRAP) } catch (e: IllegalArgumentException) { return repondre(erreur("requete_invalide")) }
-        if (!FiltreReseau.tailleAutorisee(octets.size) || octets.isEmpty()) return repondre(erreur("refuse"))
-        donnees.execute {
-            try {
-                socket.getOutputStream().apply { write(octets); flush() }
-                repondre(ok())
-            } catch (e: IOException) {
-                repondre(erreur("ferme"))
-            }
-        }
-    }
-
-    private fun recevoir(q: JSONObject, repondre: (JSONObject) -> Unit) {
-        val socket = registre.obtenir(q.optInt("cx", -1)) ?: return repondre(erreur("cx_inconnu"))
-        val delai = FiltreReseau.delaiBorne(if (q.has("delai")) q.optLong("delai") else null, 50, 10_000, 5000).toInt()
-        donnees.execute {
-            try {
-                socket.soTimeout = delai
-                val tampon = ByteArray(FiltreReseau.TAILLE_MAX)
-                val n = socket.getInputStream().read(tampon)
-                if (n < 0) repondre(erreur("ferme"))
-                else repondre(ok().put("d", Base64.encodeToString(tampon, 0, n, Base64.NO_WRAP)))
-            } catch (e: SocketTimeoutException) {
-                repondre(erreur("delai"))
-            } catch (e: IOException) {
-                repondre(erreur("ferme")) // aussi quand fermer() coupe la lecture en cours
-            }
-        }
-    }
-
-    // Idempotent ; passe par le fil de contrôle pour ne jamais attendre une lecture en cours ni fermer sur le fil principal.
-    private fun fermer(q: JSONObject, repondre: (JSONObject) -> Unit) {
-        val cx = q.optInt("cx", -1)
-        controle.execute {
-            if (registre.fermer(cx)) annulerFermeture()
-            repondre(ok())
-        }
-    }
-
-    private fun planifierFermeture(id: Int) {
-        synchronized(this) {
-            vieMax?.cancel(false)
-            vieMax = controle.schedule(Runnable { registre.fermer(id) }, DUREE_VIE_MAX_S, TimeUnit.SECONDS)
-        }
-    }
-
-    private fun annulerFermeture() {
-        synchronized(this) { vieMax?.cancel(false); vieMax = null }
+        if (TransportTcp.sonder("127.0.0.1", 400) { }) echecs.put("sondeLoopback")
+        if (TransportTcp.sonder("169.254.1.1", 400) { }) echecs.put("sondeLienLocal")
+        return ok().put("conforme", echecs.length() == 0).put("echecs", echecs)
     }
 
     // --- Cycle de vie ---
 
-    /** Ferme la connexion de données (sortie de l'activité, nouvelle page). Sans attendre, sur un fil à part. */
+    /** Coupe les connexions ouvertes et arrête la recherche en cours (sortie de l'activité, nouvelle page). Sans attendre. */
     fun fermerToutAsync() {
-        Thread { annulerFermeture(); registre.fermerTout() }.start()
+        Thread { operations.annulerTout() }.start()
     }
 
-    /** Fin de l'activité : tout est fermé, plus aucune opération acceptée. */
+    /** Fin de l'activité : tout est coupé, la configuration gardée en mémoire est effacée, plus aucune opération acceptée. */
     fun arreter() {
-        sondes.shutdownNow()
-        donnees.shutdownNow()
-        controle.shutdownNow()
-        Thread { registre.fermerTout() }.start()
+        travail.shutdownNow()
+        operations.oublierMemoire()
+        Thread { operations.annulerTout() }.start()
     }
 
-    fun connexionOuverte(): Boolean = registre.ouverte()
+    fun connexionOuverte(): Boolean = operations.enCours()
+
+    /** Fin du service d'attente : la configuration gardée en mémoire est effacée. */
+    fun oublierMemoire() = operations.oublierMemoire()
 
     // --- Réponses ---
 
     private fun ok(): JSONObject = JSONObject().put("ok", true)
     private fun erreur(code: String): JSONObject = JSONObject().put("ok", false).put("erreur", code)
+
+    private fun enJson(m: Map<String, Any?>): JSONObject {
+        val j = JSONObject()
+        for ((k, v) in m) if (v != null) j.put(k, v)
+        return j
+    }
 
     private fun repondre(proxy: JavaScriptReplyProxy, n: Int, r: JSONObject) {
         r.put("n", n)
@@ -279,12 +203,8 @@ class PontLocal(
         }
     }
 
-    private fun fermerSansErreur(s: Socket) { try { s.close() } catch (e: IOException) { /* déjà fermé */ } }
-
     companion object {
         const val NOM_JS = "PontLocal"
         private const val TAILLE_MESSAGE_MAX = 4096
-        private const val BASE64_MAX = 2800 // 2048 octets en base64 : 2732 caractères
-        private const val DUREE_VIE_MAX_S = 30L
     }
 }

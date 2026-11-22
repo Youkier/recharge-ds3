@@ -66,7 +66,7 @@ class MainActivity : Activity() {
         wifi = ReseauWifi(this)
         coffre = CoffreCable(this)
         pont = PontLocal(
-            wifi, coffre, estDebug,
+            wifi, OperationsCable(EnvironnementAndroid(wifi, coffre)), estDebug,
             surSaisirCle = { afficherFormulaire() },
             prendreActionAuto = { actionAuto() },
             essaiArrierePlan = { quoi -> essaiArrierePlan(quoi) },
@@ -92,7 +92,10 @@ class MainActivity : Activity() {
     override fun onStart() {
         super.onStart()
         visible = true
-        AttenteWifi.surFin = { if (!visible && !AttenteWifi.actif) { pont.fermerToutAsync(); wifi.arreter() } }
+        AttenteWifi.surFin = {
+            pont.oublierMemoire() // fin du service : la configuration gardée pour l'attente est effacée
+            if (!visible && !AttenteWifi.actif) { pont.fermerToutAsync(); wifi.arreter() }
+        }
         wifi.demarrer()
         // Appli rouverte : plus aucun envoi en cours (une attente en arrière-plan garde sa page : pas de recréation).
         if (themeAChanger && !AttenteWifi.actif) { themeAChanger = false; recreate() }
