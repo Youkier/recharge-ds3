@@ -956,7 +956,7 @@ import { confirmationValable, blocageCable, plageRelue, plageDuCable, ligneCable
       setDemande(demande); // la demande a pu changer pendant l'envoi
       if (m === "local") {
         var pl = plageRelue(res);
-        journal({ action: "page-programmer", ok: !!res && res.etat === "ok", debut: pl.debut, fin: pl.fin, code: res && res.etat === "ko" ? res.code : undefined, manuel: res && res.etat === "ko" ? res.manuel : undefined });
+        journal({ action: "page-programmer", ok: !!res && res.etat === "ok", debut: pl.debut, fin: pl.fin, tardif: res && res.tardif === true ? true : undefined, code: res && res.etat === "ko" ? res.code : undefined, manuel: res && res.etat === "ko" ? res.manuel : undefined });
         // Écran éteint après un envoi en arrière-plan : pas de lecture (clé illisible téléphone verrouillé) ;
         // le retour au premier plan relit l'état.
         if (res && res.etat === "ok" && !(opts && opts.arriere && document.hidden)) majEtatCable();

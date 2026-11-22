@@ -212,6 +212,12 @@ verifier() {
   echo "OK  $nom : $ligne"
 }
 
+# Démarrage tardif (décision du 2026-11-22) : la plage écrite par la page (ou la page d'essai) a pour fin 06:00 en écriture normale,
+# ou une fin bornée par le départ (07:30) si le téléphone est déjà entre l'heure de début calculée et le départ : le début est alors
+# maintenant + 10 min et la ligne ESSAI porte tardif:true. Un scénario lancé entre 07:20 et 07:30 (heure de Paris) reçoit « trop tard »
+# (rien n'est écrit) : il faut alors le relancer plus tard.
+FIN_PAGE='(l.fin === "06:00" || l.tardif === true)'
+
 # --- Installation ---
 etape "Installation"
 adb install -r "$APK" > /dev/null
@@ -255,11 +261,12 @@ sleep 1
 etape "S6 Programmer (version de mise au point) puis relecture conforme"
 demarrer programmer 10.0.2.2 05:00
 L="$(attendre_essai programmer 60)"
-verifier "S6 programmer" "$L" 'l.ok === true && l.fin === "06:00" && (l.debut === "05:00" || l.immediat === true)'
+verifier "S6 programmer" "$L" 'l.ok === true && ((l.debut === "05:00" && l.fin === "06:00") || l.tardif === true)'
 DEBUT_PROGRAMME="$(LIGNE="$L" node -e 'console.log(JSON.parse(process.env.LIGNE).debut)')"
+FIN_PROGRAMMEE="$(LIGNE="$L" node -e 'console.log(JSON.parse(process.env.LIGNE).fin)')"
 demarrer lire 10.0.2.2
 L="$(attendre_essai lire 60)"
-verifier "S6 relecture" "$L" "l.ok === true && l.debut === \"${DEBUT_PROGRAMME}\" && l.fin === \"06:00\""
+verifier "S6 relecture" "$L" "l.ok === true && l.debut === \"${DEBUT_PROGRAMME}\" && l.fin === \"${FIN_PROGRAMMEE}\""
 
 # --- Mémorisation chiffrée (v0.3) ---
 etape "S10a Relance : ni clé à ressaisir, ni adresse (adresse retenue après S6)"
@@ -313,13 +320,14 @@ ligne_vue page-programmer && echec "S12 : envoi parti sans confirmation de la ba
 toucher_web "Ajouter 1 %"
 toucher_web "Programmer la charge"
 L="$(attendre_essai page-programmer 60)"
-verifier "S12 programmer depuis la page" "$L" 'l.ok === true && /^[0-2][0-9]:[0-5][0-9]$/.test(l.debut) && l.fin === "06:00"'
+verifier "S12 programmer depuis la page" "$L" "l.ok === true && /^[0-2][0-9]:[0-5][0-9]\$/.test(l.debut) && $FIN_PAGE"
 DEBUT_PAGE="$(LIGNE="$L" node -e 'console.log(JSON.parse(process.env.LIGNE).debut)')"
+FIN_ECRITE_PAGE="$(LIGNE="$L" node -e 'console.log(JSON.parse(process.env.LIGNE).fin)')"
 sleep 1
 capturer "clair-6-page-programme"
 demarrer lire 10.0.2.2
 L="$(attendre_essai lire 60)"
-verifier "S12 relecture" "$L" "l.ok === true && l.debut === \"${DEBUT_PAGE}\" && l.fin === \"06:00\""
+verifier "S12 relecture" "$L" "l.ok === true && l.debut === \"${DEBUT_PAGE}\" && l.fin === \"${FIN_ECRITE_PAGE}\""
 
 # S15 à S17 : notifications REFUSÉES d'avance (refus définitif, sans fenêtre système) : mode « appli ouverte ».
 refuser_notifications() {
@@ -347,7 +355,7 @@ capturer "clair-9-attente-wifi"
 ligne_vue page-programmer && echec "S15 : envoi parti sans Wi-Fi"
 adb shell svc wifi enable
 L="$(attendre_essai page-programmer 120)"
-verifier "S15 envoi automatique à la connexion" "$L" 'l.ok === true && l.fin === "06:00"'
+verifier "S15 envoi automatique à la connexion" "$L" "l.ok === true && $FIN_PAGE"
 
 etape "S16 Attente du Wi-Fi annulée : rien n'est envoyé, heure manuelle affichée"
 adb shell svc wifi disable
@@ -394,7 +402,7 @@ capturer "clair-11-attente-cable"
 node "$RACINE/tools/faux-cable-tcp.mjs" >> "$SORTIE/faux-cable.log" 2>&1 &
 FAUX_PID=$!
 L="$(attendre_essai page-programmer 90)"
-verifier "S17 envoi dès que le câble répond" "$L" 'l.ok === true && l.fin === "06:00"'
+verifier "S17 envoi dès que le câble répond" "$L" "l.ok === true && $FIN_PAGE"
 
 etape "S13 Vraie page, nouvelle clé (données effacées, adresse inconnue) : « Câble à localiser », « Programmer » n'envoie rien"
 demarrer_page "$CLE_KO"
@@ -568,7 +576,7 @@ ATTENTE_RESUME="$SORTIE/attente-resume.txt"
 # ======================================================================================================================
 # Cas atypiques de la revue UX du 2026-11-22 (docs/revue-ux-2026-11-22.md) : S-A premier lancement, S-B données effacées,
 # S-D coupure pendant l'envoi, S-E câble lent, S-F plage déjà présente (et S-K bascule du thème), S-J police agrandie,
-# S-G « démarrage immédiat » et « pas de charge ». Aucun ne dépend de l'attente en arrière-plan (réécrite en E3).
+# S-G « démarrage tardif » (ou « trop tard », selon l'heure) et « pas de charge ». Aucun ne dépend de l'attente en arrière-plan (réécrite en E3).
 # S-C, S-H, S-I, S-L et S-M ne sont pas faits ici (voir la revue) ; le service d'attente n'est pas touché.
 # Le faux câble est relancé avec les options voulues (lancer_faux) ; le bloc le remet par défaut et laisse l'application
 # configurée avec la clé factice, thème clair, police normale, batterie enregistrée à 39 %, pour la suite.
@@ -803,15 +811,29 @@ attendre_texte_page "Câble réglé : $A39 → 06:00" 20
 ecran_sans "Déjà programmé" "S-F1 : « Déjà programmé » affiché avant la confirmation du %"
 ECR_AVANT="$(ecritures_log)"
 regler_soc 39
-attendre_texte_page "Déjà programmé à $A39" 20
-sleep 1
-capturer "clair-F1-deja-programme"
-adb logcat -c
-toucher_web "Déjà programmé" # bouton inactif : le toucher n'envoie rien
-sleep 3
-ligne_vue page-programmer && echec "S-F1 : un envoi est parti alors que le câble a déjà la plage"
-[ "$(ecritures_log)" = "$ECR_AVANT" ] || echec "S-F1 : le faux câble a reçu une écriture"
-echo "OK  S-F1 déjà programmé, rien envoyé"
+# Démarrage tardif (2026-11-22) : si l'heure calculée est déjà passée (ou dans moins de 10 min) pour le téléphone, la plage présente
+# ne démarrerait pas la charge d'une voiture branchée maintenant : la page ne dit PAS « Déjà programmé » et propose de décaler.
+DECISION_F1="$(node "$RACINE/tools/heure-page.mjs" decision 39)"
+echo "S-F1 : décision du téléphone pour 39 % à cette heure : $DECISION_F1"
+if [ "$DECISION_F1" = normal ]; then
+  attendre_texte_page "Déjà programmé à $A39" 20
+  sleep 1
+  capturer "clair-F1-deja-programme"
+  adb logcat -c
+  toucher_web "Déjà programmé" # bouton inactif : le toucher n'envoie rien
+  sleep 3
+  ligne_vue page-programmer && echec "S-F1 : un envoi est parti alors que le câble a déjà la plage"
+  [ "$(ecritures_log)" = "$ECR_AVANT" ] || echec "S-F1 : le faux câble a reçu une écriture"
+  echo "OK  S-F1 déjà programmé, rien envoyé"
+elif [ "$DECISION_F1" = variable ]; then
+  releve "S-F1 : l'heure calculée ($A39) est à moins de 10 minutes de l'heure du téléphone : « Déjà programmé » dépend de la minute, non vérifié"
+else
+  sleep 1
+  ecran_sans "Déjà programmé" "S-F1 : « Déjà programmé » affiché alors que l'heure calculée ($A39) est passée (la charge ne démarrerait pas)"
+  ecran_avec "Programmer la charge" "S-F1 : le bouton « Programmer la charge » est absent alors que l'heure calculée est passée"
+  capturer "clair-F1-debut-passe"
+  releve "S-F1 : l'heure calculée ($A39) est passée à l'heure du téléphone : le bouton propose « Programmer la charge » (début dans 10 min), pas « Déjà programmé » (voulu, démarrage tardif)"
+fi
 # S-K : le thème bascule (sombre automatique au coucher du soleil) alors que le % est confirmé : la page est rechargée.
 adb logcat -c
 mode_theme sombre
@@ -873,26 +895,45 @@ done
 adb shell settings put system font_scale 1.0
 sleep 1
 
-etape "S-G « Démarrage immédiat » et « Pas de charge » : cartes de confirmation, thèmes clair et sombre"
-# Démarrage immédiat : le téléphone l'annonce si l'heure actuelle est dans [début ; fin de la plage du câble). Avec fin = début - 1 min,
-# c'est vrai à toute heure sauf une minute : tools/heure-page.mjs choisit la batterie qui évite cette minute (l'heure du
-# téléphone est celle du runner). Le faux câble reçoit donc une plage 03:30 -> (début - 1 min), et non 06:00 : la carte
-# affiche alors, en plus, l'avertissement sur la fin de plage, absent d'un vrai soir.
-g_immediat() { # g_immediat <thème>
-  # Calculé juste avant chaque passage (clair puis sombre) : la marge de tools/heure-page.mjs ne couvre que quelques minutes.
-  IMM="$(node "$RACINE/tools/heure-page.mjs" immediat)"
-  read -r SOC_IMM DEB_IMM FIN_IMM <<< "$IMM"
-  echo "démarrage immédiat ($1) : batterie $SOC_IMM %, heure calculée $DEB_IMM, fin de plage du faux câble $FIN_IMM"
-  lancer_faux --plage="03:30-$FIN_IMM"
-  regler_soc "$SOC_IMM"
+etape "S-G « Démarrage tardif » (ou « Trop tard ») et « Pas de charge » : cartes de confirmation, thèmes clair et sombre"
+# Démarrage tardif (décision du 2026-11-22) : si l'heure calculée par la page est déjà passée pour le téléphone (entre elle et le
+# départ, 07:30, heure de Paris), le début écrit est maintenant + 10 min et la fin est min(début + durée du plan, 07:30) ; l'alerte
+# « Heure de début dépassée : charge programmée de … à … » s'affiche. L'heure calculée la plus tôt (batterie à 0 %) est 19:25 : de
+# 07:30 à 19:25 environ, AUCUN cas n'existe (tools/heure-page.mjs rend « aucun » : relevé non bloquant, la règle est couverte par les
+# tests JUnit et Node). De 07:20 à 07:30, tout début passé donne « trop tard » : rien n'est écrit, la carte donne l'heure à la main.
+g_tardif() { # g_tardif <thème>
+  # Calculé juste avant chaque passage (clair puis sombre) : la décision doit rester la même quelques minutes (tools/heure-page.mjs).
+  local CAS NOM_T SOC_T DEB_T DUREE_T ECR_T
+  CAS="$(node "$RACINE/tools/heure-page.mjs" tardif)"
+  read -r NOM_T SOC_T DEB_T DUREE_T <<< "$CAS"
+  echo "démarrage tardif ($1) : cas « ${NOM_T:-aucun} », batterie ${SOC_T:-?} %, heure calculée ${DEB_T:-?}, durée du plan ${DUREE_T:-?} min"
+  case "$NOM_T" in
+    tardif|trop_tard) ;;
+    *) releve "S-G démarrage tardif ($1) : aucun cas possible à cette heure (le démarrage tardif n'existe qu'entre l'heure calculée, 19:25 au plus tôt, et 07:20 à Paris) ; couvert par PlageTardifTest, ClientCableTest et tests/plage-tardif-cas.test.mjs"; return 0 ;;
+  esac
+  lancer_faux
+  regler_soc "$SOC_T"
+  ECR_T="$(ecritures_log)"
   adb logcat -c
   toucher_web "Programmer la charge"
   L="$(attendre_essai page-programmer 60)"
-  verifier "S-G immédiat ($1)" "$L" "l.ok === true && l.fin === \"$FIN_IMM\" && /^[0-2][0-9]:[0-5][0-9]\$/.test(l.debut) && l.debut !== \"$DEB_IMM\""
-  attendre_texte_page "Démarrage immédiat" 20
-  sleep 1
-  capturer "$1-G1-demarrage-immediat"
-  attendre_essai page-etat 40 > /dev/null # relecture de la page après l'envoi : à finir avant de relancer le faux câble
+  if [ "$NOM_T" = tardif ]; then
+    # début = maintenant + 10 min (5 à 12 min d'écart avec l'heure de la vérification, qui suit l'envoi de quelques secondes) ;
+    # fin = 07:30 (départ) ou début + durée du plan, au plus tard 07:30.
+    verifier "S-G tardif ($1)" "$L" "l.ok === true && l.tardif === true && l.debut !== \"$DEB_T\" && (() => { const h = new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Paris', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(new Date()); const m = (x) => +x.slice(0, 2) * 60 + +x.slice(3); const mod = (x) => ((x % 1440) + 1440) % 1440; const ecart = mod(m(l.debut) - m(h)); return ecart >= 5 && ecart <= 12 && (l.fin === '07:30' || mod(m(l.fin) - m(l.debut)) === $DUREE_T); })()"
+    attendre_texte_page "Heure de début dépassée" 20
+    sleep 1
+    capturer "$1-G1-demarrage-tardif"
+    attendre_essai page-etat 40 > /dev/null # relecture de la page après l'envoi : à finir avant de relancer le faux câble
+  else
+    verifier "S-G trop tard ($1)" "$L" 'l.ok === false && l.code === "trop_tard"'
+    [ "$(ecritures_log)" = "$ECR_T" ] || echec "S-G trop tard ($1) : le faux câble a reçu une écriture alors que rien ne devait être écrit"
+    attendre_texte_page "Trop tard pour charger" 20
+    contient "$DUMP" "$DEB_T" || echec "S-G trop tard ($1) : l'heure à régler à la main ($DEB_T) n'est pas affichée"
+    sleep 1
+    capturer "$1-G3-trop-tard"
+    attendre_essai page-etat 40 > /dev/null
+  fi
 }
 g_pas_de_charge() { # g_pas_de_charge <thème>
   lancer_faux
@@ -911,13 +952,13 @@ g_pas_de_charge() { # g_pas_de_charge <thème>
 mode_theme clair
 demarrer_page
 page_prete "S-G (clair)"
-g_immediat clair
+g_tardif clair
 g_pas_de_charge clair
 mode_theme sombre
 demarrer_page
 page_prete "S-G (sombre)"
 g_pas_de_charge sombre # la batterie enregistrée est déjà à 84 % : pas de rafale
-g_immediat sombre      # on redescend à la batterie du cas : l'état de la page redevient normal pour la suite
+g_tardif sombre        # on redescend à la batterie du cas : l'état de la page redevient normal pour la suite
 mode_theme clair
 lancer_faux
 echo "OK  S-G cartes de confirmation"
@@ -1007,10 +1048,11 @@ if [ -z "$L" ] && [ "$S21_ATTENDU_ECHEC" = 1 ]; then
 else
 [ -n "$L" ] || echec "aucune ligne ESSAI pour l'action « page-programmer » après 180 s"
 T1=$(date +%s)
-verifier "S21 envoi au retour du Wi-Fi, écran éteint et verrouillé" "$L" 'l.ok === true && l.fin === "06:00"'
+verifier "S21 envoi au retour du Wi-Fi, écran éteint et verrouillé" "$L" "l.ok === true && $FIN_PAGE"
 echo "S21 : envoi relu $(( T1 - T0 )) s après le retour du Wi-Fi, écran éteint et verrouillé depuis 330 s ($ECRAN_S21) : $L" | tee -a "$ATTENTE_RESUME"
 sleep 2
-notification_contient "Charge programmée" || echec "S21 : notification « Charge programmée » absente"
+# « Charge programmée : démarrage HH:MM » ou, au démarrage tardif, « Heure de début dépassée : charge programmée à HH:MM »
+notification_contient "harge programmée" || echec "S21 : notification « Charge programmée » absente"
 adb shell dumpsys notification --noredact 2> /dev/null | tr -d '\015' | grep -E "android\.(title|text)=" | grep -v "^ *$" > "$SORTIE/attente-notifications-s21.txt" || true
 e0_remettre
 capturer "clair-14-notification-programmee"
@@ -1058,8 +1100,8 @@ e0_repetition() {
   printf 'E0 %s %s\n' "$n${idle:+-idle}" "$ligne" >> "$LIGNES"
   if LIGNE="$ligne" HEURE="$heure" node -e '
     const l = JSON.parse(process.env.LIGNE);
-    const ok = l.ok === true && typeof l.duree_ms === "number" && l.duree_ms < 27000 && l.fin === "06:00"
-      && (l.debut === process.env.HEURE || l.immediat === true) && /^eteint-verrouille$/.test(l.ecran);
+    const ok = l.ok === true && typeof l.duree_ms === "number" && l.duree_ms < 27000
+      && ((l.debut === process.env.HEURE && l.fin === "06:00") || l.tardif === true) && /^eteint-verrouille$/.test(l.ecran);
     process.exit(ok ? 0 : 1);'; then
     echo "E0 $n${idle:+ (idle)} : OK service_premier_plan=$premier_plan $ligne" | tee -a "$E0_RESUME"; return 0
   fi

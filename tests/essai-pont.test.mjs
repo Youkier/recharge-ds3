@@ -32,7 +32,7 @@ test('lire : paramètres et délai transmis, résultat rendu', async () => {
 });
 
 test('programmer : l\'action et l\'adresse partent, rien d\'autre ; le résultat natif est rendu tel quel', async () => {
-  const pont = faussePont({ programmer: { ok: true, debut: '05:00', fin: '06:00', plage_active: true, immediat: false, courte: false } });
+  const pont = faussePont({ programmer: { ok: true, debut: '05:00', fin: '06:00', plage_active: true, tardif: false, courte: false } });
   const client = creerClientPont(pont);
   const r = await client.programmer({ allumage: '05:00' }, { ip: '10.0.2.2' }, 20000);
   assert.equal(r.ok, true);
