@@ -31,6 +31,8 @@ THEME_COURANT="clair"
 mkdir -p "$SORTIE"
 LIGNES="$SORTIE/lignes-essai.txt"
 : > "$LIGNES"
+ATTENTE_RESUME="$SORTIE/attente-resume.txt" # résumé de l'attente et mesures de démarrage (TotalTime, délai jusqu'au premier page-etat)
+: > "$ATTENTE_RESUME"
 
 FAUX_PID=""
 nettoyer() {
@@ -264,8 +266,10 @@ demarrer_page() {
   adb logcat -c
   adb shell am force-stop "$PKG"
   [ "$cle" != "$CLE_ENREGISTREE" ] && oublier_donnees
-  adb shell am start -W -n "$ACT" > /dev/null
-  if [ -z "$CLE_ENREGISTREE" ]; then saisir_cle "$cle"; CLE_ENREGISTREE="$cle"; fi
+  # Mesure (gratuite) : TotalTime de « am start -W » et délai jusqu'au premier page-etat, seulement sans saisie de clé.
+  local demarre; demarre="$(date +%s%N)"
+  adb shell am start -W -n "$ACT" | tr -d '\r' | grep -E "TotalTime|WaitTime" | tr '\n' ' ' | sed 's/^/DÉMARRAGE /; s/$/\n/' >> "$ATTENTE_RESUME" || true
+  if [ -z "$CLE_ENREGISTREE" ]; then saisir_cle "$cle"; CLE_ENREGISTREE="$cle"; rm -f "$SORTIE/mesure-page-etat.tmp"; else echo "$demarre" > "$SORTIE/mesure-page-etat.tmp"; fi
 }
 
 # Saisie de l'identifiant et de la clé dans l'écran natif, puis « Enregistrer ».
@@ -313,7 +317,7 @@ demarrer() {
   [ "$action" != "-" ] && extras+=(--es action "$action")
   [ -n "$ip" ] && extras+=(--es ip "$ip")
   [ -n "$heure" ] && extras+=(--es heure "$heure")
-  adb shell am start -W -n "$ACT" "${extras[@]}" > /dev/null
+  adb shell am start -W -n "$ACT" "${extras[@]}" | tr -d '\r' | grep -E "TotalTime|WaitTime" | tr '\n' ' ' | sed 's/^/DÉMARRAGE (action) /; s/$/\n/' >> "$ATTENTE_RESUME" || true
   if [ -z "$CLE_ENREGISTREE" ]; then saisir_cle "$cle"; CLE_ENREGISTREE="$cle"; fi
 }
 
@@ -326,7 +330,13 @@ attendre_essai() {
   local action="$1" delai="${2:-60}" ligne="" i
   for i in $(seq 1 "$delai"); do
     ligne="$(adb logcat -d -v raw -s "$TAG:I" | tr -d '\015' | grep '^ESSAI ' | grep "\"action\":\"${action}\"" | tail -1 | sed 's/^ESSAI //' || true)"
-    if [ -n "$ligne" ]; then echo "$ligne"; return 0; fi
+    if [ -n "$ligne" ]; then
+      if [ "$action" = page-etat ] && [ -f "$SORTIE/mesure-page-etat.tmp" ]; then
+        echo "DÉLAI page-etat : $(( ($(date +%s%N) - $(cat "$SORTIE/mesure-page-etat.tmp")) / 1000000 )) ms après le lancement de l'appli (granularité : 1 s d'interrogation de logcat)" >> "$ATTENTE_RESUME"
+        rm -f "$SORTIE/mesure-page-etat.tmp"
+      fi
+      echo "$ligne"; return 0
+    fi
     sleep 1
   done
   echec "aucune ligne ESSAI pour l'action « $action » après ${delai} s"
@@ -672,8 +682,6 @@ toucher_texte_systeme() {
   done
   echec "« $texte » introuvable dans le volet des notifications"
 }
-ATTENTE_RESUME="$SORTIE/attente-resume.txt"
-: > "$ATTENTE_RESUME"
 
 # --- Attente tenue par le code natif (lot E3) sur la VRAIE page : service AttenteWifi + PiloteAttente ---
 # La page n'est qu'une vue : elle démarre l'attente (attenteDebut), relit son état (attenteEtat) et affiche ce que le natif rend. Les lignes

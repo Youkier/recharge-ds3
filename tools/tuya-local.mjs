@@ -25,7 +25,12 @@ import { creerTransportNode, adresseAutorisee, sonderPort } from '../local/trans
 const ICI = dirname(fileURLToPath(import.meta.url));
 const HEURE_VALIDE = /^([01]\d|2[0-3]):[0-5]\d$/;
 const FICHIER_ADRESSE = join(ICI, 'releves', 'cable-adresse.json'); // dossier ignoré par git ; adresse seulement
-const AIDE = 'Actions : etat | ecrire-debut <HH:MM> [--fin=HH:MM] [--duree=MIN] [--depart=HH:MM] [--confirmer] | desactiver [--fin=HH:MM] [--confirmer]';
+const AIDE = [
+  'Actions : etat | ecrire-debut <HH:MM> [--fin=HH:MM] [--duree=MIN] [--depart=HH:MM] [--confirmer] | desactiver [--fin=HH:MM] [--confirmer]',
+  '  desactiver sans --fin écrit se = 06:00 (et ss = 05:59) : donner --fin si la fin des heures creuses est différente.',
+  '  ecrire-debut sans --duree : la durée va de l\'heure donnée à --fin (06:00) ; si l\'heure est déjà passée (démarrage tardif),',
+  '  le début devient maintenant + 10 min et la fin peut être repoussée jusqu\'au départ (07:30 par défaut).',
+].join('\n');
 
 export function parseEnv(texte) {
   const out = {};
@@ -113,6 +118,10 @@ async function main(argv) {
   const action = args[0];
   if (!action || action === 'aide') { console.log(AIDE); return 0; }
   if (!['etat', 'ecrire-debut', 'desactiver'].includes(action)) { console.log(AIDE); return 1; }
+  // Aucune option inconnue (une faute de frappe sur --fin ou --duree changerait la valeur écrite en silence) ni argument en trop.
+  const inconnue = argv.find((a) => a.startsWith('--') && a !== '--confirmer' && a !== '--trace' && !/^--(fin|duree|depart)=.+$/.test(a));
+  if (inconnue) { console.error(`Option inconnue : ${inconnue.split('=')[0]}. Options permises : --fin= --duree= --depart= --confirmer --trace.`); return 1; }
+  if (args.length > (action === 'ecrire-debut' ? 2 : 1)) { console.error('Argument en trop.'); return 1; }
   let demande = null;
   const option = (nom, defaut) => { const a = argv.find((x) => x.startsWith(`--${nom}=`)); return a ? a.slice(nom.length + 3) : defaut; };
   if (action === 'ecrire-debut') {

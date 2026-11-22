@@ -84,8 +84,10 @@ class AttenteWifi : Service(), EcouteurAttente {
     override fun termine(issue: Attente.Issue, debut: String?, fin: String?) {
         pilote.ecouteur = null
         if (!activiteVisible) publierResultat(applicationContext, issue, debut, fin)
-        // Arrêt du dernier démarrage connu seulement : un démarrage plus récent (nouvelle attente) n'est jamais coupé par une fin tardive.
-        principal.post { stopSelf(demarrages.pourArret()) }
+        // L'identifiant n'est lu qu'à l'exécution, sur le fil principal, donc après tout démarrage déjà reçu : stopSelf(id) n'arrête le service
+        // que si aucun démarrage plus récent n'est arrivé (une nouvelle attente lancée pendant cette fin n'est jamais coupée).
+        // `fil` repasse à null : un nouveau démarrage relancera la boucle.
+        principal.post { fil = null; stopSelf(demarrages.pourArret()) }
     }
 
     // Filet : connectedDevice n'a pas d'échéance système connue ; si elle venait à exister, on le dit et on s'arrête.

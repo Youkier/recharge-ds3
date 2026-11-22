@@ -148,7 +148,9 @@ class PiloteAttenteTest {
         lateinit var b: Banc
         b = banc({ if (bloque.getAndSet(false)) FauxCable(OptionsFaux(cle = cle, dps = dps(), bloquer = true)) else faux() })
         val fil = occuperLeCableDepuisLaPage(b, bloque)
-        b.surPause = { if (b.t >= 2_000) b.ops.annulerPage() } // la page rend le câble
+        var libere = false
+        // La page rend le câble ; on attend la fin de son fil (une seule fois) pour que l'exclusivité soit bien relâchée au prochain essai.
+        b.surPause = { if (b.t >= 2_000 && !libere) { libere = true; b.ops.annulerPage(); fil.join(5000) } }
         val e = b.demarrerEtLancer()
         fil.join(5000)
         assertEquals(true, resultat(e)["ok"]); assertEquals(Issue.PROGRAMMEE, b.ecoute.fins.single().first)
@@ -162,11 +164,25 @@ class PiloteAttenteTest {
         b = banc({ if (bloque.getAndSet(false)) FauxCable(OptionsFaux(cle = cle, dps = dps(), bloquer = true)) else faux() })
         var fil: Thread? = null
         b.surTrace = { m -> if (m == "envoi") fil = occuperLeCableDepuisLaPage(b, bloque) } // la page prend le câble juste avant l'envoi
-        b.surPause = { if (fil != null) b.ops.annulerPage() } // et le rend pendant la pause avant le nouvel essai
+        var libere = false
+        b.surPause = { if (fil != null && !libere) { libere = true; b.ops.annulerPage(); fil?.join(5000) } } // et le rend pendant la pause avant le nouvel essai
         val e = b.demarrerEtLancer()
         fil?.join(5000)
         assertEquals(true, resultat(e)["ok"]); assertEquals(Issue.PROGRAMMEE, b.ecoute.fins.single().first)
         assertEquals("une seule écriture", 1, ecritures())
+    }
+
+    @Test fun nouvelleCleDurantLesEssaisSurOccupeArreteLEnvoiSansEcriture() {
+        val bloque = java.util.concurrent.atomic.AtomicBoolean(false)
+        lateinit var b: Banc
+        b = banc({ if (bloque.getAndSet(false)) FauxCable(OptionsFaux(cle = cle, dps = dps(), bloquer = true)) else faux() })
+        var fil: Thread? = null
+        b.surTrace = { m -> if (m == "envoi") fil = occuperLeCableDepuisLaPage(b, bloque) }
+        var arrete = false
+        b.surPause = { if (fil != null && !arrete) { arrete = true; b.pilote.arreterPourCle(); b.ops.annulerPage(); fil?.join(5000) } } // la page libère le câble, la clé change
+        val e = b.demarrerEtLancer()
+        assertEquals("attente_annulee", resultat(e)["erreur"]); assertEquals(Issue.ANNULEE, b.ecoute.fins.single().first)
+        assertEquals("aucun nouvel envoi après l'arrêt", 0, ecritures())
     }
 
     @Test fun occupeALEnvoiAuDelaDesReessaisDonneNonFaiteSansEcriture() {

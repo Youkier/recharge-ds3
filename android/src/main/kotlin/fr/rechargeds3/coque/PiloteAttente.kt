@@ -92,6 +92,7 @@ class PiloteAttente(
     private var termineMs = 0L // instant de la fin : un résultat de plus de 12 h n'est plus le résultat « du soir »
     private var aNotifier: Triple<Issue, String?, String?>? = null // dernier résultat, pour la notification de la sortie de l'appli
     private var session = 0
+    private var coupe = false // nouvelle clé, « Oublier » ou saisie de la clé pendant l'envoi : plus aucun nouvel essai
 
     init {
         restaurer()
@@ -158,6 +159,7 @@ class PiloteAttente(
         synchronized(verrou) {
             if (phase == Phase.ATTENTE || phase == Phase.ENVOI) return erreur("occupe") // course : l'autre attente garde sa mémoire
             session++
+            coupe = false
             phase = Phase.ATTENTE
             action = a
             manuel = manuelle
@@ -183,7 +185,10 @@ class PiloteAttente(
      * Avant l'envoi : annulée comme [annuler]. Pendant l'envoi : la connexion est coupée (résultat incertain si l'écriture était partie).
      */
     fun arreterPourCle() {
-        if (!annuler() && phaseActuelle() == Phase.ENVOI) operations.annuler(Origine.SERVICE)
+        if (!annuler() && phaseActuelle() == Phase.ENVOI) {
+            synchronized(verrou) { coupe = true } // la boucle d'envoi ne relance rien après ceci
+            operations.annuler(Origine.SERVICE)
+        }
         operations.oublierMemoire()
     }
 
@@ -310,12 +315,16 @@ class PiloteAttente(
         while (r["ok"] != true && r["erreur"] == "occupe" && reessais < REESSAIS_OCCUPE) {
             reessais++
             trace("envoi occupe, nouvel essai " + reessais)
+            if (envoiCoupe(s)) { terminer(s, Issue.ANNULEE, erreur("attente_annulee")); return }
             dormir(OCCUPE_ENVOI_MS)
-            if (synchronized(verrou) { session != s || phase != Phase.ENVOI }) return // terminée par ailleurs (filet, nouvelle clé)
+            if (synchronized(verrou) { session != s || phase != Phase.ENVOI }) return // terminée par ailleurs (filet)
+            if (envoiCoupe(s)) { terminer(s, Issue.ANNULEE, erreur("attente_annulee")); return } // arrêtée pendant la pause : rien n'a été écrit
             r = operations.programmer(null, a, DELAI_ENVOI_MS, true, Origine.SERVICE)
         }
         terminer(s, Attente.issue(a, r), r)
     }
+
+    private fun envoiCoupe(s: Int): Boolean = synchronized(verrou) { session == s && coupe }
 
     // --- Fin ---
 

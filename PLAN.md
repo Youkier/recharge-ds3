@@ -225,7 +225,7 @@ Décision de Mathieu du 2026-11-15 : **deux pistes avancent en parallèle**, san
 
 ### Ordre de priorité à chaque séance
 
-1. **L'usage personnel d'abord** : ce qui reste ouvert dans les phases 2a à 2c (révocation du jeton à tester, T4, L4, semaine d'usage réel, prolongation de l'essai IoT Core avant le 2026-12-11, clé locale mise à l'abri).
+1. **L'usage personnel d'abord** : ce qui reste ouvert dans les phases 2a à 2c (révocation du jeton à tester, T4, L4, semaine d'usage réel, essai IoT Core prolongé de 6 mois le 2026-11-21 (fin vers mi-2027, date exacte à relever dans la console Tuya, puis à renouveler avant), clé locale mise à l'abri).
 2. Le prochain lot autonome de chaque piste (3a et 3b), lancés en parallèle.
 3. Ce qui attend Mathieu, pour les deux pistes, **en une seule liste** en début et en fin de séance.
 

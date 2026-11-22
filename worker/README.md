@@ -26,9 +26,9 @@ Aucune connexion ni déploiement n'est faite ici (voir la skill `deploiement` : 
 Toute requête sans jeton valide reçoit **401** avant toute autre logique (le jeton `JETON_ACCES` doit faire au moins 32 caractères, sinon tout est refusé et `configuration_incomplete` est journalisé) ; ensuite limiteur absent alors qu'il est exigé (**503**), limite d'appels (**429**), route inconnue **404**, mauvaise méthode **405**, corps invalide, champ en trop, ou `Content-Length` absent, non numérique ou supérieur à 512 **400**. Toutes les réponses portent `Vary: Origin`. `OPTIONS` répond au préflight CORS de l'origine autorisée seulement.
 
 - `GET /api/etat` : lecture seule.
-- `POST /api/programmer`, corps `{"allumage":"HH:MM"}` (00:00 à 23:59) : lit la plage, écrit `ss` = début et `m` = 2 (jamais `dt`, `se`, courant ni autre réglage), relit le câble.
-  Si l'heure de Paris est déjà dans `[allumage, fin)` (minuit pris en compte), le début écrit est l'heure actuelle et la réponse porte `"immediat":true`.
-- `POST /api/programmer`, corps `{"desactiver":true}` : plage courte. Lit la plage, écrit début = fin relue moins une minute (`00:00` donne `23:59`) et active la plage (seuls `ss` et `m` changent), relit. Jamais d'`immediat`. Réponse : `{"ok":true,"debut":"HH:MM","fin":"HH:MM","plage_active":true,"courte":true}`.
+- `POST /api/programmer`, corps `{"allumage":"HH:MM","fin":"HH:MM","duree_min":N,"depart":"HH:MM"}` (durée 1 à 1439, fin entre l'allumage et le départ) : lit la plage, écrit `ss`, `se` et `m` = 2 (jamais `dt`, courant ni autre réglage), relit le câble.
+  Démarrage tardif, décidé au moment de l'envoi en heure de Paris : si l'allumage est passé (ou dans moins de 10 min), le début écrit est maintenant + 10 min et la fin est `min(début + durée, départ)`, avec `"tardif":true` dans la réponse. Si le départ est à 10 min ou moins : erreur `trop_tard`, rien n'est écrit. Cas communs au Worker, à la coque et à l'outil PC : `tests/plage-tardif-cas.json`.
+- `POST /api/programmer`, corps `{"desactiver":true,"fin":"HH:MM"}` : plage courte. Écrit début = `fin` moins une minute (`00:00` donne `23:59`), `se` = `fin`, et active la plage (seuls `ss`, `se` et `m` changent), relit. Réponse : `{"ok":true,"debut":"HH:MM","fin":"HH:MM","plage_active":true,"courte":true}`.
 
 Succès : `{"ok":true,"debut":"HH:MM","fin":"HH:MM","plage_active":true|false}`.
 Échec : `{"ok":false,"erreur":"hors_ligne"|"jeton"|"tuya"|"delai"|"relecture_differente"}` (502, 502, 502, 504, 502). Correspondance avec les codes Tuya : `docs/tuya-findings.md`.
