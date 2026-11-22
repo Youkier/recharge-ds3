@@ -70,7 +70,7 @@ class PontLocal(
                 "prefixeWifi" -> prefixeWifi(rep)
                 "saisirCle" -> { operations.oublierMemoire(); surSaisirCle(); rep(ok()) }
                 "cable" -> enArrierePlan(rep) { enJson(operations.cable()) }
-                "lire" -> enArrierePlan(rep) { enJson(operations.lire(adresse(q), delai(q))) }
+                "lire" -> enArrierePlan(rep) { enJson(operations.lire(adresse(q), delai(q), reessayer(q))) }
                 "programmer" -> programmer(q, rep)
                 "chercher" -> chercher(q, rep)
                 "memoriser" -> enArrierePlan(rep) { enJson(operations.memoriser()) }
@@ -123,6 +123,10 @@ class PontLocal(
 
     private fun delai(q: JSONObject): Long? = if (q.has("delai")) q.optLong("delai") else null
 
+    // Nouvelles tentatives demandées par la page (seconde lecture, seconde écriture, second balayage) : faites par
+    // OperationsCable, qui ne relance jamais une écriture partie. Absent = une seule tentative (page d'essai).
+    private fun reessayer(q: JSONObject): Boolean = q.optBoolean("reessayer", false)
+
     // Exactement une des deux actions du projet : { allumage: "HH:MM" } ou { desactiver: true }.
     private fun programmer(q: JSONObject, repondre: (JSONObject) -> Unit) {
         val action: Action? = when {
@@ -133,14 +137,15 @@ class PontLocal(
             else -> null
         }
         if (action == null) return repondre(erreur("requete_invalide"))
-        enArrierePlan(repondre) { enJson(operations.programmer(adresse(q), action, delai(q))) }
+        enArrierePlan(repondre) { enJson(operations.programmer(adresse(q), action, delai(q), reessayer(q))) }
     }
 
     // Réponses de progression { n, progres: true, etape, appareils, lectures, echeance } puis la réponse finale.
     private fun chercher(q: JSONObject, repondre: (JSONObject) -> Unit) {
         val ip = adresse(q)
+        val encore = reessayer(q)
         enArrierePlan(repondre) {
-            enJson(operations.chercher(ip) { p ->
+            enJson(operations.chercher(ip, encore) { p ->
                 repondre(
                     JSONObject().put("progres", true).put("etape", p.etape).put("appareils", p.appareils)
                         .put("lectures", p.lectures).put("echeance", p.echeanceMs),
@@ -170,16 +175,20 @@ class PontLocal(
 
     // --- Cycle de vie ---
 
-    /** Coupe les connexions ouvertes et arrête la recherche en cours (sortie de l'activité, nouvelle page). Sans attendre. */
+    /** Coupe les connexions ouvertes PAR LA PAGE et arrête sa recherche (sortie de l'activité, nouvelle page). Sans
+     *  attendre. Une opération lancée par le service d'attente n'est pas touchée. */
     fun fermerToutAsync() {
-        Thread { operations.annulerTout() }.start()
+        Thread { operations.annulerPage() }.start()
     }
 
-    /** Fin de l'activité : tout est coupé, la configuration gardée en mémoire est effacée, plus aucune opération acceptée. */
-    fun arreter() {
+    /**
+     * Fin de l'activité : les opérations de la page sont coupées, plus aucune n'est acceptée. La configuration gardée en
+     * mémoire est effacée, sauf si une attente est active ([garderMemoire]) : elle en a encore besoin.
+     */
+    fun arreter(garderMemoire: Boolean = false) {
         travail.shutdownNow()
-        operations.oublierMemoire()
-        Thread { operations.annulerTout() }.start()
+        if (!garderMemoire) operations.oublierMemoire()
+        Thread { operations.annulerPage() }.start()
     }
 
     fun connexionOuverte(): Boolean = operations.enCours()

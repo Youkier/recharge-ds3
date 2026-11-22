@@ -142,3 +142,17 @@ test('le pont natif n\'expose aucune route générique : liste fermée des opér
     assert.ok(!/java\.net\.|Socket\(|bindSocket\(/.test(lire(dossier + f).replace(/\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '')) || f === 'EnvironnementAndroid.kt', `${f} ne doit pas ouvrir de connexion`);
   }
 });
+
+test('une seule instance d\'OperationsCable par processus : créée par ProprietaireCable, récupérée par l\'activité et le service', () => {
+  const dossier = '../android/src/main/kotlin/fr/rechargeds3/coque/';
+  const sans = (f) => lire(dossier + f).replace(/\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '');
+  for (const f of ['MainActivity.kt', 'PontLocal.kt', 'AttenteWifi.kt']) assert.ok(!/OperationsCable\(/.test(sans(f)), `${f} ne crée pas d'instance`);
+  assert.match(sans('ProprietaireCable.kt'), /OperationsCable\(EnvironnementAndroid\(wifi, coffre\)\)/);
+  assert.match(sans('MainActivity.kt'), /ProprietaireCable\.obtenir\(this\)/);
+  assert.match(sans('AttenteWifi.kt'), /ProprietaireCable\.obtenir\(this\)\.operations\.oublierMemoire\(\)/);
+  // demarrage et sortie de l'activité n'annulent que la page ; la mémoire est gardée si une attente est active.
+  const pont = sans('PontLocal.kt');
+  assert.ok(!/annulerTout\(\)/.test(pont), 'le pont n\'annule que les opérations de la page');
+  assert.match(pont, /fun arreter\(garderMemoire: Boolean = false\)/);
+  assert.match(sans('MainActivity.kt'), /pont\.arreter\(garderMemoire = AttenteWifi\.attenteEnCours\(\)\)/);
+});

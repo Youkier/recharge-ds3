@@ -63,10 +63,12 @@ class MainActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         nuit = resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK
-        wifi = ReseauWifi(this)
-        coffre = CoffreCable(this)
+        // Wi-Fi, coffre et opérations : uniques pour le processus (le service d'attente les partage).
+        val proprietaire = ProprietaireCable.obtenir(this)
+        wifi = proprietaire.wifi
+        coffre = proprietaire.coffre
         pont = PontLocal(
-            wifi, OperationsCable(EnvironnementAndroid(wifi, coffre)), estDebug,
+            wifi, proprietaire.operations, estDebug,
             surSaisirCle = { afficherFormulaire() },
             prendreActionAuto = { actionAuto() },
             essaiArrierePlan = { quoi -> essaiArrierePlan(quoi) },
@@ -135,7 +137,8 @@ class MainActivity : Activity() {
         if (AttenteWifi.actif) abandonnerAttente()
         demandeNotifications = null
         AttenteWifi.surFin = null
-        pont.arreter()
+        // La mémoire de la clé n'est effacée que si aucune attente n'est active (le service l'efface à sa fin).
+        pont.arreter(garderMemoire = AttenteWifi.attenteEnCours())
         webView?.let { (it.parent as? ViewGroup)?.removeView(it); it.destroy() }
         webView = null
         super.onDestroy()

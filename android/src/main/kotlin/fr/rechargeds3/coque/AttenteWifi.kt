@@ -109,6 +109,8 @@ class AttenteWifi : Service() {
         enAttente = false
         if (instance === this) instance = null
         actif = false
+        // Fin de l'attente : la configuration gardée en mémoire est effacée, quelle que soit l'activité.
+        try { ProprietaireCable.obtenir(this).operations.oublierMemoire() } catch (e: RuntimeException) { /* sans effet */ }
         // L'activité ferme ce que son onStop a laissé ouvert si elle n'est plus visible.
         try { surFin?.invoke() } catch (e: RuntimeException) { /* activité déjà détruite */ }
         super.onDestroy()
@@ -159,6 +161,10 @@ class AttenteWifi : Service() {
         /** « Annuler » touché dans la notification ; remis à faux au prochain démarrage (lu par attenteEtat). */
         @Volatile
         var annulee = false
+
+        /** Une attente attend encore un résultat (fil principal) : service en cours non terminé, ou démarrage demandé sans
+         *  fin déjà demandée. */
+        fun attenteEnCours(): Boolean = instance?.attendEncore ?: (actif && finDemandee == null)
 
         /** Service en cours (fil principal seulement). */
         var instance: AttenteWifi? = null

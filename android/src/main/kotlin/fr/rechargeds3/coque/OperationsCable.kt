@@ -30,6 +30,9 @@ interface EnvironnementCable {
     fun sonder(ip: String, delaiMs: Int): Boolean
 }
 
+/** Qui a lancé une opération : la page (WebView) ou, en E3, l'attente native. Une annulation ne touche que son origine. */
+enum class Origine { PAGE, SERVICE }
+
 /**
  * Opérations de haut niveau du pont (décision du 2026-11-21 : le protocole local n'a qu'une implémentation dans l'appli,
  * en Kotlin). La page ne voit jamais la clé : elle demande « lire », « programmer », « chercher » et reçoit des résultats.
@@ -40,6 +43,13 @@ interface EnvironnementCable {
  * actions du projet existent côté écriture (ClientCable) ; l'adresse passe toujours par FiltreReseau ; l'adresse n'est
  * retenue qu'après une lecture ou une écriture réussie ; la clé n'est copiée qu'en octets, mis à zéro après usage.
  *
+ * UNE SEULE instance par processus (ProprietaireCable) : l'activité et le service d'attente la partagent. Annuler les
+ * opérations de la page (nouvelle page, sortie de l'activité) ne coupe jamais une opération lancée par le service.
+ *
+ * Nouvelles tentatives (ici, pas dans la page) : « reessayer » = une seconde lecture plus longue, une seconde écriture,
+ * un second balayage. Règle unique : JAMAIS de nouvel envoi après une écriture partie (Resultat.ecrit), ni pour un échec
+ * qui n'est pas un échec de contact.
+ *
  * Mémoire de configuration : « memoriser » garde (identifiant, clé) en octets au plus [dureeMemoireMs] pour qu'une attente
  * en arrière-plan puisse envoyer téléphone verrouillé (la clé du magasin est alors illisible), puis les met à zéro.
  */
@@ -49,10 +59,14 @@ class OperationsCable(
     private val horloge: () -> Long = { System.currentTimeMillis() },
     private val maintenant: () -> ZonedDateTime = { ZonedDateTime.now(Plage.PARIS) },
     private val pause: (Long) -> Unit = { ms -> Thread.sleep(ms) },
+    private val delaiSecondeLectureMs: Long = DELAI_SECONDE_LECTURE_MS,
 ) {
     private val occupe = AtomicBoolean(false)
-    private val generation = AtomicInteger(0)
-    private val transports: MutableSet<Transport> = Collections.synchronizedSet(HashSet())
+    private val generations = Origine.values().associateWith { AtomicInteger(0) }
+    private val transports: MutableMap<Transport, Origine> = Collections.synchronizedMap(HashMap())
+
+    /** Une opération en cours : son origine et la génération de cette origine au départ (annulée si elle a changé). */
+    private class Op(val origine: Origine, val gen: Int)
 
     // --- Mémoire de configuration ---
 
@@ -105,31 +119,39 @@ class OperationsCable(
 
     // --- Annulation et exclusivité ---
 
-    /** Sortie de l'appli ou nouvelle page : les connexions ouvertes sont coupées, la recherche en cours s'arrête. */
-    fun annulerTout() {
-        generation.incrementAndGet()
-        val liste = synchronized(transports) { transports.toList() }
+    /** Nouvelle page ou sortie de l'activité : les connexions ouvertes par la page sont coupées, sa recherche s'arrête. */
+    fun annulerPage() = annuler(Origine.PAGE)
+
+    /** Coupe les connexions et arrête la recherche des opérations de cette origine seulement. */
+    fun annuler(origine: Origine) {
+        generations.getValue(origine).incrementAndGet()
+        val liste = synchronized(transports) { transports.filterValues { it == origine }.keys.toList() }
         for (t in liste) try { t.fermer() } catch (e: Exception) { /* déjà fermé */ }
     }
 
+    /** Annule toutes les origines (arrêt complet). */
+    fun annulerTout() { for (o in Origine.values()) annuler(o) }
+
     fun enCours(): Boolean = occupe.get()
 
-    private fun exclusif(corps: (Int) -> Map<String, Any?>): Map<String, Any?> {
+    private fun exclusif(origine: Origine, corps: (Op) -> Map<String, Any?>): Map<String, Any?> {
         if (!occupe.compareAndSet(false, true)) return erreur("occupe")
         try {
-            return corps(generation.get())
+            return corps(Op(origine, generations.getValue(origine).get()))
         } finally {
             transports.clear()
             occupe.set(false)
         }
     }
 
-    /** Transport lié à la génération [gen] : null si l'opération a été annulée entre-temps (rien n'est alors ouvert). */
-    private fun nouveauTransport(gen: Int): Transport? {
-        if (gen != generation.get()) return null
+    private fun annule(op: Op) = op.gen != generations.getValue(op.origine).get()
+
+    /** Transport lié à l'opération : null si elle a été annulée entre-temps (rien n'est alors ouvert). */
+    private fun nouveauTransport(op: Op): Transport? {
+        if (annule(op)) return null
         val t = env.creerTransport() ?: return null
-        transports.add(t)
-        if (gen != generation.get()) { // annulerTout est passé entre la vérification et l'enregistrement
+        transports[t] = op.origine
+        if (annule(op)) { // annuler() est passé entre la vérification et l'enregistrement
             transports.remove(t)
             try { t.fermer() } catch (e: Exception) { /* jamais ouvert */ }
             return null
@@ -137,72 +159,110 @@ class OperationsCable(
         return t
     }
 
-    private fun causeSansTransport(gen: Int) = erreur(if (gen != generation.get()) "hors_ligne" else "pas_wifi")
+    private fun causeSansTransport(op: Op) = erreur(if (annule(op)) "hors_ligne" else "pas_wifi")
+
+    /** Échec de contact qui mérite une seconde tentative, et seulement si aucune écriture n'est partie. */
+    private fun retentable(r: Resultat) = !r.ok && !r.ecrit && r.erreur in ECHECS_A_RETENTER
+
+    private fun avecDelai(cfg: ConfigCable, ms: Long) = ConfigCable(cfg.deviceId, cfg.cleLocale, cfg.ip, ms.coerceIn(1000, 30_000))
 
     // --- Opérations ---
 
-    /** Configuration connue, sans la clé : { configure, illisible?, adresse? }. */
+    /** Configuration connue, sans la clé et SANS la déchiffrer : { configure, adresse? }. Une clé illisible (téléphone
+     *  verrouillé, magasin invalidé) se voit à la lecture, qui rend « pas_de_cle ». */
     fun cable(): Map<String, Any?> {
         val r = LinkedHashMap<String, Any?>()
         r["ok"] = true
-        val configure = env.configure()
-        if (memoireValide()) r["configure"] = true
-        else if (!configure) r["configure"] = false
-        else if (env.lireCle() == null) { r["configure"] = false; r["illisible"] = true }
-        else r["configure"] = true
+        r["configure"] = memoireValide() || env.configure()
         env.adresse()?.let { r["adresse"] = it }
         return r
     }
 
-    /** Lit la plage de charge. [ip] : adresse à utiliser à la place de l'adresse retenue (filtrée). */
-    fun lire(ip: String?, delaiMs: Long?): Map<String, Any?> = exclusif { gen ->
-        avecConfig(ip, delaiMs) { cfg ->
-            val t = nouveauTransport(gen) ?: return@avecConfig causeSansTransport(gen)
-            reponse(ClientCable.lireEtat(cfg, t), cfg.ip)
+    /**
+     * Lit la plage de charge. [ip] : adresse à utiliser à la place de l'adresse retenue (filtrée). [reessayer] : si le
+     * contact échoue (hors_ligne, delai, cle), une seconde lecture de [delaiSecondeLectureMs] (premier contact souvent
+     * lent ou refusé, constaté au premier essai réel du 2026-11-21).
+     */
+    fun lire(ip: String?, delaiMs: Long?, reessayer: Boolean = false, origine: Origine = Origine.PAGE): Map<String, Any?> =
+        exclusif(origine) { op ->
+            avecConfig(ip, delaiMs) { cfg ->
+                val t = nouveauTransport(op) ?: return@avecConfig causeSansTransport(op)
+                var r = ClientCable.lireEtat(cfg, t)
+                if (reessayer && retentable(r) && !annule(op)) {
+                    val t2 = nouveauTransport(op)
+                    if (t2 != null) r = ClientCable.lireEtat(avecDelai(cfg, delaiSecondeLectureMs), t2)
+                }
+                reponse(r, cfg.ip)
+            }
         }
-    }
 
-    /** Règle le début de la plage, ou la rend « courte » : les deux seules écritures. */
-    fun programmer(ip: String?, action: Action, delaiMs: Long?): Map<String, Any?> = exclusif { gen ->
-        if (action is Action.Allumage && !Plage.heureValide(action.hhmm)) return@exclusif erreur("requete_invalide")
-        avecConfig(ip, delaiMs) { cfg ->
-            val t = nouveauTransport(gen) ?: return@avecConfig causeSansTransport(gen)
-            reponse(ClientCable.programmer(cfg, t, action, maintenant, pause), cfg.ip)
+    /**
+     * Règle le début de la plage, ou la rend « courte » : les deux seules écritures. [reessayer] : seconde tentative
+     * SEULEMENT si l'échec vient du contact et qu'aucune écriture n'est partie ; les deux tentatives tiennent dans
+     * [BUDGET_ECRITURE_MS] (sous le plafond de 30 s de la page) et la seconde ne part pas s'il reste moins de
+     * [RESTE_MINI_SECONDE_ECRITURE_MS] (elle pourrait écrire après l'affichage de l'échec).
+     */
+    fun programmer(ip: String?, action: Action, delaiMs: Long?, reessayer: Boolean = false, origine: Origine = Origine.PAGE): Map<String, Any?> =
+        exclusif(origine) { op ->
+            if (action is Action.Allumage && !Plage.heureValide(action.hhmm)) return@exclusif erreur("requete_invalide")
+            avecConfig(ip, delaiMs) { cfg ->
+                val debut = horloge()
+                val t = nouveauTransport(op) ?: return@avecConfig causeSansTransport(op)
+                var r = ClientCable.programmer(cfg, t, action, maintenant, pause)
+                if (reessayer && retentable(r) && !annule(op)) {
+                    val reste = BUDGET_ECRITURE_MS - (horloge() - debut)
+                    if (reste >= RESTE_MINI_SECONDE_ECRITURE_MS) {
+                        val t2 = nouveauTransport(op)
+                        if (t2 != null) r = ClientCable.programmer(avecDelai(cfg, reste), t2, action, maintenant, pause)
+                    }
+                }
+                reponse(r, cfg.ip)
+            }
         }
-    }
 
     /**
      * Cherche le câble sur le /24 du Wi-Fi : adresse de départ ([ip] ou retenue) si elle est sur ce réseau, puis fouille.
+     * [reessayer] : un second balayage si le premier ne trouve rien (« introuvable » puis trouvé au second passage, premier
+     * essai réel) ; l'échéance annoncée par [progres] couvre alors les deux balayages.
      * [progres] est appelé depuis des fils de travail, jamais après le retour.
      */
-    fun chercher(ip: String?, progres: (Progres) -> Unit): Map<String, Any?> = exclusif { gen ->
-        if (ip != null && FiltreReseau.adressePrivee(ip) == null) return@exclusif erreur("refuse")
-        val prefixe = env.prefixeWifi() ?: return@exclusif erreur("pas_wifi")
-        val c = configuration() ?: return@exclusif erreur("pas_de_cle")
-        try {
-            val depart = ip ?: env.adresse()
-            val departs = if (depart != null && prefixe24(depart) == prefixe) listOf(depart) else emptyList()
-            val res = RechercheCable.chercher(
-                departs, prefixe,
-                sonder = { a, d -> env.sonder(a, d) },
-                lire = { a, d ->
-                    val t = nouveauTransport(gen)
-                    if (t == null) Resultat(false, "hors_ligne")
-                    else ClientCable.lireEtat(ConfigCable(c.first, c.second, a, d.coerceIn(1000, 30_000)), t)
-                },
-                progres = progres,
-                annule = { gen != generation.get() },
-            )
-            val etat = res.etat
-            if (!res.ok || res.ip == null || etat == null) return@exclusif erreur("introuvable")
-            val r = reponse(etat, res.ip).toMutableMap() // reponse() retient l'adresse
-            r["ip"] = res.ip
-            r["trouve"] = res.trouve
-            r
-        } finally {
-            c.second.fill(0)
+    fun chercher(ip: String?, reessayer: Boolean = false, origine: Origine = Origine.PAGE, progres: (Progres) -> Unit): Map<String, Any?> =
+        exclusif(origine) { op ->
+            if (ip != null && FiltreReseau.adressePrivee(ip) == null) return@exclusif erreur("refuse")
+            val prefixe = env.prefixeWifi() ?: return@exclusif erreur("pas_wifi")
+            val c = configuration() ?: return@exclusif erreur("pas_de_cle")
+            try {
+                val depart = ip ?: env.adresse()
+                val departs = if (depart != null && prefixe24(depart) == prefixe) listOf(depart) else emptyList()
+                var res: ResultatRecherche? = null
+                val passages = if (reessayer) 2 else 1
+                for (passage in 1..passages) {
+                    if (annule(op)) break
+                    // Tant qu'un second passage est possible, l'échéance annoncée est celle du dernier passage possible.
+                    val rallonge = if (passage < passages) RechercheCable.DELAI_TOTAL_MS else 0L
+                    res = RechercheCable.chercher(
+                        departs, prefixe,
+                        sonder = { a, d -> env.sonder(a, d) },
+                        lire = { a, d ->
+                            val t = nouveauTransport(op)
+                            if (t == null) Resultat(false, "hors_ligne")
+                            else ClientCable.lireEtat(ConfigCable(c.first, c.second, a, d.coerceIn(1000, 30_000)), t)
+                        },
+                        progres = { p -> progres(if (rallonge == 0L) p else p.copy(echeanceMs = p.echeanceMs + rallonge)) },
+                        annule = { annule(op) },
+                    )
+                    if (res.ok) break
+                }
+                val etat = res?.etat
+                if (res == null || !res.ok || res.ip == null || etat == null) return@exclusif erreur("introuvable")
+                val r = reponse(etat, res.ip).toMutableMap() // reponse() retient l'adresse
+                r["ip"] = res.ip
+                r["trouve"] = res.trouve
+                r
+            } finally {
+                c.second.fill(0)
+            }
         }
-    }
 
     // --- Aides ---
 
@@ -246,6 +306,12 @@ class OperationsCable(
     private fun ok(): Map<String, Any?> = mapOf("ok" to true)
 
     companion object {
+        /** Échecs de contact (connexion refusée, lente, ou fermée pendant la négociation, que le protocole lit « cle »). */
+        val ECHECS_A_RETENTER = setOf("hors_ligne", "delai", "cle")
+        const val DELAI_SECONDE_LECTURE_MS = 8_000L
+        const val BUDGET_ECRITURE_MS = 27_000L // sous le plafond de 30 s de site/app.js
+        const val RESTE_MINI_SECONDE_ECRITURE_MS = 5_000L
+
         fun erreur(code: String): Map<String, Any?> = mapOf("ok" to false, "erreur" to code)
     }
 }

@@ -10,12 +10,15 @@
 // envoyer, recevoir, sonder) : le pont répond « operation_inconnue ».
 //
 // Opérations sur le câble (une seule à la fois côté natif, sinon erreur occupe) :
-//   lire { ip?, delai? }            -> { debut, fin, plage_active }
-//   programmer { allumage:"HH:MM" | desactiver:true, ip?, delai? }
+//   lire { ip?, delai?, reessayer? } -> { debut, fin, plage_active }   reessayer : seconde lecture (8 s) après un échec de contact
+//   programmer { allumage:"HH:MM" | desactiver:true, ip?, delai?, reessayer? }
 //                                   -> { debut, fin, plage_active, immediat, courte }   (lit, écrit, relit)
 //                                      échec : { ok:false, erreur, ecrit? } ; ecrit:true = l'écriture est partie, ne jamais la relancer
-//   chercher { ip? }                -> { ip, trouve, debut, fin, plage_active } | erreur introuvable
+//   chercher { ip?, reessayer? }    -> { ip, trouve, debut, fin, plage_active } | erreur introuvable
 //                                      pendant la recherche : messages { n, progres:true, etape, appareils, lectures, echeance }
+//                                      reessayer : un second balayage ; echeance couvre alors les deux balayages
+//   reessayer (lire, programmer, chercher) : nouvelles tentatives faites par le natif, jamais après une écriture partie
+//   (ecrit:true) ni pour un échec qui n'est pas un échec de contact (hors_ligne, delai, cle). Programmer : 27 s au total.
 //   ip : adresse IPv4 privée à utiliser à la place de l'adresse retenue (filtrée côté natif) ; delai : millisecondes
 //   (1000 à 30000, 20000 par défaut). L'adresse est retenue côté natif après une lecture, une écriture ou une recherche réussie.
 //   Erreurs : cle, hors_ligne, delai, format, relecture_differente, requete_invalide, pas_de_cle, pas_wifi, sans_adresse,
@@ -24,7 +27,8 @@
 //   demarrage                       -> { variante, auto }   coupe toute opération restée en cours (nouvelle page)
 //   variante                        -> { variante: "debug" | "release" }
 //   prefixeWifi                     -> { prefixe: "10.0.2" } | erreur pas_wifi
-//   cable                           -> { configure, illisible?, adresse? }   jamais l'identifiant ni la clé
+//   cable                           -> { configure, adresse? }   jamais l'identifiant ni la clé, et sans déchiffrer ;
+//                                      une clé illisible se voit à la lecture (erreur pas_de_cle)
 //   memoriser                       -> {} | erreur pas_de_cle   garde la configuration côté natif 15 min au plus (attente
 //                                      en arrière-plan : la clé du magasin est illisible téléphone verrouillé)
 //   oublierMemoire                  -> {}
@@ -45,6 +49,10 @@
 // Mise au point seulement : essaiArrierePlan { quoi }, essaiFiltre (le transport natif refuse tout sauf IPv4 privée:6668).
 
 const MARGE_REPONSE_MS = 3000; // attente de réponse du pont au-delà du délai demandé
+// Durées maximales côté natif quand « reessayer » est demandé (OperationsCable) : le client attend la réponse jusque-là.
+const SECONDE_LECTURE_MS = 8000;
+const BUDGET_ECRITURE_MS = 27000;
+const BALAYAGE_SUPPLEMENTAIRE_MS = 9000; // un balayage dure au plus son délai + la dernière lecture en cours
 
 export function creerClientPont(pont, { margeMs = MARGE_REPONSE_MS } = {}) {
   const attente = new Map();
@@ -82,11 +90,13 @@ export function creerClientPont(pont, { margeMs = MARGE_REPONSE_MS } = {}) {
   client.saisirCle = () => client.appeler('saisirCle');
   client.memoriser = () => client.appeler('memoriser');
   client.oublierMemoire = () => client.appeler('oublierMemoire');
-  client.lire = (params = {}, delaiMs = 20000) => client.appeler('lire', { ...params, delai: delaiMs }, delaiMs);
-  client.programmer = (action, params = {}, delaiMs = 20000) => client.appeler('programmer', { ...action, ...params, delai: delaiMs }, delaiMs);
+  client.lire = (params = {}, delaiMs = 20000) =>
+    client.appeler('lire', { ...params, delai: delaiMs }, delaiMs + (params.reessayer ? SECONDE_LECTURE_MS : 0));
+  client.programmer = (action, params = {}, delaiMs = 20000) =>
+    client.appeler('programmer', { ...action, ...params, delai: delaiMs }, params.reessayer ? Math.max(delaiMs, BUDGET_ECRITURE_MS) : delaiMs);
   // surProgres (facultatif) reçoit { etape, appareils, lectures, echeance } ; une exception du rappel est ignorée.
   client.chercher = (params = {}, surProgres = null, delaiMs = 30000) =>
-    client.appeler('chercher', params, delaiMs, surProgres);
+    client.appeler('chercher', params, params.reessayer ? 2 * (delaiMs + BALAYAGE_SUPPLEMENTAIRE_MS) : delaiMs, surProgres);
 
   return client;
 }

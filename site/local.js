@@ -18,10 +18,9 @@ export function pontPresent(g = globalThis) {
   return !!(g && g.PontLocal && typeof g.PontLocal.postMessage === 'function');
 }
 
-// Échecs de contact avec le câble qui méritent une seconde tentative (connexion refusée, lente, ou fermée pendant la
-// négociation, que le protocole lit comme « cle »). Jamais après une écriture.
-const ECHECS_A_RETENTER = new Set(['hors_ligne', 'delai', 'cle']);
-const BUDGET_ECRITURE_MS = 27000; // sous le plafond de 30 s de site/app.js (DELAI_LOCAL_MAX_MS)
+// Les nouvelles tentatives (seconde lecture, seconde écriture, second balayage) ne sont PAS faites ici : la page les demande
+// au pont natif (reessayer: true) et OperationsCable les applique, avec la règle unique « jamais de nouvel envoi après
+// une écriture » (décision du 2026-11-22, revue d'architecture n°2). Ce module ne fait que traduire les codes.
 
 const IPV4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/;
 const reseau24 = (ip) => (typeof ip === 'string' && IPV4.test(ip) ? ip.split('.').slice(0, 3).join('.') : null);
@@ -97,11 +96,8 @@ export async function etatCable(deps) {
   if (!conf.adresse) return { etat: 'sans_adresse' };
   const reseau = await surLeReseau(client, conf.adresse);
   if (reseau !== 'oui') return { etat: 'hors_wifi' };
-  // Premier contact souvent lent ou refusé (constaté au premier essai réel, 2026-11-21) : une seconde lecture, plus longue.
-  let r = await client.lire({ ip: conf.adresse }, deps.delaiLectureMs ?? 4000);
-  if (!(r && r.ok === true) && ECHECS_A_RETENTER.has(r && r.erreur)) {
-    r = await client.lire({ ip: conf.adresse }, deps.delaiSecondeLectureMs ?? 8000);
-  }
+  // Premier contact souvent lent ou refusé (premier essai réel, 2026-11-21) : le natif fait la seconde lecture, plus longue.
+  const r = await client.lire({ ip: conf.adresse, reessayer: true }, deps.delaiLectureMs ?? 4000);
   if (r && r.ok === true) return { etat: 'pret', plage: { debut: r.debut, fin: r.fin, plage_active: r.plage_active } };
   const e = r && r.erreur;
   if (e === 'pas_de_cle') return { etat: 'a_relier' };
@@ -123,9 +119,9 @@ export async function chercherCable(deps, surProgres = null) {
   if (!w || !w.ok) return { ok: false, etat: 'hors_wifi' };
   // Le natif essaie d'abord cette adresse (si elle est sur le réseau du Wi-Fi), puis fouille le /24 du Wi-Fi.
   const params = conf.adresse && reseau24(conf.adresse) === w.prefixe ? { ip: conf.adresse } : {};
-  // Premier essai réel : « introuvable » puis trouvé au second passage. Un second passage automatique.
-  let res = await client.chercher(params, surProgres);
-  if (!(res && res.ok === true) && res && res.erreur === 'introuvable') res = await client.chercher(params, surProgres);
+  // Premier essai réel : « introuvable » puis trouvé au second passage : le natif fait le second balayage, et l'échéance
+  // qu'il annonce couvre les deux.
+  const res = await client.chercher({ ...params, reessayer: true }, surProgres);
   if (res && res.ok === true) {
     if (deps.confCable) deps.confCable.adresse = res.ip; // la suite de l'attente lit la nouvelle adresse
     return { ok: true, plage: { debut: res.debut, fin: res.fin, plage_active: res.plage_active } };
@@ -152,16 +148,9 @@ export async function programmerLocal(demande, deps, finHC) {
     if (reseau !== 'oui') return ko('local_hors_wifi');
     // Les deux seules actions du projet ; le natif les revalide.
     const action = demande.desactiver ? { desactiver: true } : { allumage: demande.allumage };
-    const debut = Date.now();
-    let r = await client.programmer(action, { ip: conf.adresse }, 20000);
-    // Une seconde tentative SEULEMENT si le natif ne signale pas d'écriture partie (pas de ecrit: true) et que l'échec
-    // vient du contact avec le câble. Une écriture peut-être appliquée n'est jamais relancée (règle 2 : résultat incertain).
-    // Les deux tentatives tiennent sous le plafond de 30 s de la page (app.js) : la seconde n'a que le temps restant,
-    // et ne part pas s'il en reste trop peu (sinon elle pourrait écrire après l'affichage de l'échec).
-    const reste = BUDGET_ECRITURE_MS - (Date.now() - debut);
-    if (r && r.ok !== true && r.ecrit !== true && ECHECS_A_RETENTER.has(r.erreur) && reste >= 5000) {
-      r = await client.programmer(action, { ip: conf.adresse }, reste);
-    }
+    // Le natif refait une tentative SEULEMENT si l'écriture n'est pas partie, dans un budget de 27 s (sous le plafond de
+    // 30 s de la page, app.js) ; une écriture peut-être appliquée n'est jamais relancée (règle 2 : résultat incertain).
+    const r = await client.programmer(action, { ip: conf.adresse, reessayer: true }, 20000);
     if (!r || r.ok !== true) return ko(codeLocal(r && r.erreur));
     return interpreterReponse(demande, 200, r, finHC);
   } catch (e) {

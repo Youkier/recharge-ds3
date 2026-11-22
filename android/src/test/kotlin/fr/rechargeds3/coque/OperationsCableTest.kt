@@ -12,6 +12,7 @@ import org.junit.Test
 import java.time.ZonedDateTime
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
 
 /** Routage des opérations du pont vers le protocole local, contre le faux câble en mémoire (clé et adresses factices). */
@@ -30,6 +31,7 @@ class OperationsCableTest {
         var prefixe: String? = "192.168.1",
         var fabrique: () -> Transport? = { null },
         var cablesOuverts: Set<String> = emptySet(),
+        var surSonder: ((String) -> Boolean)? = null,
     ) : EnvironnementCable {
         val retenues = ArrayList<String>()
         var lecturesCoffre = 0
@@ -40,7 +42,7 @@ class OperationsCableTest {
         override fun retenirAdresse(ip: String) { retenues.add(ip); adresseRetenue = ip }
         override fun prefixeWifi() = prefixe
         override fun creerTransport(): Transport? = fabrique()
-        override fun sonder(ip: String, delaiMs: Int) = ip in cablesOuverts
+        override fun sonder(ip: String, delaiMs: Int) = surSonder?.invoke(ip) ?: (ip in cablesOuverts)
     }
 
     private val maintenant = { ZonedDateTime.parse("2026-11-16T22:30:00Z") }
@@ -190,11 +192,18 @@ class OperationsCableTest {
 
     // --- cable et mémoire de configuration ---
 
-    @Test fun cableDitSeulementSiUneConfigurationExisteEtSiElleEstLisible() {
-        assertEquals(mapOf("ok" to true, "configure" to true, "adresse" to "192.168.1.48"), ops(Env()).cable())
+    @Test fun cableDitSeulementSiUneConfigurationExisteSansLaDechiffrer() {
+        val env = Env()
+        assertEquals(mapOf("ok" to true, "configure" to true, "adresse" to "192.168.1.48"), ops(env).cable())
         assertEquals(mapOf("ok" to true, "configure" to false, "adresse" to "192.168.1.48"), ops(Env(estConfigure = false)).cable())
-        val illisible = ops(Env(cleCoffre = null)).cable()
-        assertEquals(false, illisible["configure"]); assertEquals(true, illisible["illisible"])
+        assertEquals("cable() ne déchiffre jamais la clé (contrôle toutes les 5 s)", 0, env.lecturesCoffre)
+    }
+
+    @Test fun cleIllisibleRemonteALaLectureEnPasDeCle() {
+        val env = Env(cleCoffre = null, fabrique = { faux() }) // configuré mais illisible (téléphone verrouillé)
+        val o = ops(env)
+        assertEquals(true, o.cable()["configure"])
+        assertEquals("pas_de_cle", o.lire(null, null)["erreur"])
     }
 
     @Test fun memoireGardeLaCleQuandLeCoffreDevientIllisible() {
@@ -261,5 +270,148 @@ class OperationsCableTest {
         assertEquals("tant que la mémoire n'est pas effacée, l'ancienne clé est utilisée", "cle", o.lire(null, null)["erreur"])
         o.oublierMemoire() // ce que font l'enregistrement d'une clé, « Oublier le câble » et saisirCle
         assertEquals(true, o.lire(null, null)["ok"])
+    }
+
+    // --- nouvelles tentatives (déplacées de site/local.js) ---
+
+    private fun muet() = FauxCable(OptionsFaux(cle = cle, dps = dps(), ouvrirEchoue = true))
+
+    /** Fabrique qui rend d'abord les câbles de [premiers], puis [suite] ; compte les transports créés. */
+    private class Suite(val premiers: List<() -> Transport>, val suite: () -> Transport) {
+        val crees = AtomicInteger()
+        val fabrique: () -> Transport? = { val n = crees.getAndIncrement(); if (n < premiers.size) premiers[n]() else suite() }
+    }
+
+    @Test fun lireNeReessaiePasSansLaDemande() {
+        val s = Suite(listOf({ muet() }), { faux() })
+        val r = ops(Env(fabrique = s.fabrique)).lire(null, null)
+        assertEquals("hors_ligne", r["erreur"]); assertEquals(1, s.crees.get())
+    }
+
+    @Test fun lireReessaieApresUnEchecDeContact() {
+        for (echec in listOf<() -> Transport>({ muet() }, { faux(cleCable = "AUTRE-CLE-000000") })) { // hors_ligne, puis « cle »
+            val s = Suite(listOf(echec), { faux() })
+            val r = ops(Env(fabrique = s.fabrique)).lire(null, null, reessayer = true)
+            assertEquals(true, r["ok"]); assertEquals(2, s.crees.get())
+        }
+    }
+
+    @Test fun lireReessaieAuPlusUneFoisEtRendLEchecDeLaSeconde() {
+        val s = Suite(listOf({ muet() }, { muet() }), { faux() })
+        val r = ops(Env(fabrique = s.fabrique)).lire(null, null, reessayer = true)
+        assertEquals("hors_ligne", r["erreur"]); assertEquals(2, s.crees.get())
+    }
+
+    @Test fun programmerReessaieSeulementSansEcriture() {
+        // Échec de contact avant toute écriture : seconde tentative, une seule écriture au total.
+        val f = faux()
+        val s = Suite(listOf({ muet() }), { f })
+        val r = ops(Env(fabrique = s.fabrique)).programmer(null, Action.Allumage("05:00"), null, reessayer = true)
+        assertEquals(true, r["ok"]); assertEquals(2, s.crees.get()); assertEquals(1, f.ecritures.size)
+        // Sans la demande : une seule tentative.
+        val s2 = Suite(listOf({ muet() }), { faux() })
+        assertEquals("hors_ligne", ops(Env(fabrique = s2.fabrique)).programmer(null, Action.Allumage("05:00"), null)["erreur"])
+        assertEquals(1, s2.crees.get())
+    }
+
+    @Test fun programmerJamaisDeNouvelEnvoiApresUneEcriture() {
+        // Écriture partie puis relecture muette : delai + ecrit, jamais relancée.
+        val f = faux()
+        val coupe = object : Transport by f {
+            override fun recevoir(delaiMs: Int): ByteArray {
+                if (f.commandes.count { it == 0x10L } >= 2) throw TransportException("delai")
+                return f.recevoir(delaiMs)
+            }
+        }
+        val s = Suite(listOf({ coupe }), { faux() })
+        val r = ops(Env(fabrique = s.fabrique)).programmer(null, Action.Allumage("00:15"), null, reessayer = true)
+        assertEquals(false, r["ok"]); assertEquals("delai", r["erreur"]); assertEquals(true, r["ecrit"])
+        assertEquals(1, s.crees.get()); assertEquals(1, f.ecritures.size)
+        // Relecture différente : jamais relancée non plus.
+        val g = FauxCable(OptionsFaux(cle = cle, dps = dps(), ignorerEcriture = true))
+        val s2 = Suite(listOf({ g }), { faux() })
+        val r2 = ops(Env(fabrique = s2.fabrique)).programmer(null, Action.Allumage("05:00"), null, reessayer = true)
+        assertEquals("relecture_differente", r2["erreur"]); assertEquals(1, s2.crees.get()); assertEquals(1, g.ecritures.size)
+    }
+
+    @Test fun programmerSecondeTentativeSeulementSiLeBudgetLePermet() {
+        for ((consomme, attendu) in listOf(10_000L to 2, 23_000L to 1)) { // reste 17 s, puis 4 s (< 5 s)
+            var t = 0L
+            val lent = muet()
+            val premier = object : Transport by lent {
+                override fun ouvrir(ip: String, port: Int, delaiMs: Int) { t += consomme; throw TransportException("delai") }
+            }
+            val s = Suite(listOf({ premier }), { faux() })
+            val r = ops(Env(fabrique = s.fabrique), horloge = { t }).programmer(null, Action.Allumage("05:00"), null, reessayer = true)
+            assertEquals("consommé $consomme ms", attendu, s.crees.get())
+            assertEquals(attendu == 2, r["ok"])
+        }
+    }
+
+    @Test fun chercherSecondBalayageSeulementSiDemande() {
+        for ((reessayer, trouve) in listOf(false to false, true to true)) {
+            val sondes = AtomicInteger()
+            val env = Env(adresseRetenue = null, fabrique = { faux() })
+            env.surSonder = { ip -> ip == "192.168.1.48" && sondes.incrementAndGet() >= 2 } // muette au premier balayage
+            val r = ops(env).chercher(null, reessayer) { }
+            assertEquals("reessayer=$reessayer", trouve, r["ok"])
+            if (!trouve) assertEquals("introuvable", r["erreur"])
+        }
+    }
+
+    @Test fun chercherAnnonceUneEcheanceQuiCouvreLesDeuxBalayages() {
+        for (reessayer in listOf(false, true)) {
+            val progres = java.util.Collections.synchronizedList(ArrayList<Progres>())
+            val debut = System.currentTimeMillis()
+            ops(Env(adresseRetenue = null, fabrique = { faux() })).chercher(null, reessayer) { progres.add(it) }
+            val premiere = progres.first().echeanceMs - debut
+            if (reessayer) assertTrue("échéance du premier balayage : $premiere ms", premiere > 45_000L)
+            else assertTrue("un seul balayage : $premiere ms", premiere <= 31_000L)
+        }
+    }
+
+    // --- origines : annuler la page ne touche pas ce que le service a lancé ---
+
+    private fun lancerBloquee(o: OperationsCable, origine: Origine): Thread {
+        val fil = Thread { o.lire(null, 5000, origine = origine) }.apply { isDaemon = true; start() }
+        var essais = 0
+        while (!o.enCours() && essais++ < 200) Thread.sleep(10)
+        assertTrue(o.enCours())
+        return fil
+    }
+
+    @Test fun annulerLaPageNeCoupePasUneOperationDuService() {
+        val bloque = faux(bloquer = true)
+        val o = ops(Env(fabrique = { bloque }))
+        val fil = lancerBloquee(o, Origine.SERVICE)
+        o.annulerPage()
+        fil.join(300)
+        assertTrue("l'opération du service continue", fil.isAlive)
+        assertEquals(0, bloque.fermetures.get())
+        o.annuler(Origine.SERVICE)
+        fil.join(5000)
+        assertFalse(fil.isAlive)
+    }
+
+    @Test fun annulerLeServiceNeCoupePasUneOperationDeLaPage() {
+        val bloque = faux(bloquer = true)
+        val o = ops(Env(fabrique = { bloque }))
+        val fil = lancerBloquee(o, Origine.PAGE)
+        o.annuler(Origine.SERVICE)
+        fil.join(300)
+        assertTrue(fil.isAlive)
+        o.annulerPage()
+        fil.join(5000)
+        assertFalse(fil.isAlive)
+    }
+
+    @Test fun uneOperationDuServiceEtUneDeLaPageRestentExclusives() {
+        val bloque = faux(bloquer = true)
+        val o = ops(Env(fabrique = { bloque }))
+        val fil = lancerBloquee(o, Origine.SERVICE)
+        assertEquals("occupe", o.lire(null, null)["erreur"])
+        o.annuler(Origine.SERVICE)
+        fil.join(5000)
+        assertFalse(o.enCours())
     }
 }

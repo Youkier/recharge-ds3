@@ -39,7 +39,7 @@ describe('État du câble à l\'ouverture (une lecture, jamais de recherche)', (
     const c = client();
     const r = await etatCable({ client: c });
     assert.deepEqual(r, { etat: 'pret', plage: { debut: '03:30', fin: '06:00', plage_active: true } });
-    assert.deepEqual(c.journal.lectures, [{ params: { ip: '192.168.1.48' }, delai: 4000 }]);
+    assert.deepEqual(c.journal.lectures, [{ params: { ip: '192.168.1.48', reessayer: true }, delai: 4000 }]);
     assert.deepEqual(c.journal.recherches, []);
   });
   test('rien d\'enregistré : à relier ; pas d\'adresse : sans_adresse ; aucune lecture', async () => {
@@ -63,14 +63,11 @@ describe('État du câble à l\'ouverture (une lecture, jamais de recherche)', (
       assert.equal((await etatCable({ client: client({ lire: { ok: false, erreur } }) })).etat, etat, erreur);
     }
   });
-  test('seconde lecture, plus longue, si la première échoue par contact ; pas pour une erreur de format', async () => {
-    const delais = [];
-    const r = await etatCable({ client: client({ lire: (p, d) => { delais.push(d); return delais.length === 1 ? { ok: false, erreur: 'delai' } : PLAGE; } }) });
-    assert.deepEqual(delais, [4000, 8000]);
-    assert.equal(r.etat, 'pret');
-    const c = client({ lire: { ok: false, erreur: 'format' } });
-    await etatCable({ client: c });
-    assert.equal(c.journal.lectures.length, 1);
+  test('la seconde lecture est faite par le natif : une seule demande, avec reessayer ; les erreurs sont traduites', async () => {
+    const c = client({ lire: { ok: false, erreur: 'delai' } });
+    assert.equal((await etatCable({ client: c })).etat, 'muet');
+    assert.equal(c.journal.lectures.length, 1, 'la page ne relance rien elle-même');
+    assert.equal(c.journal.lectures[0].params.reessayer, true);
   });
 });
 
@@ -91,15 +88,15 @@ describe('Le téléphone est-il sur le réseau de la maison ? (une lecture, aucu
 });
 
 describe('Recherche à la demande', () => {
-  test('hors Wi-Fi ; introuvable (deux passages) ; clé absente', async () => {
+  test('hors Wi-Fi ; introuvable (second balayage fait par le natif) ; clé absente', async () => {
     assert.equal((await chercherCable({ client: client({ wifi: false }) })).etat, 'hors_wifi');
     const c = client();
     assert.equal((await chercherCable({ client: c })).etat, 'introuvable');
-    assert.equal(c.journal.recherches.length, 2, 'un second passage automatique');
+    assert.equal(c.journal.recherches.length, 1, 'une seule demande : le second balayage est natif');
+    assert.equal(c.journal.recherches[0].reessayer, true);
     assert.equal((await chercherCable({ client: client({ configure: false }) })).etat, 'a_relier');
     const d = client({ chercher: { ok: false, erreur: 'occupe' } });
     assert.equal((await chercherCable({ client: d })).etat, 'erreur');
-    assert.equal(d.journal.recherches.length, 1, 'pas de second passage pour autre chose que « introuvable »');
     assert.equal((await chercherCable({ client: client({ chercher: { ok: false, erreur: 'pas_wifi' } }) })).etat, 'hors_wifi');
   });
   test('trouvé : adresse de départ transmise, progression relayée, plage rendue', async () => {
@@ -107,13 +104,13 @@ describe('Recherche à la demande', () => {
     const vus = [];
     const r = await chercherCable({ client: c }, (p) => vus.push(p));
     assert.deepEqual(r, { ok: true, plage: { debut: '03:30', fin: '06:00', plage_active: true } });
-    assert.deepEqual(c.journal.recherches, [{ ip: '192.168.1.48' }]);
+    assert.deepEqual(c.journal.recherches, [{ ip: '192.168.1.48', reessayer: true }]);
     assert.deepEqual(vus, [{ etape: 'sondes', echeance: 123 }]);
   });
   test('adresse retenue sur un autre réseau : pas de départ', async () => {
     const c = client({ adresse: '10.9.9.9' });
     await chercherCable({ client: c });
-    assert.deepEqual(c.journal.recherches[0], {});
+    assert.deepEqual(c.journal.recherches[0], { reessayer: true });
   });
 });
 
@@ -125,7 +122,7 @@ describe('Programmer en local (règle 2 : jamais d\'échec silencieux)', () => {
     assert.match(r.message, /Le câble ne chargera pas cette nuit \(05:59–06:00\)/);
     assert.equal(r.rappel, 'Demain soir, reprogrammez : sinon la voiture ne chargera pas.');
     assert.deepEqual(c.journal.programmes.map((x) => x.action), [{ desactiver: true }]);
-    assert.deepEqual(c.journal.programmes[0].params, { ip: '192.168.1.48' });
+    assert.deepEqual(c.journal.programmes[0].params, { ip: '192.168.1.48', reessayer: true });
   });
   test('programmer une heure : ok seulement si relu conforme ; seule l\'heure part', async () => {
     const c = client();
@@ -181,50 +178,31 @@ test('site/local.js : un seul import (service.js), ni stockage ni console, jamai
   assert.ok(!/cleLocale|deviceId|\.cle\b|local\/tuya-local|local\/recherche|creerTransport|retenirAdresse/.test(code), 'plus de protocole ni de clé côté page');
 });
 
-// Seconde tentative (premier essai réel du 2026-11-21 : premier contact raté, second réussi).
-describe('Seconde tentative, jamais après une écriture', () => {
-  const ok = { ok: true, debut: '23:45', fin: '06:00', plage_active: true };
-  test('échec de contact sans écriture : une seconde tentative, qui réussit', async () => {
-    let n = 0;
-    const r = await programmerLocal({ allumage: '23:45' }, { client: client({ programmer: () => (++n === 1 ? { ok: false, erreur: 'hors_ligne' } : ok) }) }, '06:00');
-    assert.equal(n, 2);
-    assert.equal(r.etat, 'ok');
-  });
-  test('écriture partie (ecrit: true) : aucune seconde tentative, résultat incertain', async () => {
-    let n = 0;
-    const r = await programmerLocal({ allumage: '23:45' }, { client: client({ programmer: () => { n++; return { ok: false, erreur: 'delai', ecrit: true }; } }) }, '06:00');
-    assert.equal(n, 1, 'une écriture peut-être appliquée n\'est jamais relancée');
-    assert.deepEqual([r.etat, r.incertain], ['ko', true]);
-  });
-  test('relecture différente, requête invalide ou format : aucune seconde tentative', async () => {
-    for (const e of [{ ok: false, erreur: 'relecture_differente', ecrit: true }, { ok: false, erreur: 'requete_invalide' }, { ok: false, erreur: 'format' }, { ok: false, erreur: 'occupe' }]) {
-      let n = 0;
-      await programmerLocal({ allumage: '23:45' }, { client: client({ programmer: () => { n++; return e; } }) }, '06:00');
-      assert.equal(n, 1, e.erreur);
+// Nouvelles tentatives : depuis le 2026-11-22, elles sont faites par OperationsCable (JUnit : OperationsCableTest), qui est
+// le seul endroit où vit la règle « jamais de nouvel envoi après une écriture ». La page ne relance JAMAIS un envoi.
+describe('Nouvelles tentatives : demandées au natif, jamais relancées par la page', () => {
+  test('une seule demande d\'écriture, avec reessayer, quel que soit le résultat', async () => {
+    for (const e of [{ ok: false, erreur: 'hors_ligne' }, { ok: false, erreur: 'delai', ecrit: true }, { ok: false, erreur: 'relecture_differente', ecrit: true }, { ok: false, erreur: 'requete_invalide' }, { ok: false, erreur: 'format' }, { ok: false, erreur: 'occupe' }]) {
+      const c = client({ programmer: e });
+      const r = await programmerLocal({ allumage: '23:45' }, { client: c }, '06:00');
+      assert.equal(c.journal.programmes.length, 1, e.erreur);
+      assert.equal(c.journal.programmes[0].params.reessayer, true);
+      assert.equal(r.etat, 'ko');
+      assert.match(r.manuel, /début 23:45/);
     }
   });
-  test('deux échecs de contact : deux tentatives au plus, heure manuelle donnée', async () => {
-    let n = 0;
-    const r = await programmerLocal({ allumage: '23:45' }, { client: client({ programmer: () => { n++; return { ok: false, erreur: 'delai' }; } }) }, '06:00');
-    assert.equal(n, 2);
-    assert.match(r.manuel, /début 23:45/);
+  test('écriture partie (ecrit: true) : résultat incertain', async () => {
+    const r = await programmerLocal({ allumage: '23:45' }, { client: client({ programmer: { ok: false, erreur: 'delai', ecrit: true } }) }, '06:00');
+    assert.deepEqual([r.etat, r.incertain], ['ko', true]);
   });
-});
-
-describe('Seconde tentative : sous le plafond de 30 s de la page', () => {
-  test('la seconde tentative reçoit seulement le temps restant', async () => {
+  test('la durée de la demande reste de 20 s : le budget de 27 s est tenu par le natif', async () => {
     const c = client({ programmer: { ok: false, erreur: 'hors_ligne' } });
     await programmerLocal({ allumage: '23:45' }, { client: c }, '06:00');
-    const delais = c.journal.programmes.map((x) => x.delai);
-    assert.equal(delais.length, 2);
-    assert.equal(delais[0], 20000, 'première tentative : 20 s');
-    assert.ok(delais[1] > 0 && delais[1] <= 27000, `seconde tentative bornée : ${delais[1]}`);
+    assert.equal(c.journal.programmes[0].delai, 20000);
   });
-  test('trop peu de temps restant : pas de seconde tentative', async () => {
-    let n = 0;
-    const r = await programmerLocal({ allumage: '23:45' }, { client: client({ programmer: async () => { n++; await new Promise((ok) => setTimeout(ok, 30)); return { ok: false, erreur: 'delai' }; } }) }, '06:00');
-    assert.equal(n, 2); // 30 ms écoulées : il reste largement plus de 5 s
-    assert.equal(r.etat, 'ko');
+  test('site/local.js ne contient plus de liste d\'échecs à retenter ni de budget', () => {
+    const code = readFileSync(new URL('../site/local.js', import.meta.url), 'utf8').replace(/\/\/.*$/gm, '');
+    assert.ok(!/ECHECS_A_RETENTER|BUDGET_ECRITURE_MS|Date\.now\(\)/.test(code));
   });
 });
 
@@ -254,6 +232,6 @@ describe('Configuration du câble gardée par le natif (attente en arrière-plan
     assert.equal(confCable.adresse, '192.168.1.77');
     const p = await programmerLocal({ allumage: '03:30' }, { client: c, confCable }, '06:00');
     assert.equal(p.etat, 'ok');
-    assert.deepEqual(c.journal.programmes.at(-1).params, { ip: '192.168.1.77' });
+    assert.deepEqual(c.journal.programmes.at(-1).params, { ip: '192.168.1.77', reessayer: true });
   });
 });
