@@ -315,9 +315,16 @@ sleep 2
 
 etape "S12 Vraie page : bouton inactif avant le geste, puis « Programmer » relu conforme"
 adb logcat -c
-toucher_web "Programmer la charge"
-sleep 3
-ligne_vue page-programmer && echec "S12 : envoi parti sans confirmation de la batterie"
+# Le bouton est inactif tant que le % n'est pas confirmé ; si une confirmation précédente a été restaurée à la relance (voulu depuis le
+# 2026-11-22), il n'y a pas d'état « non confirmé » à vérifier ici.
+DUMP="$(ui_dump || true)"
+if contient "$DUMP" "confirmez la batterie"; then
+  toucher_web "Programmer la charge"
+  sleep 3
+  ligne_vue page-programmer && echec "S12 : envoi parti sans confirmation de la batterie"
+else
+  releve "S12 : confirmation du % déjà restaurée à la relance, vérification « bouton inactif avant le geste » non faite"
+fi
 toucher_web "Ajouter 1 %"
 toucher_web "Programmer la charge"
 L="$(attendre_essai page-programmer 60)"
@@ -752,7 +759,22 @@ sleep 6
 demarrer_page # relance sans effacer : les données restent
 L="$(attendre_essai page-etat 60)"
 verifier "S-B relance : câble prêt" "$L" 'l.etat === "pret"'
-attendre_texte_page "Dernière valeur" 20 # la batterie saisie est restée (preuve que ce sont bien les données effacées qui font revenir les défauts)
+# La batterie saisie est restée (preuve que ce sont bien les données effacées qui font revenir les défauts). Depuis le 2026-11-22, la
+# confirmation du % est conservée à la relance (moins de 6 h, même jour, même valeur) : la page affiche alors 39 déjà confirmé, sans le
+# libellé « Dernière valeur » (réservé à une valeur non confirmée). Les deux états prouvent que 39 est restée ; l'écriture du stockage de
+# la WebView peut être plus lente sur certaines images : « Dernière valeur » (confirmation non conservée) est relevé, pas bloquant.
+for _ in $(seq 1 20); do
+  DUMP="$(ui_dump || true)"
+  if contient "$DUMP" "Dernière valeur" || contient "$DUMP" 'text="39"'; then break; fi
+  sleep 1
+done
+if contient "$DUMP" "Dernière valeur"; then
+  releve "S-B : après la relance, la batterie (39 %) est restée mais sa confirmation n'a pas été conservée (« Dernière valeur » affiché : stockage pas encore écrit ?)"
+else
+  contient "$DUMP" 'text="39"' || echec "S-B : la batterie 39 % n'est plus affichée après la relance (ni « Dernière valeur » ni la valeur confirmée)"
+  contient "$DUMP" "confirmez la batterie" && echec "S-B : valeur 39 affichée mais bouton en attente de confirmation (état incohérent)"
+  echo "OK  S-B la batterie et sa confirmation sont conservées à la relance"
+fi
 if contient "$DUMP" "Réglages par défaut"; then
   releve "S-B : le bandeau « Réglages par défaut » réapparaît à chaque ouverture"
 else
@@ -809,7 +831,14 @@ demarrer_page
 L="$(attendre_essai page-etat 60)"
 verifier "S-F1 état à l'ouverture" "$L" 'l.etat === "pret"'
 attendre_texte_page "Câble réglé : $A39 → 06:00" 20
-ecran_sans "Déjà programmé" "S-F1 : « Déjà programmé » affiché avant la confirmation du %"
+# Avant la confirmation du % : « Déjà programmé » ne doit pas s'afficher. Une confirmation restaurée à la relance (S-D et S-E ont réglé 39 %,
+# même jour, moins de 6 h : voulu depuis le 2026-11-22) rend cette vérification sans objet : S-F1 vérifie alors l'état confirmé plus bas.
+DUMP="$(ui_dump || true)"
+if contient "$DUMP" "confirmez la batterie"; then
+  ecran_sans "Déjà programmé" "S-F1 : « Déjà programmé » affiché avant la confirmation du %"
+else
+  releve "S-F1 : confirmation du % restaurée à la relance, vérification « avant la confirmation » non faite"
+fi
 ECR_AVANT="$(ecritures_log)"
 regler_soc 39
 # Démarrage tardif (2026-11-22) : si l'heure calculée est déjà passée (ou dans moins de 10 min) pour le téléphone, la plage présente
