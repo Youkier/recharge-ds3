@@ -736,7 +736,12 @@ echo "S22 : annulation par la notification conforme" >> "$ATTENTE_RESUME"
 echo "OK  S22 annulation depuis la notification"
 
 # S21 est BLOQUANT depuis E3 (le pilote natif tient l'attente : la WebView gelée écran éteint n'y change rien).
-S21_ATTENDU_ECHEC="${S21_ATTENDU_ECHEC:-0}"
+# Exception TEMPORAIRE (décision de Mathieu du 2026-11-22, version 0.5) : sur API 36, S21 a échoué sans connexion au faux câble
+# après le retour du Wi-Fi écran éteint, alors qu'il passe sur API 35. En attendant le diagnostic (s21-connectivite.txt,
+# logcat-appli-s21.txt), S21 est relevé sans bloquer sur API 36 seulement. À retirer pour la 0.5.1.
+API_NIVEAU="$(adb shell getprop ro.build.version.sdk | tr -d '\015')"
+if [ "$API_NIVEAU" = 36 ]; then S21_DEFAUT=1; else S21_DEFAUT=0; fi
+S21_ATTENDU_ECHEC="${S21_ATTENDU_ECHEC:-$S21_DEFAUT}"
 etape "S21 Attente écran éteint et verrouillé 330 s, puis envoi au retour du Wi-Fi : notification « Charge programmée » au plus 2 min après"
 lancer_faux
 # 330 s : au-delà de 5 min, la WebView d'une page cachée est gelée ; le pilote natif ne dépend pas d'elle.
