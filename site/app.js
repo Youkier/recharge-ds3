@@ -142,7 +142,14 @@ import { confirmationValable, blocageCable, plageRelue, plageDuCable, ligneCable
   // L'adresse ?soir=AAAA-MM-JJ simule le soir, seulement sur la machine locale (essais).
   function soirCourant() { return soirSimule(location.search, location.hostname) || soirDe(new Date(), cur.hcStart, cur.hcEnd); }
   function cleSoir() { var d = soirCourant(); return typeof d === "string" ? d : d.getFullYear() + "-" + (d.getMonth() + 1) + "-" + d.getDate(); }
-  var soirAffiche = null, dernierPlan = null, dernierNuit = null;
+  var soirAffiche = null, dernierPlan = null, dernierNuit = null, petite = null;
+  // « déjà réglé » sous l'heure fixe seulement si la plage lue sur le câble porte bien cette heure ; sinon rien.
+  function majTag() {
+    var t = $("tagSmall");
+    if (petite && petite.aussi) { t.textContent = "à régler aussi"; t.hidden = false; return; }
+    var ok = !!(petite && plageCable && (petite.fin ? plageCable.fin : plageCable.debut) === petite.heure);
+    t.textContent = "déjà réglé"; t.hidden = !ok;
+  }
 
   function render() {
     var rd = read(), p = rd.p, bad = rd.bad, sansPrix = rd.sansPrix;
@@ -221,7 +228,8 @@ import { confirmationValable, blocageCable, plageRelue, plageDuCable, ligneCable
       $("kSmall").textContent = sv ? "Éteindre à" : "Allumer à";
       $("tSmall").textContent = fmt(sv ? r.end : r.start);
       // En mode « commencer à », une charge qui doit débuter avant les heures creuses change aussi l'arrêt.
-      $("tagSmall").textContent = (p.mode === "start" && sv) ? "à régler aussi" : "déjà réglé";
+      petite = { heure: fmt(sv ? r.end : r.start), fin: sv, aussi: p.mode === "start" && sv };
+      majTag();
       var note = $("heroNote");
       if (r.status === "short") {
         note.hidden = false;
@@ -362,6 +370,7 @@ import { confirmationValable, blocageCable, plageRelue, plageDuCable, ligneCable
     // Aucune dernière valeur (premier lancement, champ vide) : rien à garder, on invite à saisir.
     $("socHintText").textContent = empty ? LIBELLES_SOC.aucune : LIBELLES_SOC.derniere;
     $("keepBtn").hidden = empty;
+    $("socCard").classList.toggle("vide", empty);
   }
   function bump(d) {
     var raw = String($("soc").value).trim(), v = Number(raw);
@@ -990,7 +999,8 @@ import { confirmationValable, blocageCable, plageRelue, plageDuCable, ligneCable
   function majPlage(plage) {
     plageCable = plage || null;
     var t = ligneCable(plageCable);
-    $("cablePlage").hidden = !t;
+    $("cablePlage").hidden = !t && !pontOk; // dans l'appli, la place est réservée dès l'ouverture : rien ne glisse à l'apparition
+    majTag();
     $("cablePlage").textContent = t || "";
     updateSend();
   }

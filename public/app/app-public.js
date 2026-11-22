@@ -66,7 +66,7 @@ export function lireReglages(brut, soc) {
 
 // Résumé des réglages réellement utilisés (p vient de lireReglages). Texte seul, sans DOM.
 export function resumeReglages(p) {
-  return "Calculé avec : cible " + fr(p.target, 0) + " %, SOH " + fr(p.soh, 0) + " %, " + fr(p.amp, 0) + " A, heures creuses " + p.hcStart + "–" + p.hcEnd + ", départ " + p.dep;
+  return "Calculé avec : cible " + fr(p.target, 0) + " %, état de la batterie " + fr(p.soh, 0) + " %, courant " + fr(p.amp, 0) + " A, heures creuses " + p.hcStart + "–" + p.hcEnd + ", départ " + p.dep;
 }
 
 // Rend le modèle de vue : { statut, titre, message, lignes:[[libellé, valeur]], champ, prixManquants, chiffres }.
@@ -82,9 +82,11 @@ export function resultatAvecDefauts(brut, soc, soir) {
   var vue = resultat(b, s, soir);
   vue.provisoire = "";
   if (vue.statut === "err" || (!voiture && !batterie)) return vue;
+  if (batterie && vue.statut !== "none") vue.titre = "Exemple : " + vue.titre.charAt(0).toLowerCase() + vue.titre.slice(1); // atténué tant que la batterie n'est pas saisie
+  vue.attenue = batterie;
   vue.chiffres = null; // jamais de chiffres à partager calculés avec des valeurs par défaut
   vue.provisoire = voiture
-    ? "Résultat provisoire : calculé avec une voiture de " + CAP_PROVISOIRE + " kWh utiles" + (batterie ? " et une batterie à " + SOC_PROVISOIRE + " %" : "") + ". Réglez votre voiture pour un résultat exact."
+    ? "Résultat provisoire : calculé avec une voiture de " + CAP_PROVISOIRE + " kWh (capacité utile de la batterie)" + (batterie ? " et une batterie à " + SOC_PROVISOIRE + " %" : "") + ". Réglez votre voiture pour un résultat exact."
     : "Résultat provisoire : calculé avec une batterie à " + SOC_PROVISOIRE + " %. Saisissez votre batterie à l'arrivée.";
   return vue;
 }
@@ -290,7 +292,7 @@ function demarrer() {
     res.textContent = "";
     res.dataset.statut = vue.statut || "attente";
     function el(tag, texte, classe) { var e = document.createElement(tag); if (texte) e.textContent = texte; if (classe) e.className = classe; return e; }
-    res.classList.toggle("provisoire", !!vue.provisoire);
+    res.classList.toggle("provisoire", !!vue.attenue);
     res.appendChild(el("p", vue.titre, "grand"));
     if (vue.provisoire) res.appendChild(el("p", vue.provisoire, "aide-provisoire"));
     if (vue.message) res.appendChild(el("p", vue.message));

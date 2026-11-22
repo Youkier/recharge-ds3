@@ -97,7 +97,7 @@ export function plageDuCable(r) {
   let debut, fin, active = true;
   if (r.etat === 'pret' && r.plage && typeof r.plage === 'object') {
     debut = r.plage.debut; fin = r.plage.fin;
-    if (r.plage.plage_active === false) active = false;
+    active = r.plage.plage_active === true ? true : r.plage.plage_active === false ? false : null; // null : inconnu
   } else if (r.etat === 'ok') {
     ({ debut, fin } = plageRelue(r));
   } else return null;
@@ -120,7 +120,7 @@ export function ligneCable(plage) {
 
 // Le câble a-t-il déjà ce qu'on s'apprête à lui envoyer ? Alors « Programmer » n'a rien à faire (aucun envoi inutile).
 export function dejaProgramme(plage, demande) {
-  if (!plage || !demande || plage.active === false) return false;
+  if (!plage || !demande || plage.active !== true) return false; // seulement une plage lue ACTIVE
   if (demande.desactiver) return plageSansCharge(plage);
   return typeof demande.allumage === 'string' && plage.debut === demande.allumage;
 }

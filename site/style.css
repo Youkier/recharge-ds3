@@ -107,7 +107,9 @@ button.pill { cursor: pointer; }
 .soc-hint { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 14px; color: var(--muted); margin-top: 4px; }
 
 /* Ligne « Câble réglé », bandeaux d'information */
-.cable-plage { font-size: 15px; font-weight: 600; padding: 0 4px; }
+.cable-plage { font-size: 15px; font-weight: 600; padding: 0 4px; min-height: 22px; }
+.soc-card.vide .bigval .pct { color: var(--muted); }
+#soc::placeholder { color: var(--muted); opacity: 1; }
 .msg.info { background: var(--neutral-bg); color: var(--ink); border: 1px solid var(--line); }
 .bandeau { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 12px; }
 .bandeau-actions { display: inline-flex; align-items: center; gap: 4px 16px; flex-wrap: wrap; }

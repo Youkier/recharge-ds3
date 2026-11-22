@@ -180,8 +180,8 @@ test("message affiché quand un lien de partage est appliqué", () => {
 
 test("résumé des réglages : valeurs réellement utilisées, sans DOM", () => {
   const lu = A.lireReglages({ ...base, target: "100", soh: "92", amp: "10", courant: "10", hcStart: "23:00", hcEnd: "07:00", dep: "08:15" }, "38");
-  assert.equal(A.resumeReglages(lu.p), "Calculé avec : cible 100 %, SOH 92 %, 10 A, heures creuses 23:00–07:00, départ 08:15");
-  assert.match(A.resultat(base, "38").resume, /^Calculé avec : cible 80 %, SOH 100 %, 16 A/);
+  assert.equal(A.resumeReglages(lu.p), "Calculé avec : cible 100 %, état de la batterie 92 %, courant 10 A, heures creuses 23:00–07:00, départ 08:15");
+  assert.match(A.resultat(base, "38").resume, /^Calculé avec : cible 80 %, état de la batterie 100 %, courant 16 A/);
   assert.equal(A.resultat(base, "").resume, "");
   assert.equal(A.resultat({ ...base, cap: "" }, "38").resume, "");
 });

@@ -32,7 +32,8 @@
     <string name="attente_titre">En attente du Wi-Fi et du câble</string>
     <string name="attente_texte">Programmation de %1$s dès que le câble répond</string>
     <string name="resultat_ok_titre">Charge programmée : démarrage %1$s</string>
-    <string name="resultat_ok_texte">Relu sur le câble.</string>
+    <string name="resultat_ok_texte">Relu sur le câble. Pensez à brancher la voiture ce soir.</string>
+    <string name="resultat_aucune_texte">Demain soir, reprogrammez : sinon la voiture ne chargera pas.</string>
     <string name="resultat_aucune_titre">Pas de charge cette nuit</string>
     <string name="resultat_immediat_titre">Charge programmée : démarrage immédiat</string>
     <string name="resultat_ko_titre">Programmation non faite</string>

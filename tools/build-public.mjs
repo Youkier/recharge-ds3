@@ -8,7 +8,7 @@ import { readFileSync, writeFileSync, mkdirSync, rmSync, copyFileSync, readdirSy
 import { resolve, dirname, join, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { lignesValides } from "../site/vehicules.js";
-import { fr, fdur, effAuto, plan, fmt } from "../site/calc.js";
+import { fr, fdur, effAuto } from "../site/calc.js";
 
 const RACINE = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 export const SORTIE_PAR_DEFAUT = join(RACINE, "dist", "public");
@@ -230,15 +230,6 @@ function dureeType(cap) {
   const rate = P * effAuto(16, 230) / 100; // rendement proposé par le site (effAuto, calc.js)
   return Math.ceil(0.6 * cap / rate * 60 / 5) * 5;
 }
-// Exemple chiffré du premier écran : mêmes valeurs par défaut que le résultat provisoire de la page (voiture de 50 kWh utiles,
-// batterie à 38 % à l'arrivée, 16 A, 230 V, heures creuses 22:00-06:00, cible 80 %), calculé par calc.js : jamais écrit à la main.
-export const EXEMPLE = { cap: 50, soh: 100, soc: 38, target: 80, dep: "07:30", hcStart: "22:00", hcEnd: "06:00", amp: 16, volt: 230 };
-export function texteExemple() {
-  const p = { ...EXEMPLE, eff: effAuto(EXEMPLE.amp, EXEMPLE.volt), pre: 0, deduct: false, mode: "end", pHC: 0, pHP: 0 };
-  const r = plan(p);
-  if (r.status !== "ok") throw new Error("Exemple chiffré : le calcul de référence n'est plus « ok »");
-  return `Voiture de ${EXEMPLE.cap} kWh utiles, batterie à ${EXEMPLE.soc} % en arrivant, recharge à ${EXEMPLE.amp} A (${fr(r.P, 1)} kW), heures creuses ${EXEMPLE.hcStart}–${EXEMPLE.hcEnd} : démarrer la charge à ${fmt(r.start)} pour finir à ${EXEMPLE.target} % à ${fmt(r.end)}.`;
-}
 const LIB_LIMITE = { true: "Oui", false: "Non", inconnu: "Nous ne savons pas encore" };
 function htmlModele(e, base) {
   const guideCable = `<a href="${base}guides/cable-ou-borne-programmable/">câble ou borne programmable</a>`;
@@ -333,7 +324,7 @@ export function construire({ sortie = SORTIE_PAR_DEFAUT, env = process.env, sour
     titres.add(titre); descriptions.add(description);
     const commun = {
       base: p.base, phc: esc(phc), php: esc(php), source_tarifs: sourceTarifs,
-      exemple: esc(texteExemple()), comment_regler: htmlCommentRegler(offres, p.base), liste_attente: htmlListeAttente(offres),
+      comment_regler: htmlCommentRegler(offres, p.base), liste_attente: htmlListeAttente(offres),
       liste_remuneres: htmlListeRemuneres(offres), don: htmlDon(offres), confidentialite_attente: attenteConfidentialite,
       liste_modeles: pagesModeles.length
         ? `<h2>Une page par modèle</h2>\n<ul class="liste-pages">\n${pagesModeles.map((q) => `<li><a href="${p.base}${q.chemin.slice(1)}">${esc(q.modele.marque)} ${esc(q.modele.modele)}</a></li>`).join("\n")}\n</ul>` : "",

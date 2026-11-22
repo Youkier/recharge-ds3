@@ -37,7 +37,7 @@ object Attente {
      */
     fun textes(issue: Issue, avecHeure: Boolean): Pair<Int, Int> = if (avecHeure) when (issue) {
         Issue.PROGRAMMEE -> R.string.resultat_ok_titre to R.string.resultat_ok_texte
-        Issue.AUCUNE -> R.string.resultat_aucune_titre to R.string.resultat_ok_texte
+        Issue.AUCUNE -> R.string.resultat_aucune_titre to R.string.resultat_aucune_texte
         Issue.IMMEDIATE -> R.string.resultat_immediat_titre to R.string.resultat_ok_texte
         Issue.NON_FAITE -> R.string.resultat_ko_titre to R.string.resultat_a_la_main
         Issue.INCERTAINE -> R.string.resultat_ko_titre to R.string.resultat_verifier
@@ -46,7 +46,7 @@ object Attente {
         Issue.APPLI_FERMEE -> R.string.resultat_fermee_titre to R.string.resultat_fermee_texte
     } else when (issue) {
         Issue.PROGRAMMEE -> R.string.resultat_ok_titre_sans_heure to R.string.resultat_ok_texte
-        Issue.AUCUNE -> R.string.resultat_aucune_titre to R.string.resultat_ok_texte
+        Issue.AUCUNE -> R.string.resultat_aucune_titre to R.string.resultat_aucune_texte
         Issue.IMMEDIATE -> R.string.resultat_immediat_titre to R.string.resultat_ok_texte
         Issue.NON_FAITE -> R.string.resultat_ko_titre to R.string.resultat_a_la_main_sans_heure
         Issue.INCERTAINE -> R.string.resultat_ko_titre to R.string.resultat_verifier_sans_heure

@@ -44,7 +44,8 @@ test('textes : fixes, dans strings.xml, apostrophes échappées ; la page ne fou
   assert.equal(valeur('attente_titre'), 'En attente du Wi-Fi et du câble');
   assert.equal(valeur('attente_texte'), 'Programmation de %1$s dès que le câble répond');
   assert.equal(valeur('resultat_ok_titre'), 'Charge programmée : démarrage %1$s');
-  assert.equal(valeur('resultat_ok_texte'), 'Relu sur le câble.');
+  assert.equal(valeur('resultat_ok_texte'), 'Relu sur le câble. Pensez à brancher la voiture ce soir.');
+  assert.equal(valeur('resultat_aucune_texte'), 'Demain soir, reprogrammez : sinon la voiture ne chargera pas.');
   assert.equal(valeur('resultat_ko_titre'), 'Programmation non faite');
   assert.equal(valeur('resultat_a_la_main'), 'À régler à la main dans Smart Life : début %1$s.');
   assert.equal(valeur('resultat_verifier'), 'Vérifiez dans Smart Life ; sinon réglez le début à %1$s.');
