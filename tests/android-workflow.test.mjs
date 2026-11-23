@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
-const src = readFileSync(fileURLToPath(new URL('../.github/workflows/android.yml', import.meta.url)), 'utf8');
+const src = readFileSync(fileURLToPath(new URL('../.github/workflows/android.yml', import.meta.url)), 'utf8').replace(/\r\n/g, '\n'); // copie Windows en CRLF
 const sansCommentaires = src.replace(/^\s*#.*$/gm, '').replace(/\s#\s.*$/gm, '');
 
 test('déclencheurs : push sur main filtré et lancement à la main, jamais pull_request', () => {
