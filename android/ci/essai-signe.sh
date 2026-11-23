@@ -16,7 +16,9 @@ PKG="fr.rechargeds3.coque"
 ACT="$PKG/.MainActivity"
 echec() { echo "ECHEC essai signé : $*"; exit 1; }
 
-if unzip -Z1 "$APK" | grep -q '^assets/android/essai/'; then echec "la page d'essai est embarquée dans l'APK signé"; fi
+# Liste lue d'abord : sous pipefail, `unzip | grep -q` peut finir en SIGPIPE et laisser passer une régression.
+LISTE="$(unzip -Z1 "$APK")"
+if grep -q '^assets/android/essai/' <<< "$LISTE"; then echec "la page d'essai est embarquée dans l'APK signé"; fi
 
 ui_dump() {
   local i

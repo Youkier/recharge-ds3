@@ -83,7 +83,24 @@ class AttenteWifi : Service(), EcouteurAttente {
         pilote.ecouteur = this
         principal.removeCallbacks(filet)
         principal.postDelayed(filet, DUREE_MAX_MS)
-        fil = Thread({ pilote.lancer() }, "attente-cable").apply { isDaemon = true; start() }
+        fil = Thread({
+            pilote.lancer()
+            // Seule décision d'arrêt du service, sur le fil principal, quand la boucle rend la main (avec ou sans termine() : phase
+            // déjà quittée avant le départ du fil). Course : une nouvelle « Programmer » peut passer (pilote.demarrer) et son
+            // onStartCommand voir `fil != null` sans lancer la boucle ; si le pilote est de nouveau en attente, on relance donc ici ;
+            // sinon `fil` repasse à null et stopSelf(id) n'arrête le service que si aucun démarrage plus récent n'est arrivé.
+            // Seul le fil encore enregistré décide (un seul fil de boucle à la fois).
+            val moi = Thread.currentThread()
+            principal.post { if (fil === moi) apresFinBoucle() }
+        }, "attente-cable").apply { isDaemon = true; start() }
+    }
+
+    /** Fil principal seulement : relance la boucle si une nouvelle attente a démarré, sinon arrête le service. */
+    private fun apresFinBoucle() {
+        when (SuiviDemarrages.suiteApresFin(pilote.phaseActuelle())) {
+            SuiviDemarrages.Suite.RELANCER -> lancerBoucle()
+            SuiviDemarrages.Suite.ARRETER -> { fil = null; stopSelf(demarrages.pourArret()) }
+        }
     }
 
     // --- EcouteurAttente (appelé depuis les fils du pilote) ---
@@ -95,16 +112,8 @@ class AttenteWifi : Service(), EcouteurAttente {
     override fun termine(issue: Attente.Issue, debut: String?, fin: String?) {
         pilote.ecouteur = null
         if (!activiteVisible) publierResultat(applicationContext, issue, debut, fin)
-        // Tout se décide sur le fil principal, donc après tout démarrage déjà reçu. Course : une nouvelle « Programmer » peut passer
-        // (pilote.démarrer) et son onStartCommand arriver AVANT ce post ; il a vu `fil != null` et n'a pas lancé la boucle. Si le pilote
-        // est de nouveau en attente, on relance donc la boucle ici au lieu d'arrêter ; sinon `fil` repasse à null et stopSelf(id) n'arrête
-        // le service que si aucun démarrage plus récent n'est arrivé.
-        principal.post {
-            when (SuiviDemarrages.suiteApresFin(pilote.phaseActuelle())) {
-                SuiviDemarrages.Suite.RELANCER -> lancerBoucle()
-                SuiviDemarrages.Suite.ARRETER -> { fil = null; stopSelf(demarrages.pourArret()) }
-            }
-        }
+        // L'arrêt ou la relance du service ne se décide pas ici mais quand le fil de la boucle rend la main (voir lancerBoucle) :
+        // une seule décision par fil, même si termine() vient d'un autre fil (Annuler, filet, nouvelle clé).
     }
 
     // Filet : connectedDevice n'a pas d'échéance système connue ; si elle venait à exister, on le dit et on s'arrête.
