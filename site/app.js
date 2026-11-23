@@ -858,7 +858,7 @@ import { confirmationValable, confirmationAEnregistrer, confirmationRestauree, C
     journal({ action: "page-programmer", ok: res.etat === "ok", debut: pl.debut, fin: pl.fin, tardif: res.tardif === true ? true : undefined, code: res.etat === "ko" ? res.code : undefined, manuel: res.etat === "ko" ? res.manuel : undefined });
     if (res.etat === "ok") majPlage(plageDuCable(res)); else if (res.incertain) majPlage(null);
     if (res.etat === "ko" && res.code === "local_attente_cle") majEtatCable().then(function () { ouvrirPanneau(true); });
-    else if (res.etat === "ok" && !document.hidden) majEtatCable();
+    else if (res.etat === "ok") cablePretApresSucces(res);
     // Pas de setDemande ici : la demande figée du natif peut différer de la saisie actuelle, et la carte du résultat ne doit pas disparaître.
     updateSend();
   }
@@ -939,7 +939,9 @@ import { confirmationValable, confirmationAEnregistrer, confirmationRestauree, C
         // Aucun repli vers le service : si le mode Local échoue, l'échec est affiché avec l'heure à régler à la main.
         // Plafond de 30 s : l'échec est affiché, mais le bouton reste occupé jusqu'à la fin réelle de l'envoi.
         var minuteur = null;
+        var t0 = performance.now();
         var reel = opCableLancer(function () { return localPret().then(function (l) { return l.programmerLocal(d, l.deps, finHC); }); });
+        reel.then(function (r) { journal({ action: "page-duree", op: "ecriture", ok: !!r && r.etat === "ok", ms: Math.round(performance.now() - t0) }); }, function () { /* sans effet */ });
         localEnVol = reel;
         var fin = function () { clearTimeout(minuteur); if (localEnVol === reel) { localEnVol = null; try { updateSend(); } catch (e) { /* sans effet */ } } };
         reel.then(fin, fin);
@@ -965,7 +967,7 @@ import { confirmationValable, confirmationAEnregistrer, confirmationRestauree, C
       if (m === "local") {
         var pl = plageRelue(res);
         journal({ action: "page-programmer", ok: !!res && res.etat === "ok", debut: pl.debut, fin: pl.fin, tardif: res && res.tardif === true ? true : undefined, code: res && res.etat === "ko" ? res.code : undefined, manuel: res && res.etat === "ko" ? res.manuel : undefined });
-        if (res && res.etat === "ok" && !document.hidden) majEtatCable();
+        if (res && res.etat === "ok") cablePretApresSucces(res);
       }
     });
   }
@@ -975,6 +977,13 @@ import { confirmationValable, confirmationAEnregistrer, confirmationRestauree, C
   var cherche = false, minuteurRecherche = null, localCache = null, rechercheAutoFaite = false, rechercheEchouee = false;
   // Journal des essais sur émulateur : version de mise au point seulement, une ligne par action, jamais de clé,
   // d'identifiant ni de trame (le résultat de service.js n'en contient pas).
+  // Après un envoi réussi, programmerLocal a déjà relu et vérifié la plage : aucune connexion de plus. On reproduit ici ce que
+  // majEtatCable déduit d'une lecture réussie (pastille « Câble prêt », plage), à partir du résultat seulement.
+  function cablePretApresSucces(res) {
+    if (cherche) return; // une recherche en cours garde la pastille
+    pastilleMontre("pret");
+    majPlage(plageDuCable(res));
+  }
   function journal(o) { if (debugPont) { try { console.log("ESSAI " + JSON.stringify(o)); } catch (e) { /* sans effet */ } } }
   function localPret() {
     if (!localCache) {
@@ -986,6 +995,7 @@ import { confirmationValable, confirmationAEnregistrer, confirmationRestauree, C
         var client = mods[1].creerClientPont(globalThis.PontLocal);
         return client.demarrage().then(function (dem) {
           debugPont = !!(dem && dem.ok && dem.variante === "debug");
+          journal({ action: "page-prete", ms: Math.round(performance.now()) }); // depuis le début du chargement de la page
           return {
             programmerLocal: mods[0].programmerLocal, surLeReseauDeLaMaison: mods[0].surLeReseauDeLaMaison, etatCable: mods[0].etatCable, chercherCable: mods[0].chercherCable, resultatAttente: mods[0].resultatAttente,
             client: client,
@@ -1029,8 +1039,9 @@ import { confirmationValable, confirmationAEnregistrer, confirmationRestauree, C
   function majEtatCable() {
     if (!pontOk || cherche || opCable) return Promise.resolve();
     pastilleMontre("verification");
+    var t0 = performance.now();
     return opCableLancer(function () { return localPret().then(function (l) { return l.etatCable(l.deps); }); }).then(function (r) {
-      journal({ action: "page-etat", etat: r.etat });
+      journal({ action: "page-etat", etat: r.etat, ms: Math.round(performance.now() - t0) });
       if (cherche) return;
       pastilleMontre(r.etat);
       if (r.etat === "pret") majPlage(plageDuCable(r));
@@ -1041,7 +1052,7 @@ import { confirmationValable, confirmationAEnregistrer, confirmationRestauree, C
   function lancerRecherche(auto) {
     if (cherche || opCable) return;
     cherche = true;
-    var echeance = null;
+    var echeance = null, t0 = performance.now();
     // Pendant la recherche, seule la pastille reste (le panneau ferait glisser l'écran) ; le compte à rebours est dans la pastille.
     pastilleMontre("recherche");
     ouvrirPanneau(false);
@@ -1053,7 +1064,7 @@ import { confirmationValable, confirmationAEnregistrer, confirmationRestauree, C
     minuteurRecherche = setInterval(texte, 1000);
     var fin = function (r) {
       clearInterval(minuteurRecherche); cherche = false; $("pillSec").textContent = "";
-      journal({ action: "page-chercher", auto: auto === true, ok: !!(r && r.ok), etat: r && r.ok ? "pret" : r && r.etat });
+      journal({ action: "page-chercher", auto: auto === true, ok: !!(r && r.ok), etat: r && r.ok ? "pret" : r && r.etat, ms: Math.round(performance.now() - t0) });
       if (r && r.ok) { rechercheEchouee = false; pastilleMontre("pret"); majPlage(plageDuCable({ etat: "pret", plage: r.plage })); ouvrirPanneau(false); return; }
       rechercheEchouee = true;
       var e = r && r.etat;

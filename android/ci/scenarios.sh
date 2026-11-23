@@ -1357,7 +1357,7 @@ g_tardif() { # g_tardif <thème>
     attendre_texte_page "Heure de début dépassée" 20
     sleep 1
     capturer "$1-G1-demarrage-tardif"
-    attendre_essai page-etat 40 > /dev/null # relecture de la page après l'envoi : à finir avant de relancer le faux câble
+    sleep 1 # plus de relecture de la page après un envoi réussi (décision du 2026-11-23) : rien à attendre
   else
     verifier "S-G trop tard ($1)" "$L" 'l.ok === false && l.code === "trop_tard"'
     [ "$(ecritures_log)" = "$ECR_T" ] || echec "S-G trop tard ($1) : le faux câble a reçu une écriture alors que rien ne devait être écrit"
@@ -1384,7 +1384,6 @@ g_pas_de_charge() { # g_pas_de_charge <thème>
   sleep 1
   capturer "$1-G2-pas-de-charge"
   attendre_texte_page "Déjà réglé : pas de charge" 20 # la plage relue est « pas de charge » : le bouton le dit
-  attendre_essai page-etat 40 > /dev/null
 }
 mode_theme clair
 demarrer_page

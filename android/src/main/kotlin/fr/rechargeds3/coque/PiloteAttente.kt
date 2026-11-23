@@ -269,7 +269,9 @@ class PiloteAttente(
             if (!rechercheFaite && now - cableDepuis >= silenceMs) {
                 rechercheFaite = true
                 setEtape(s, "recherche")
+                val t0 = horloge()
                 val r = operations.chercher(null, true, Origine.SERVICE) { }
+                trace("recherche ok=" + (r["ok"] == true) + " ms=" + (horloge() - t0))
                 if (!actif(s)) return
                 if (r["ok"] == true) { envoyer(s, a); return }
                 if (r["erreur"] == "pas_de_cle") { terminer(s, Issue.NON_FAITE, erreur("attente_cle")); return }
@@ -279,9 +281,10 @@ class PiloteAttente(
             }
             if (derniere == null || now - derniere >= LECTURE_MS || now < derniere) {
                 setEtape(s, "cable")
+                val t0 = horloge()
                 val r = operations.lire(null, DELAI_LECTURE_MS, true, Origine.SERVICE)
                 derniere = horloge()
-                trace("lecture ok=" + (r["ok"] == true) + " erreur=" + (r["erreur"] ?: "-"))
+                trace("lecture ok=" + (r["ok"] == true) + " erreur=" + (r["erreur"] ?: "-") + " ms=" + (horloge() - t0))
                 if (!actif(s)) return
                 if (r["ok"] == true) { envoyer(s, a); return }
                 val e = r["erreur"] as? String
@@ -308,7 +311,9 @@ class PiloteAttente(
         if (perime) { terminer(s, Issue.NON_FAITE, erreur("attente_cable")); return }
         trace("envoi")
         ecouteur?.envoiCommence()
+        var t0 = horloge()
         var r = operations.programmer(null, a, DELAI_ENVOI_MS, true, Origine.SERVICE)
+        trace("ecriture ok=" + (r["ok"] == true) + " ms=" + (horloge() - t0))
         // « occupe » : une opération de la page tenait le câble, RIEN n'a été lancé ni écrit : un nouvel essai court est sans risque
         // (jamais après une autre erreur : une écriture a pu partir). L'échéance de 10 min est ignorée ici : l'envoi est commencé.
         var reessais = 0
@@ -319,7 +324,9 @@ class PiloteAttente(
             dormir(OCCUPE_ENVOI_MS)
             if (synchronized(verrou) { session != s || phase != Phase.ENVOI }) return // terminée par ailleurs (filet)
             if (envoiCoupe(s)) { terminer(s, Issue.ANNULEE, erreur("attente_annulee")); return } // arrêtée pendant la pause : rien n'a été écrit
+            t0 = horloge()
             r = operations.programmer(null, a, DELAI_ENVOI_MS, true, Origine.SERVICE)
+            trace("ecriture ok=" + (r["ok"] == true) + " ms=" + (horloge() - t0))
         }
         terminer(s, Attente.issue(a, r), r)
     }

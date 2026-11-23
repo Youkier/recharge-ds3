@@ -272,6 +272,21 @@ describe('Attente du Wi-Fi de la maison', () => {
     // Le résultat du natif est acquitté après affichage ; reprise à l'ouverture et au retour de l'appli.
     assert.match(src, /appelPont\("attenteAcquitter"\)/);
     assert.match(src, /reprendreAttente\(\)\.then\(function \(\) \{ if \(!att && !busy\) majEtatCable\(\); \}\)/);
+    // Décision du 2026-11-23 : plus de relecture par la page après un succès (envoi direct ou résultat de l'attente) ; seule la
+    // relecture du cas « clé manquante » reste. La pastille et la plage viennent du résultat, sans connexion.
+    assert.ok(!/etat === "ok"[^\n]*majEtatCable/.test(src), 'aucune relecture après un succès');
+    assert.equal((src.match(/cablePretApresSucces\(res\)/g) || []).length, 3); // définition + deux appels
+    assert.match(src, /local_attente_cle"\) majEtatCable\(\)/);
+    const fnSucces = src.slice(src.indexOf('function cablePretApresSucces'), src.indexOf('function journal'));
+    assert.match(fnSucces, /pastilleMontre\("pret"\);\s*majPlage\(plageDuCable\(res\)\)/);
+    assert.ok(!fnSucces.includes('opCableLancer') && !fnSucces.includes('majEtatCable'), 'aucune connexion');
+    // Durées en ms : seulement dans des lignes de journal, qui n'écrivent que si la version est « debug ».
+    assert.match(src, /function journal\(o\) \{ if \(debugPont\)/);
+    for (const action of ['page-prete', 'page-duree', 'page-etat', 'page-chercher']) {
+      const l = src.split('\n').find((x) => x.includes('journal({ action: "' + action + '"'));
+      assert.ok(l && /ms: Math\.round\(performance\.now\(\)/.test(l), action + ' porte une durée');
+      assert.ok(!/(adresse|cle|trame|identifiant)\s*:/i.test(l), action + ' ne porte ni adresse ni clé');
+    }
     // Une attente reprise après un rechargement n'est pas annulée par un changement de saisie.
     assert.match(src, /if \(att && !att\.reprise && !memeDemande\(d, att\.d\)\) annulerAttente\(/);
     // La page ne lit ni n'écrit jamais la clé : seules les heures partent vers le natif.
