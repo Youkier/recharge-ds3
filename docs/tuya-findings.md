@@ -259,6 +259,8 @@ Hypothèses : réutiliser le `CLIENT_ID` de Home Assistant dans une appli diffus
 
 **Essai réel du 2026-11-23** (`py tools/cle-locale-qr.py`, sans `--enregistrer`, QR scanné par Mathieu avec Smart Life, compte dédié) : le flux QR du SDK de partage fonctionne ; le compte dédié voit 1 appareil, le câble est trouvé, et la clé locale renvoyée est IDENTIQUE à celle de `tools/.env` (16 caractères). Voie de secours confirmée pour relire la clé quand l'essai IoT Core aura expiré ; rien n'a été enregistré. Source : sortie du script (seulement IDENTIQUE/DIFFÉRENTE et la longueur).
 
+**Un seul téléphone (essai du 2026-11-23, Pixel 9, Smart Life)** : le QR affiché sur le PC a été photographié avec l'appareil photo du Pixel, puis lu depuis l'écran de scan de Smart Life, qui donne accès à la galerie ; connexion acceptée, câble trouvé, clé IDENTIQUE. Un QR enregistré en image sur le téléphone lui-même peut donc être scanné sans second écran. Source : constat de Mathieu et sortie du script.
+
 ## Répétition de la plage de charge différée (2026-11-22)
 
 La plage de charge différée du câble (dp 151, `ss`/`se`, `m` activée) **se répète chaque nuit** tant qu'elle n'est pas modifiée ou désactivée. Source : constat d'usage de Mathieu (Smart Life et charges nocturnes), rapporté le 2026-11-22 ; non vérifié par lecture des dp un matin après exécution. Conséquence : « Déjà programmé » (plage lue active et identique) est fondé ; un soir sans programmation, le câble rejoue la dernière plage.
