@@ -257,6 +257,8 @@ Vérifié par lecture du code (https://raw.githubusercontent.com/vineetchoudhary
 - Appels sortants hors Tuya : seulement la vérification de mise à jour (API GitHub Releases, aucune donnée de compte) et le superviseur Home Assistant local. Pas de télémétrie dans les fichiers lus. Le reste du code (`app.py`, `lan_scan.py`, paquet `tuya_local_key/`) n'a PAS été lu.
 Hypothèses : réutiliser le `CLIENT_ID` de Home Assistant dans une appli diffusée serait un usage d'identité d'un tiers, probablement contraire aux conditions de Tuya (non lues) ; fonctionnement sur notre câble non testé.
 
+**Essai réel du 2026-11-23** (`py tools/cle-locale-qr.py`, sans `--enregistrer`, QR scanné par Mathieu avec Smart Life, compte dédié) : le flux QR du SDK de partage fonctionne ; le compte dédié voit 1 appareil, le câble est trouvé, et la clé locale renvoyée est IDENTIQUE à celle de `tools/.env` (16 caractères). Voie de secours confirmée pour relire la clé quand l'essai IoT Core aura expiré ; rien n'a été enregistré. Source : sortie du script (seulement IDENTIQUE/DIFFÉRENTE et la longueur).
+
 ## Répétition de la plage de charge différée (2026-11-22)
 
 La plage de charge différée du câble (dp 151, `ss`/`se`, `m` activée) **se répète chaque nuit** tant qu'elle n'est pas modifiée ou désactivée. Source : constat d'usage de Mathieu (Smart Life et charges nocturnes), rapporté le 2026-11-22 ; non vérifié par lecture des dp un matin après exécution. Conséquence : « Déjà programmé » (plage lue active et identique) est fondé ; un soir sans programmation, le câble rejoue la dernière plage.
