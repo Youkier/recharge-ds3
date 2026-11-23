@@ -57,22 +57,33 @@ class AttenteWifi : Service(), EcouteurAttente {
         pilote = proprietaire.pilote
         if (intent?.action == ACTION_ANNULER) {
             // Venu de la notification : seulement avant l'envoi (le pilote refuse ensuite) ; hors du fil principal (connexions).
-            Thread { pilote.annuler(); if (!pilote.enCours() && fil == null) principal.post { stopSelf(startId) } }.start()
+            // Le test de `fil` (propre au fil principal) est reposté sur `principal`.
+            Thread { pilote.annuler(); if (!pilote.enCours()) principal.post { if (fil == null) stopSelf(startId) } }.start()
             return START_NOT_STICKY
         }
         // ACTION_DEBUT (startForegroundService) : startForeground() obligatoire, tout de suite.
         startForeground(ID_ATTENTE, notificationAttente(annulable = true), ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE)
         if (pilote.phaseActuelle() != Phase.ATTENTE) { stopSelf(startId); return START_NOT_STICKY } // lancé pour rien
         if (fil != null) return START_NOT_STICKY // second démarrage : la boucle tourne déjà
-        proprietaire.wifi.demarrer() // le service suit le Wi-Fi lui-même (l'activité peut être arrêtée)
-        suiviWifi = true
+        lancerBoucle()
+        return START_NOT_STICKY
+    }
+
+    /** Fil principal seulement. Prépare le suivi Wi-Fi, le verrou, l'écouteur et le filet, puis lance la boucle du pilote. */
+    private fun lancerBoucle() {
+        if (!suiviWifi) {
+            val proprietaire = ProprietaireCable.obtenir(this)
+            proprietaire.wifi.demarrer() // le service suit le Wi-Fi lui-même (l'activité peut être arrêtée)
+            suiviWifi = true
+        }
+        verrou?.takeIf { it.isHeld }?.release()
         verrou = getSystemService(PowerManager::class.java)
             .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, ETIQUETTE_VERROU)
             .apply { setReferenceCounted(false); acquire(VERROU_MAX_MS) }
         pilote.ecouteur = this
+        principal.removeCallbacks(filet)
         principal.postDelayed(filet, DUREE_MAX_MS)
         fil = Thread({ pilote.lancer() }, "attente-cable").apply { isDaemon = true; start() }
-        return START_NOT_STICKY
     }
 
     // --- EcouteurAttente (appelé depuis les fils du pilote) ---
@@ -84,10 +95,16 @@ class AttenteWifi : Service(), EcouteurAttente {
     override fun termine(issue: Attente.Issue, debut: String?, fin: String?) {
         pilote.ecouteur = null
         if (!activiteVisible) publierResultat(applicationContext, issue, debut, fin)
-        // L'identifiant n'est lu qu'à l'exécution, sur le fil principal, donc après tout démarrage déjà reçu : stopSelf(id) n'arrête le service
-        // que si aucun démarrage plus récent n'est arrivé (une nouvelle attente lancée pendant cette fin n'est jamais coupée).
-        // `fil` repasse à null : un nouveau démarrage relancera la boucle.
-        principal.post { fil = null; stopSelf(demarrages.pourArret()) }
+        // Tout se décide sur le fil principal, donc après tout démarrage déjà reçu. Course : une nouvelle « Programmer » peut passer
+        // (pilote.démarrer) et son onStartCommand arriver AVANT ce post ; il a vu `fil != null` et n'a pas lancé la boucle. Si le pilote
+        // est de nouveau en attente, on relance donc la boucle ici au lieu d'arrêter ; sinon `fil` repasse à null et stopSelf(id) n'arrête
+        // le service que si aucun démarrage plus récent n'est arrivé.
+        principal.post {
+            when (SuiviDemarrages.suiteApresFin(pilote.phaseActuelle())) {
+                SuiviDemarrages.Suite.RELANCER -> lancerBoucle()
+                SuiviDemarrages.Suite.ARRETER -> { fil = null; stopSelf(demarrages.pourArret()) }
+            }
+        }
     }
 
     // Filet : connectedDevice n'a pas d'échéance système connue ; si elle venait à exister, on le dit et on s'arrête.

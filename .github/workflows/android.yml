@@ -236,6 +236,8 @@ jobs:
             --out signe/recharge-ds3-coque.apk "$NON_SIGNE"
           rm -f "$CLE"
           "$BT/apksigner" verify --print-certs signe/recharge-ds3-coque.apk | grep "SHA-256" | tee signe/empreinte.txt
+          # Empreinte SHA-256 du fichier APK signé lui-même (à comparer à celle du fichier téléchargé), affichée et publiée dans l'artefact.
+          ( cd signe && sha256sum recharge-ds3-coque.apk | tee empreinte-apk.txt )
           # Empreinte du certificat attendue (clé créée le 2026-11-19) : toute autre clé fait échouer le job.
           grep -q "2b2a896b9edb49ed8f22ddd4f6dfdc825b47cf5f3931837bff9796b4a0512033" signe/empreinte.txt
 
@@ -295,6 +297,13 @@ jobs:
           adb exec-out screencap -p > "$SORTIE_CI-ouverture.png" || true
           adb install -r signe/recharge-ds3-coque.apk
           if adb logcat -d -b crash | grep -q "fr.rechargeds3.coque"; then echo "plantage"; exit 1; fi
+
+      - name: Scénario court sur l'APK signé (page servie, essaiFiltre inatteignable)
+        run: |
+          set -euo pipefail
+          export PATH="$ANDROID_HOME/platform-tools:$PATH"
+          mkdir -p android-ci-sortie
+          bash android/ci/essai-signe.sh signe/recharge-ds3-coque.apk "$SORTIE_CI"
 
       - name: Déposer la capture
         if: always()

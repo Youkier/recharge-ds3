@@ -16,4 +16,14 @@ class SuiviDemarrages {
 
     /** Identifiant à donner à stopSelf. */
     fun pourArret(): Int = dernier.get()
+
+    enum class Suite { ARRETER, RELANCER }
+
+    companion object {
+        /**
+         * Que faire à la fin d'une attente, sur le fil principal : si le pilote est déjà reparti en attente (nouveau « Programmer » passé
+         * avant ce post, dont onStartCommand a vu une boucle encore vivante), il faut relancer la boucle, jamais arrêter le service.
+         */
+        fun suiteApresFin(phase: Phase): Suite = if (phase == Phase.ATTENTE) Suite.RELANCER else Suite.ARRETER
+    }
 }
