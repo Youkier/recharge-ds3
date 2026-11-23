@@ -57,6 +57,18 @@ Sans clé locale, l'appli ne pilote pas le câble. Options notées à la demande
 
 Recommandation : viser **3** (à demander à Tuya, et en parallèle au fabricant du câble pour l'option D) ; en attendant, **2** comme repli documenté dans un guide ; **1** seulement pour des utilisateurs avancés ; **4** jamais en diffusion.
 
+### Compléments du 2026-11-23 (essais réels et recherche)
+
+- **QR sur un seul téléphone : vérifié.** L'écran de scan de Smart Life donne accès à la galerie ; un QR photographié puis lu depuis la galerie a été accepté (Pixel 9, compte dédié, clé identique). Le parcours de l'option 3 ne demande donc pas de second écran (`docs/tuya-findings.md`).
+- **« Device Data Sharing » de Tuya** (service de conformité au Data Act européen, pages officielles [usage](https://developer.tuya.com/en/docs/iot/device_data_sharing_usage?id=Kex4vski8ylak) et [OAuth](https://developer.tuya.com/en/docs/iot/authorization-code-page-usage?id=Kdkyz44dz6a7r)) : Smart Life et Tuya Smart autorisés par défaut ; réservé aux **entreprises établies dans l'UE** (vérification d'entreprise, projet cloud en Europe) ; **payant** (« platform usage fees », prix non publié) ; donne les données et messages des appareils par le cloud ; **aucune mention de la clé locale ni du pilotage local**, envoi de commandes non précisé. Ne remplace donc pas l'option 3 ; seule voie officielle trouvée vers les utilisateurs de Smart Life sans accord de fabricant, mais par le cloud (proche de C).
+- **Idée examinée : appli payante sans la clé + petit site gratuit qui récupère la clé par le QR avec le code de Home Assistant.** Ne retire pas le risque : c'est l'option 4 opérée par nous (identité de Home Assistant), avec en plus un serveur qui tient la session Smart Life de chaque visiteur (appels Tuya vraisemblablement impossibles depuis le navigateur seul, non vérifié). Un blocage par Tuya couperait l'acquisition de l'appli payante, et le lien commercial entre les deux serait visible. Variante acceptable : l'option 2 (renvoyer vers des outils existants que l'utilisateur lance lui-même), en attendant la réponse de Tuya.
+
+**Questions pour la relance Tuya (vers le 5 décembre)** :
+1. Un éditeur indépendant peut-il obtenir son **propre identifiant d'application** pour la connexion QR du SDK de partage (`tuya-device-sharing-sdk`), et la réponse inclut-elle la **clé locale** ? Conditions, prix, délai ?
+2. **Device Data Sharing** : une micro-entreprise française est-elle acceptée ? Quel prix (frais de plateforme, pack de ressources) ? Le tiers peut-il **envoyer des commandes** (ici, la plage de charge différée) ou seulement lire ?
+3. À défaut, quelle voie Tuya recommande-t-elle pour qu'une appli tierce pilote **en local** l'appareil d'un utilisateur qui l'a autorisée ?
+4. Essai IoT Core prolongé : date exacte de fin, et conditions d'un usage personnel non commercial au-delà.
+
 ## Étapes
 
 ### Usage personnel (voir `PLAN.md`, phase 2a)
