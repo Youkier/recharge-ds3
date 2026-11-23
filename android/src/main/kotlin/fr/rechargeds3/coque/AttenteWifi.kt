@@ -84,14 +84,19 @@ class AttenteWifi : Service(), EcouteurAttente {
         principal.removeCallbacks(filet)
         principal.postDelayed(filet, DUREE_MAX_MS)
         fil = Thread({
-            pilote.lancer()
+            val moi = Thread.currentThread()
+            try {
+                pilote.lancer()
+            } finally {
+                // Même si lancer() lève (termine() ou oublierMemoire() dans son catch, action!!) : sinon `fil` resterait non nul
+                // et le service ne s'arrêterait jamais.
+                principal.post { if (fil === moi) apresFinBoucle() }
+            }
             // Seule décision d'arrêt du service, sur le fil principal, quand la boucle rend la main (avec ou sans termine() : phase
             // déjà quittée avant le départ du fil). Course : une nouvelle « Programmer » peut passer (pilote.demarrer) et son
             // onStartCommand voir `fil != null` sans lancer la boucle ; si le pilote est de nouveau en attente, on relance donc ici ;
             // sinon `fil` repasse à null et stopSelf(id) n'arrête le service que si aucun démarrage plus récent n'est arrivé.
             // Seul le fil encore enregistré décide (un seul fil de boucle à la fois).
-            val moi = Thread.currentThread()
-            principal.post { if (fil === moi) apresFinBoucle() }
         }, "attente-cable").apply { isDaemon = true; start() }
     }
 
