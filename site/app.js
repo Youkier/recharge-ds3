@@ -975,8 +975,6 @@ import { confirmationValable, confirmationAEnregistrer, confirmationRestauree, C
   // ---------- Appli Android : pont natif, état du câble, recherche (mode Local) ----------
   // Chargé seulement si le pont est présent : sur GitHub Pages, ces chemins n'existent pas et ne sont jamais demandés.
   var cherche = false, minuteurRecherche = null, localCache = null, rechercheAutoFaite = false, rechercheEchouee = false;
-  // Journal des essais sur émulateur : version de mise au point seulement, une ligne par action, jamais de clé,
-  // d'identifiant ni de trame (le résultat de service.js n'en contient pas).
   // Après un envoi réussi, programmerLocal a déjà relu et vérifié la plage : aucune connexion de plus. On reproduit ici ce que
   // majEtatCable déduit d'une lecture réussie (pastille « Câble prêt », plage), à partir du résultat seulement.
   function cablePretApresSucces(res) {
@@ -984,6 +982,8 @@ import { confirmationValable, confirmationAEnregistrer, confirmationRestauree, C
     pastilleMontre("pret");
     majPlage(plageDuCable(res));
   }
+  // Journal des essais sur émulateur : version de mise au point seulement, une ligne par action, jamais de clé,
+  // d'identifiant ni de trame (le résultat de service.js n'en contient pas).
   function journal(o) { if (debugPont) { try { console.log("ESSAI " + JSON.stringify(o)); } catch (e) { /* sans effet */ } } }
   function localPret() {
     if (!localCache) {
