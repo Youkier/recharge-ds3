@@ -627,16 +627,25 @@ e0_remettre() {
 # Réveil et déverrouillage par le code : la clé du coffre (setUnlockedDeviceRequired) n'est lisible que déverrouillé.
 # On éteint d'abord (verrouillage immédiat, réglé plus bas) : le code n'est ainsi tapé que dans l'écran de verrouillage,
 # jamais dans une appli restée au premier plan.
+# Vrai si l'écran de verrouillage est affiché (vues « keyguard » de l'interface système dans l'arbre).
+ecran_verrouille() { local x; x="$(ui_dump || true)"; grep -q 'resource-id="com.android.systemui:id/keyguard_' <<< "$x"; }
+# Déverrouillage vérifié, 3 essais (CI du 25/11, API 35 : code refusé ou saisi trop tôt, S21 resté sur l'écran de verrouillage).
 e0_deverrouiller() {
-  adb shell input keyevent KEYCODE_SLEEP
-  sleep 1
-  adb shell input keyevent KEYCODE_WAKEUP
-  sleep 1
-  adb shell wm dismiss-keyguard
-  sleep 1
-  adb shell input text "$PIN_E0"
-  adb shell input keyevent KEYCODE_ENTER
-  sleep 2
+  local essai
+  for essai in 1 2 3; do
+    adb shell input keyevent KEYCODE_SLEEP
+    sleep 1
+    adb shell input keyevent KEYCODE_WAKEUP
+    sleep 1
+    adb shell wm dismiss-keyguard
+    sleep 1
+    adb shell input text "$PIN_E0"
+    adb shell input keyevent KEYCODE_ENTER
+    sleep 2
+    if ! ecran_verrouille; then return 0; fi
+    echo "déverrouillage : écran encore verrouillé (essai $essai)"
+  done
+  echec "écran resté verrouillé après 3 essais de déverrouillage"
 }
 # Attend une ligne ESSAI de l'action à l'état donné : attendre_etat <action> <etat> [délai en s].
 attendre_etat() {
