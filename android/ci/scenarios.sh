@@ -83,10 +83,17 @@ remettre_emulateur() {
   sleep 5 # le Wi-Fi se reconnecte
   # Configuration refaite à chaque fois (le scénario précédent peut l'avoir effacée ou changée) : clé ressaisie ET câble retrouvé,
   # comme un premier lancement. Sans cela, le scénario suivant ouvre une page « câble non localisé » (CI du 22/11 : S-E1, S-E2, S-F).
-  set +e
-  ( SCENARIO_COURANT=""; set -e; oublier_donnees; demarrer_page "$CLE_OK"; page_prete "remise en état" )
-  rc=$?
-  set -e
+  # Deux essais : la recherche peut partir pendant que le faux câble redémarre (CI du 23/11, API 36 : « introuvable » après S-D,
+  # puis S-E1 lancé sans adresse).
+  local essai
+  for essai in 1 2; do
+    set +e
+    ( SCENARIO_COURANT=""; set -e; oublier_donnees; demarrer_page "$CLE_OK"; page_prete "remise en état" )
+    rc=$?
+    set -e
+    [ "$rc" = 0 ] && break
+    if [ "$essai" = 1 ]; then echo "remise en état : second essai dans 5 s"; sleep 5; fi
+  done
   if [ "$rc" = 0 ]; then
     CLE_ENREGISTREE="$CLE_OK"
   else
@@ -246,9 +253,8 @@ ecran_sans() { # ecran_sans <texte> <message d'échec>
   DUMP="$(ui_dump || true)"
   if contient "$DUMP" "$1"; then echec "$2"; fi
 }
-ecran_avec() { # ecran_avec <texte> <message d'échec> : sans attente
-  DUMP="$(ui_dump || true)"
-  contient "$DUMP" "$1" || echec "$2"
+ecran_avec() { # ecran_avec <texte> <message d'échec> : texte attendu déjà affiché ; 5 lectures (l'arbre de la WebView peut être en retard)
+  chercher_texte_page "$1" 5 || echec "$2"
 }
 
 
@@ -1449,7 +1455,9 @@ sleep 60
 ligne_vue page-programmer && echec "S-C : envoi parti sans Wi-Fi"
 [ "$(ecritures_log)" = "$ECR_AVANT" ] || echec "S-C : une écriture est partie sans Wi-Fi"
 ecran_avec "dès que le câble répond" "S-C : la ligne d'état de l'attente est absente"
-ecran_avec "À régler à la main dans Smart Life" "S-C : la consigne manuelle n'est pas visible pendant l'attente"
+# Consigne : sur API 36, le panneau d'attente (barre fixe) manque parfois dans l'arbre lu par uiautomator alors qu'il est affiché
+# (CI du 23/11, tentatives 2 et 3, capture echec-ecran-S-C) : relevé, la capture fait foi ; TalkBack à vérifier sur le vrai Pixel.
+chercher_texte_page "À régler à la main dans Smart Life" 5 || releve "S-C : consigne manuelle absente de l'arbre d'accessibilité (voir la capture clair-16-attente-ecran ; à vérifier avec TalkBack)"
 # Lien « Régler à la main » : pas toujours remonté par uiautomator (voir toucher_annuler_attente) ; la capture fait foi.
 contient "$DUMP" "Régler à la main" || releve "S-C : « Régler à la main » absent du dump uiautomator (voir la capture clair-16-attente-ecran)"
 capturer "clair-16-attente-ecran"
