@@ -93,11 +93,14 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p sortie-construction
-          node tools/assets-apk.mjs --liste | sort > sortie-construction/assets-attendus.txt
           AAPT2="$(ls -d "$ANDROID_HOME"/build-tools/*/aapt2 | sort -V | tail -1)"
           for APK in $(find android/build/outputs/apk -name '*.apk' | sort); do
             NOM="$(basename "$APK" .apk)"
             echo "=== $NOM"
+            # Liste attendue propre à la variante : la page d'essai (android/essai/) seulement dans l'APK de mise au point.
+            case "$NOM" in *release*) VARIANTE=release ;; *debug*) VARIANTE=debug ;; *) echo "variante inconnue : $NOM"; exit 1 ;; esac
+            node tools/assets-apk.mjs --liste --variante="$VARIANTE" | sort > sortie-construction/assets-attendus.txt
+            if [ "$VARIANTE" = release ] && grep -q '^android/essai/' sortie-construction/assets-attendus.txt; then echo "page d'essai attendue dans l'APK publié"; exit 1; fi
             # Contenu du dossier assets/ de l'APK. assets/dexopt/ (profils de démarrage ajoutés par AGP) est ignoré.
             unzip -Z1 "$APK" | grep '^assets/' | grep -v '^assets/dexopt/' | sed 's#^assets/##' | sort > "sortie-construction/assets-$NOM.txt" || true
             diff -u sortie-construction/assets-attendus.txt "sortie-construction/assets-$NOM.txt"

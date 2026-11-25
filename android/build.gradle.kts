@@ -22,10 +22,15 @@ android {
         versionName = "0.6.1"
     }
 
-    // Les fichiers embarqués sont copiés par `node tools/assets-apk.mjs` (liste blanche) dans dist/apk-assets, jamais ailleurs.
+    // Les fichiers embarqués sont copiés par `node tools/assets-apk.mjs` (liste blanche) dans dist/apk-assets, jamais ailleurs :
+    // main/ pour toutes les variantes, debug/ (page d'essai) pour la version de mise au point seulement (2026-11-25 : la page
+    // d'essai n'est plus du tout dans l'APK publié).
     sourceSets {
         getByName("main") {
-            assets.directories.add("../dist/apk-assets")
+            assets.directories.add("../dist/apk-assets/main")
+        }
+        getByName("debug") {
+            assets.directories.add("../dist/apk-assets/debug")
         }
     }
 
@@ -42,9 +47,10 @@ dependencies {
 
 // Garde-fou : sans la copie par liste blanche, l'APK embarquerait une page d'essai absente ou périmée.
 val verifierAssets by tasks.registering {
-    val index = layout.projectDirectory.file("../dist/apk-assets/android/essai/index.html")
+    val index = layout.projectDirectory.file("../dist/apk-assets/main/site/index.html")
+    val essai = layout.projectDirectory.file("../dist/apk-assets/debug/android/essai/index.html")
     doFirst {
-        if (!index.asFile.exists()) {
+        if (!index.asFile.exists() || !essai.asFile.exists()) {
             throw GradleException("dist/apk-assets est absent : lancez d'abord « node tools/assets-apk.mjs ».")
         }
     }

@@ -8,7 +8,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, statS
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { listerFichiers, copierAssets, EXTENSIONS } from '../tools/assets-apk.mjs';
+import { listerFichiers, copierAssets, seulementDebug, EXTENSIONS } from '../tools/assets-apk.mjs';
 
 const RACINE = join(dirname(fileURLToPath(import.meta.url)), '..');
 const sha = (f) => createHash('sha256').update(readFileSync(f)).digest('hex');
@@ -22,6 +22,30 @@ function tous(dossier, base = dossier) {
   return out;
 }
 const temp = () => mkdtempSync(join(tmpdir(), 'assets-apk-'));
+// Chemin d'un fichier copié : main/<f>, ou debug/<f> pour la page d'essai (version de mise au point seulement).
+const copie = (sortie, f) => join(sortie, seulementDebug(f) ? 'debug' : 'main', ...f.split('/'));
+const aplatir = (sortie) => tous(sortie).map((f) => f.replace(/^(main|debug)\//, '')).sort();
+
+test('APK publié (release) : la page d\'essai n\'est pas du tout dans la liste, le reste est identique', () => {
+  const debug = listerFichiers(RACINE);
+  const release = listerFichiers(RACINE, { variante: 'release' });
+  assert.ok(!release.some((f) => f.startsWith('android/')), 'page d\'essai dans l\'APK publié');
+  assert.deepEqual(release, debug.filter((f) => !f.startsWith('android/essai/')));
+  assert.deepEqual(listerFichiers(RACINE, { variante: 'debug' }), debug);
+  assert.throws(() => listerFichiers(RACINE, { variante: 'autre' }), /Variante inconnue/);
+});
+
+test('copie : la page d\'essai va dans debug/ (jeu de sources de mise au point), tout le reste dans main/', () => {
+  const t = temp();
+  try {
+    const sortie = join(t, 'apk-assets');
+    copierAssets({ racine: RACINE, sortie });
+    assert.ok(tous(join(sortie, 'debug')).every((f) => f.startsWith('android/essai/')));
+    assert.ok(existsSync(join(sortie, 'debug', 'android', 'essai', 'index.html')));
+    assert.ok(!tous(join(sortie, 'main')).some((f) => f.startsWith('android/')));
+    assert.ok(existsSync(join(sortie, 'main', 'site', 'index.html')));
+  } finally { rmSync(t, { recursive: true, force: true }); }
+});
 
 test('la liste est exactement la liste blanche, calculée indépendamment', () => {
   const attendu = [
@@ -53,8 +77,8 @@ test('copie : mêmes fichiers, empreintes identiques à la source', () => {
   try {
     const sortie = join(t, 'apk-assets');
     const liste = copierAssets({ racine: RACINE, sortie });
-    assert.deepEqual(tous(sortie), liste);
-    for (const f of liste) assert.equal(sha(join(sortie, ...f.split('/'))), sha(join(RACINE, ...f.split('/'))), f);
+    assert.deepEqual(aplatir(sortie), liste);
+    for (const f of liste) assert.equal(sha(copie(sortie, f)), sha(join(RACINE, ...f.split('/'))), f);
   } finally { rmSync(t, { recursive: true, force: true }); }
 });
 
@@ -63,10 +87,10 @@ test('déterministe : deux copies donnent les mêmes fichiers et les mêmes empr
   try {
     const sortie = join(t, 'apk-assets');
     const a = copierAssets({ racine: RACINE, sortie });
-    const ha = a.map((f) => `${f} ${sha(join(sortie, ...f.split('/')))}`);
+    const ha = a.map((f) => `${f} ${sha(copie(sortie, f))}`);
     mkdirSync(join(sortie, 'reste-d-un-essai'), { recursive: true }); // vidé à la copie suivante
     const b = copierAssets({ racine: RACINE, sortie });
-    const hb = b.map((f) => `${f} ${sha(join(sortie, ...f.split('/')))}`);
+    const hb = b.map((f) => `${f} ${sha(copie(sortie, f))}`);
     assert.deepEqual(a, [...a].sort());
     assert.deepEqual(ha, hb);
     assert.ok(!existsSync(join(sortie, 'reste-d-un-essai')));
@@ -86,6 +110,7 @@ test('faux dépôt : seuls les fichiers de la liste blanche sont retenus', () =>
   const t = fauxDepot();
   try {
     assert.deepEqual(listerFichiers(t), ['android/essai/index.html', 'site/index.html']);
+    assert.deepEqual(listerFichiers(t, { variante: 'release' }), ['site/index.html']);
   } finally { rmSync(t, { recursive: true, force: true }); }
 });
 

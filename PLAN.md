@@ -378,7 +378,7 @@ Lots E1 à E4 (décisions du 2026-11-21 : le protocole local n'a qu'une impléme
 - [ ] E3 : trois soirs sur le Pixel 9 (R2 et R3) sans intervention, notification au plus 2 min après que le câble répond
 - [x] E4 : code mort retiré (routes, constantes, doublon de validation HH:MM), outil PC `local/` aligné sur le contrat du démarrage tardif, règle « heure passée » : un seul fichier de cas (`tests/plage-tardif-cas.json`) lu par le Worker, la coque et `local/`
 - [ ] E4 : relecture de sécurité complète (modèle le plus capable), exception du pont TCP retirée de `CLAUDE.md` et `SECURITE.md` (règle 9), une semaine sur le Pixel 10
-- [ ] `android/essai/` embarqué seulement dans la version de mise au point (aujourd'hui : jamais servi en version publiée, `FiltreAssets.serviEnPublication` testé ; la séparation des deux jeux d'assets demande une modification de `.github/workflows/android.yml`)
+- [x] `android/essai/` embarqué seulement dans la version de mise au point (2026-11-25 : jeux d'assets `main/` et `debug/` dans `dist/apk-assets`, liste attendue par variante dans le workflow, contrôle de l'APK signé ; `FiltreAssets.serviEnPublication` reste en seconde barrière)
 
 Lot C5 :
 
