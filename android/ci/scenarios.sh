@@ -327,6 +327,19 @@ demarrer() {
   if [ -z "$CLE_ENREGISTREE" ]; then saisir_cle "$cle"; CLE_ENREGISTREE="$cle"; fi
 }
 
+# Lecture par la page d'essai, avec la même seconde chance que la vraie page (« reessayer » : premier contact parfois refusé,
+# constaté sur le vrai câble le 21/11 et en CI API 35 le 25/11 sur S6 et S7, sans connexion vue par le faux câble).
+# lire_essai <ip> : met la ligne ESSAI dans L (pas de sous-shell : le relevé s'écrit sur la sortie).
+lire_essai() {
+  demarrer lire "$1"
+  L="$(attendre_essai lire 60)"
+  if contient "$L" '"erreur":"hors_ligne"'; then
+    releve "lecture de la page d'essai : premier contact « hors_ligne », seconde lecture"
+    demarrer lire "$1"
+    L="$(attendre_essai lire 60)"
+  fi
+}
+
 # Vrai si l'écran natif de saisie est affiché (sans attendre).
 formulaire_affiche() { ui_dump | grep -q ":id/champ_cle\""; }
 fichier_cable() { adb shell run-as "$PKG" cat shared_prefs/cable.xml 2> /dev/null | tr -d '\r' || true; }
@@ -421,8 +434,7 @@ L="$(attendre_essai programmer 60)"
 verifier "S6 programmer" "$L" 'l.ok === true && ((l.debut === "05:00" && l.fin === "06:00") || l.tardif === true)'
 DEBUT_PROGRAMME="$(LIGNE="$L" node -e 'console.log(JSON.parse(process.env.LIGNE).debut)')"
 FIN_PROGRAMMEE="$(LIGNE="$L" node -e 'console.log(JSON.parse(process.env.LIGNE).fin)')"
-demarrer lire 10.0.2.2
-L="$(attendre_essai lire 60)"
+lire_essai 10.0.2.2
 verifier "S6 relecture" "$L" "l.ok === true && l.debut === \"${DEBUT_PROGRAMME}\" && l.fin === \"${FIN_PROGRAMMEE}\""
 
 # --- Mémorisation chiffrée (v0.3) ---
@@ -990,8 +1002,7 @@ for THEME in clair sombre; do
   CLE_ENREGISTREE="$CLE_OK"
   sleep 3
   capturer "${THEME}-2-accueil"
-  demarrer lire 10.0.2.2
-  L="$(attendre_essai lire 60)"
+  lire_essai 10.0.2.2
   verifier "S7 résultat ($THEME)" "$L" 'l.ok === true'
   sleep 1
   capturer "${THEME}-3-resultat"
