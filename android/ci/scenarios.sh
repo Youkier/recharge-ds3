@@ -681,6 +681,20 @@ page_prete() {
   local nom="$1" L
   L="$(attendre_essai page-etat 60)"
   if LIGNE="$L" node -e 'process.exit(JSON.parse(process.env.LIGNE).etat === "pret" ? 0 : 1)'; then return 0; fi
+  # Adresse connue mais premier contact raté (CI du 25/11, API 36, S-C expiration : faux câble relancé juste avant) : la page
+  # n'enchaîne pas de recherche seule, elle montre « Câble introuvable : chercher ». On fait le geste de l'utilisateur.
+  if ! contient "$L" '"etat":"sans_adresse"'; then
+    local vu="" i
+    for i in $(seq 1 15); do
+      vu="$(adb logcat -d -v raw -s "$TAG:I" | tr -d '\015' | grep '^ESSAI ' | grep '"action":"page-chercher"' | tail -1 || true)"
+      [ -n "$vu" ] && break
+      sleep 1
+    done
+    if [ -z "$vu" ]; then
+      releve "$nom : premier contact raté ($L), recherche lancée par la pastille « Câble introuvable »"
+      toucher_web "Câble introuvable"
+    fi
+  fi
   L="$(attendre_essai page-chercher 150)"
   verifier "$nom câble retrouvé" "$L" 'l.ok === true'
 }
