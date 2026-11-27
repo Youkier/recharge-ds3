@@ -4,8 +4,12 @@
 #   1. job « construire » : tests Node, copie des fichiers embarqués par liste blanche (tools/assets-apk.mjs), tests
 #      JUnit, APK de mise au point et APK de publication NON SIGNÉ, vérification de la liste des fichiers embarqués
 #      et du manifeste ; les APK sont déposés en artefacts ;
-#   2. job « emulateur » (API 35 et 36, profil 1080 x 2424 = Pixel 9 et Pixel 10) : émulateur lancé par un script maison,
-#      faux câble TCP sur le runner (clé factice), scénarios pilotés par adb seul, captures en clair et en sombre.
+#   2. deux jobs d'émulateur en parallèle (profil 1080 x 2424 = Pixel 9 et Pixel 10), émulateur lancé par un script maison, faux
+#      câble TCP sur le runner (clé factice), scénarios pilotés par adb seul, captures en clair et en sombre :
+#        « essentiels » (API 35 et 36) : le parcours de l'usage, android/ci/scenarios-essentiels.sh ;
+#        « atypiques » (API 36 seulement) : les cas de la revue UX, android/ci/scenarios-atypiques.sh.
+#      Chacun fait précéder ses scénarios d'une barrière de mise en place (Wi-Fi validé, faux câble joignable) ; le nombre de nouvelles
+#      tentatives de mise en place est écrit dans le résumé du job et fait échouer le job au-delà de SEUIL_TENTATIVES (android/ci/commun.sh).
 #
 # AUCUN secret : le vrai câble n'est jamais joint, aucune clé de signature n'existe ici. La signature (C3.5) sera un
 # job séparé, plus tard. Aucun déclencheur « pull_request » : seul un push sur main (ou le lancement à la main) construit.
@@ -155,17 +159,18 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-  emulateur:
-    name: Émulateur API ${{ matrix.api }}
+  essentiels:
+    name: Essentiels, émulateur API ${{ matrix.api }}
     needs: construire
     runs-on: ubuntu-latest
-    timeout-minutes: 120 # S21 et sa variante Wi-Fi (330 s chacune), S-C et S-I2 (500 s écran éteint) ajoutent une quarantaine de minutes
+    timeout-minutes: 90 # parcours de l'usage : S21 et sa variante Wi-Fi (330 s chacune) ajoutent une vingtaine de minutes
     strategy:
       fail-fast: false
       matrix:
         api: [35, 36]
     env:
-      SORTIE_CI: android-ci-sortie/api${{ matrix.api }}
+      SORTIE_CI: android-ci-sortie/essentiels-api${{ matrix.api }}
+      SEUIL_TENTATIVES: "6" # nouvelles tentatives de mise en place au-delà desquelles le job échoue
     steps:
       - name: Récupérer le code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -186,19 +191,69 @@ jobs:
       - name: Lancer l'émulateur
         run: bash android/ci/emulateur.sh "${{ matrix.api }}"
 
-      - name: Scénarios sur le faux câble
+      - name: Scénarios essentiels sur le faux câble
         run: |
           set -euo pipefail
           export PATH="$ANDROID_HOME/platform-tools:$PATH"
           APK="$(find apk -name '*debug*.apk' | head -1)"
           echo "APK essayé : $APK"
-          bash android/ci/scenarios.sh "$APK" "$SORTIE_CI"
+          bash android/ci/scenarios-essentiels.sh "$APK" "$SORTIE_CI"
 
       - name: Déposer captures et journaux
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: essais-api${{ matrix.api }}
+          name: essais-essentiels-api${{ matrix.api }}
+          path: android-ci-sortie/
+          if-no-files-found: warn
+          retention-days: 14
+
+  atypiques:
+    name: Atypiques, émulateur API ${{ matrix.api }}
+    needs: construire
+    runs-on: ubuntu-latest
+    timeout-minutes: 75 # cas atypiques : S-C (expiration) et S-I2 (500 s écran éteint) ajoutent une vingtaine de minutes
+    strategy:
+      fail-fast: false
+      matrix:
+        api: [36] # API 36 seulement (décision du 2026-11-22)
+    env:
+      SORTIE_CI: android-ci-sortie/atypiques-api${{ matrix.api }}
+      ATYPIQUES_BLOQUANTS: "1" # 0 : les échecs de ce job ne bloquent plus la signature (S-I2 n'est qu'un relevé dans tous les cas)
+      SEUIL_TENTATIVES: "6" # nouvelles tentatives de mise en place au-delà desquelles le job échoue
+    steps:
+      - name: Récupérer le code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Installer Node (LTS)
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+
+      - name: Récupérer les APK
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: apk
+          path: apk
+
+      - name: Lancer l'émulateur
+        run: bash android/ci/emulateur.sh "${{ matrix.api }}"
+
+      - name: Scénarios atypiques sur le faux câble
+        run: |
+          set -euo pipefail
+          export PATH="$ANDROID_HOME/platform-tools:$PATH"
+          APK="$(find apk -name '*debug*.apk' | head -1)"
+          echo "APK essayé : $APK"
+          bash android/ci/scenarios-atypiques.sh "$APK" "$SORTIE_CI"
+
+      - name: Déposer captures et journaux
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: essais-atypiques-api${{ matrix.api }}
           path: android-ci-sortie/
           if-no-files-found: warn
           retention-days: 14
@@ -208,7 +263,7 @@ jobs:
   # Environnement « android-signature » limité à la branche main (réglage GitHub) ; aucun déclencheur pull_request.
   signer:
     name: Signer l'APK de publication
-    needs: [construire, emulateur]
+    needs: [construire, essentiels, atypiques]
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 10
