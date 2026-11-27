@@ -263,7 +263,9 @@ jobs:
   # Environnement « android-signature » limité à la branche main (réglage GitHub) ; aucun déclencheur pull_request.
   signer:
     name: Signer l'APK de publication
-    needs: [construire, essentiels, atypiques]
+    # Décision du 2026-11-27 : la publication dépend des essentiels (API 35 et 36) seulement ; les atypiques tournent en parallèle
+    # et restent visibles (job rouge en cas d'échec), sans retenir la signature.
+    needs: [construire, essentiels]
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 10

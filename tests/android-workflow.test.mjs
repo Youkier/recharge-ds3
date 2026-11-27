@@ -66,11 +66,12 @@ test('ni publication ni déploiement, aucun jeton persistant', () => {
   assert.equal(sansPersistance, recuperations, 'chaque récupération du code sans jeton persistant');
 });
 
-test('jobs : construire, puis essentiels (API 35 et 36) et atypiques (API 36) en parallèle, signature après les deux', () => {
+test('jobs : construire, puis essentiels (API 35 et 36) et atypiques (API 36) en parallèle, signature après les essentiels', () => {
   assert.match(sansCommentaires, /\n  construire:/);
   assert.match(sansCommentaires, /\n  essentiels:/);
   assert.match(sansCommentaires, /\n  atypiques:/);
   assert.equal((sansCommentaires.match(/\n    needs: construire\r?\n/g) || []).length, 2, 'essentiels et atypiques dépendent de construire seulement');
   assert.match(sansCommentaires, /api: \[35, 36\]/);
-  assert.match(sansCommentaires, /needs: \[construire, essentiels, atypiques\]/);
+  // Décision du 2026-11-27 : signature après les essentiels seulement (les atypiques ne retiennent plus la publication).
+  assert.match(sansCommentaires, /needs: \[construire, essentiels\]\n/);
 });
