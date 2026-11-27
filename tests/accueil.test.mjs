@@ -78,6 +78,11 @@ describe('Pastille d\'état du câble', () => {
     assert.equal(pastille('muet').texte, 'Câble introuvable : chercher');
     assert.equal(pastille('muet').action, 'chercher');
     assert.equal(pastille('hors_wifi').texte, 'Hors Wi-Fi maison : réessayer');
+    // Réseau pas prêt (câble connu) : la cause dite telle quelle, « Chercher » proposé, envoi traité comme un câble muet.
+    assert.equal(pastille('reseau_pas_pret').texte, 'Wi-Fi pas encore prêt : chercher');
+    assert.equal(pastille('reseau_pas_pret').action, 'chercher');
+    assert.equal(decisionEnvoi({ etat: 'reseau_pas_pret', surReseau: 'oui' }), 'attendre');
+    assert.equal(decisionEnvoi({ etat: 'reseau_pas_pret', surReseau: 'non' }), 'attendre');
     // Constat, deux-points, verbe : ce que le toucher fait.
     assert.deepEqual(['a_relier', 'cle', 'sans_adresse'].map((e) => pastille(e).texte), ['Câble non relié : relier', 'Clé refusée : saisir la clé', 'Câble non localisé : chercher']);
     assert.equal(pastille('erreur').texte, 'Câble indisponible : réessayer');

@@ -251,7 +251,7 @@ class OperationsCable(
                     passage++
                     if (annule(op)) break
                     // Tant qu'un second passage est possible, l'échéance annoncée est celle du dernier passage possible.
-                    val rallonge = if (passage < passages) RechercheCable.DELAI_TOTAL_MS else 0L
+                    val rallonge = if (passage < passages) RechercheCable.DELAI_TOTAL_MS + PAUSE_AVANT_NOUVELLE_TENTATIVE_MS else 0L
                     res = RechercheCable.chercher(
                         departs, prefixe,
                         sonder = { a, d -> env.sonder(a, d) },

@@ -65,6 +65,7 @@ const MARGE_REPONSE_MS = 3000; // attente de réponse du pont au-delà du délai
 const SECONDE_LECTURE_MS = 8000;
 const BUDGET_ECRITURE_MS = 27000;
 const BALAYAGE_SUPPLEMENTAIRE_MS = 9000; // un balayage dure au plus son délai + la dernière lecture en cours
+const PAUSE_NOUVELLE_TENTATIVE_MS = 2000; // OperationsCable.PAUSE_AVANT_NOUVELLE_TENTATIVE_MS : avant la seconde lecture et le second balayage
 
 const DEMANDE_NOTIFICATIONS_MS = 120000; // la fenêtre système attend l'utilisateur
 const ATTENTE_DEBUT_MS = 15000; // lecture de la clé du coffre (magasin de clés) puis démarrage du service
@@ -110,12 +111,13 @@ export function creerClientPont(pont, { margeMs = MARGE_REPONSE_MS } = {}) {
   client.attenteAnnuler = () => client.appeler('attenteAnnuler');
   client.attenteAcquitter = () => client.appeler('attenteAcquitter');
   client.lire = (params = {}, delaiMs = 20000) =>
-    client.appeler('lire', { ...params, delai: delaiMs }, delaiMs + (params.reessayer ? SECONDE_LECTURE_MS : 0));
+    client.appeler('lire', { ...params, delai: delaiMs }, delaiMs + (params.reessayer ? PAUSE_NOUVELLE_TENTATIVE_MS + SECONDE_LECTURE_MS : 0));
   client.programmer = (action, params = {}, delaiMs = 20000) =>
     client.appeler('programmer', { ...action, ...params, delai: delaiMs }, params.reessayer ? Math.max(delaiMs, BUDGET_ECRITURE_MS) : delaiMs);
   // surProgres (facultatif) reçoit { etape, appareils, lectures, echeance } ; une exception du rappel est ignorée.
+  // Deux passages au plus, même sans « reessayer » (réseau pas prêt au premier : un second passage après la pause).
   client.chercher = (params = {}, surProgres = null, delaiMs = 30000) =>
-    client.appeler('chercher', params, params.reessayer ? 2 * (delaiMs + BALAYAGE_SUPPLEMENTAIRE_MS) : delaiMs, surProgres);
+    client.appeler('chercher', params, 2 * (delaiMs + BALAYAGE_SUPPLEMENTAIRE_MS) + PAUSE_NOUVELLE_TENTATIVE_MS, surProgres);
 
   return client;
 }

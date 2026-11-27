@@ -471,6 +471,9 @@ capturer "clair-4-resultat-cle-refusee"
 # --- Rien ne reste ouvert, rien d'interdit dans logcat ---
 scn_s8() {
 etape "S8 Aucune connexion restée ouverte"
+# La mise en place arrête l'appli : on la rouvre et on attend la page prête (lecture du câble faite), pour mesurer de vraies connexions.
+demarrer_page
+page_prete "S8"
 sleep 2
 [ "$(connexions_etablies)" = "0" ] || echec "S8 : des connexions restent établies vers le faux câble après les actions"
 adb shell input keyevent KEYCODE_BACK

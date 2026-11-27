@@ -107,7 +107,8 @@ noter_tentative() { # noter_tentative <scénario> <raison> : une nouvelle tentat
 wifi_valide() {
   local c lignes
   # WIFI_VALIDE_REQUIS=0 : se contenter de « connecté » (si l'émulateur ne pouvait pas valider l'accès Internet sur un runner donné).
-  if [ "${WIFI_VALIDE_REQUIS:-1}" = 0 ]; then adb shell cmd wifi status 2> /dev/null | tr -d '' | grep -q 'Wifi is connected'; return; fi
+  if [ "${WIFI_VALIDE_REQUIS:-1}" = 0 ]; then adb shell cmd wifi status 2> /dev/null | tr -d '
+' | grep -q 'Wifi is connected'; return; fi
   c="$(adb shell dumpsys connectivity 2> /dev/null | tr -d '\015' || true)"
   lignes="$(grep 'NetworkAgentInfo' <<< "$c" | grep 'WIFI' || true)"
   if [ -n "$lignes" ]; then grep -q 'VALIDATED' <<< "$lignes"; return; fi
@@ -115,13 +116,15 @@ wifi_valide() {
 }
 # Faux câble joignable DEPUIS l'émulateur (10.0.2.2:6668) : connexion sans donnée (une « sonde » pour le faux câble), prouvée par
 # la ligne « connexion ouverte » de son journal (le code de sortie de nc n'est pas fiable). nc absent de l'image : relevé, barrière passée.
-NC_VU=""
+# Présence de nc retenue dans un fichier : la barrière tourne dans un sous-shell, une variable serait perdue (relevé répété).
 cable_joignable() {
-  local avant apres
-  if [ -z "$NC_VU" ]; then
-    if adb shell 'command -v nc' > /dev/null 2>&1; then NC_VU=oui; else NC_VU=non; releve "barrière : nc absent de l'image, joignabilité du faux câble non vérifiée depuis l'émulateur"; fi
+  local avant apres nc_vu
+  nc_vu="$(cat "$SORTIE/nc-vu.txt" 2> /dev/null || true)"
+  if [ -z "$nc_vu" ]; then
+    if adb shell 'command -v nc' > /dev/null 2>&1; then nc_vu=oui; else nc_vu=non; releve "barrière : nc absent de l'image, joignabilité du faux câble non vérifiée depuis l'émulateur"; fi
+    echo "$nc_vu" > "$SORTIE/nc-vu.txt"
   fi
-  [ "$NC_VU" = oui ] || return 0
+  [ "$nc_vu" = oui ] || return 0
   avant="$(connexions_ouvertes_log)"
   timeout 15 adb shell 'nc -w 3 10.0.2.2 6668 < /dev/null' > /dev/null 2>&1 || true
   sleep 1

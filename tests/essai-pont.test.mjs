@@ -112,6 +112,7 @@ test("durées d'attente du client alignées sur celles du code natif", async () 
   const ops = kt('OperationsCable.kt');
   const recherche = kt('RechercheCable.kt');
   assert.equal(nombre(ops, 'DELAI_SECONDE_LECTURE_MS'), 8000);
+  assert.equal(nombre(ops, 'PAUSE_AVANT_NOUVELLE_TENTATIVE_MS'), 2000);
   assert.equal(nombre(ops, 'BUDGET_ECRITURE_MS'), 27000);
   assert.equal(nombre(recherche, 'DELAI_TOTAL_MS'), 30000);
   assert.equal(nombre(recherche, 'DELAI_LECTURE_MS'), 8000);
@@ -136,12 +137,12 @@ test("durées d'attente du client alignées sur celles du code natif", async () 
   }
   assert.deepEqual(delais, [
     4000 + 3000, // lecture : un seul essai
-    4000 + 8000 + 3000, // lecture avec seconde tentative (8 s)
+    4000 + 2000 + 8000 + 3000, // lecture avec seconde tentative (pause de 2 s puis 8 s)
     20000 + 3000, // programmer : un seul essai
     27000 + 3000, // programmer avec seconde tentative : le budget de 27 s du natif
     30000 + 3000, // délai de 30 s : le natif borne la première tentative pour tenir dans 27 s ; le client attend 33 s au plus
-    30000 + 3000, // recherche : un balayage
-    2 * (30000 + 9000) + 3000, // recherche : deux balayages
+    2 * (30000 + 9000) + 2000 + 3000, // recherche sans « reessayer » : un second passage reste possible (réseau pas prêt)
+    2 * (30000 + 9000) + 2000 + 3000, // recherche : deux balayages et la pause
     5000 + 3000, // attenteEtat
     15000 + 3000, // attenteDebut (lecture de la clé dans le magasin, démarrage du service)
     120000 + 3000, // fenêtre de permission des notifications

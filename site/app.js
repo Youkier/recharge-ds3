@@ -1073,7 +1073,7 @@ import { confirmationValable, confirmationAEnregistrer, confirmationRestauree, C
       // Recherche ratée sans aucune adresse connue : le câble reste « à localiser » (Programmer ouvre le panneau,
       // aucun envoi possible) ; « muet » est réservé à un câble connu qui ne répond pas.
       var inconnu = etatCable === "sans_adresse";
-      pastilleMontre(e === "a_relier" ? "a_relier" : e === "hors_wifi" ? "hors_wifi" : (e === "introuvable" || e === "reseau_pas_pret") ? (inconnu ? "sans_adresse" : "muet") : "erreur");
+      pastilleMontre(e === "a_relier" ? "a_relier" : e === "hors_wifi" ? "hors_wifi" : (e === "introuvable" || e === "reseau_pas_pret") && inconnu ? "sans_adresse" : e === "reseau_pas_pret" ? "reseau_pas_pret" : e === "introuvable" ? "muet" : "erreur");
       if (e === "introuvable") $("cableMsg").textContent = "Aucun câble trouvé sur le Wi-Fi. Vérifiez qu'il est branché, fermez Smart Life s'il est ouvert, puis réessayez.";
       if (e === "reseau_pas_pret") $("cableMsg").textContent = "Wi-Fi pas encore prêt. Réessayez dans quelques secondes avec « Chercher ».";
       $("pillSec").textContent = "";

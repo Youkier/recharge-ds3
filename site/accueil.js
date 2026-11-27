@@ -43,6 +43,7 @@ export function pastille(etat) {
     case 'cle': return { texte: 'Clé refusée : saisir la clé', ton: 'bad', action: 'relier', aide: 'Le câble refuse la clé : elle change quand le câble est réappairé dans Smart Life. Collez la nouvelle clé depuis votre gestionnaire de mots de passe (« Relier le câble »).' };
     case 'sans_adresse': return { texte: 'Câble non localisé : chercher', ton: 'warn', action: 'chercher', aide: "L'application ne connaît pas encore l'emplacement du câble sur le Wi-Fi." };
     case 'muet': return { texte: 'Câble introuvable : chercher', ton: 'bad', action: 'chercher', aide: 'Le câble ne répond pas. Est-il branché à la prise murale ?' };
+    case 'reseau_pas_pret': return { texte: 'Wi-Fi pas encore prêt : chercher', ton: 'warn', action: 'chercher', aide: 'Le Wi-Fi du téléphone vient de se connecter et ne répond pas encore. Réessayez dans quelques secondes avec « Chercher ».' };
     case 'hors_wifi': return { texte: 'Hors Wi-Fi maison : réessayer', ton: 'warn', action: 'reessayer', aide: 'Connectez le téléphone au Wi-Fi de la maison, puis réessayez.' };
     case 'verification': return { texte: 'Vérification du câble…', ton: 'neutre', action: null, aide: null };
     case 'recherche': return { texte: 'Recherche du câble…', ton: 'neutre', action: null, aide: null };
@@ -291,7 +292,7 @@ export function plafondDepasse(debut, maintenant, max) {
 export function decisionEnvoi({ etat, surReseau }) {
   if (blocageCable(etat)) return 'panneau';
   if (surReseau === 'non' || surReseau === 'pas_wifi') return 'attendre';
-  if (surReseau === 'oui' && etat === 'muet') return 'attendre';
+  if (surReseau === 'oui' && (etat === 'muet' || etat === 'reseau_pas_pret')) return 'attendre';
   return 'envoyer';
 }
 
