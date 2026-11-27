@@ -5,7 +5,7 @@ import { readFileSync } from 'node:fs';
 import {
   socValide, moyenEnvoi, boutonActif,
   programmerSelonMoyen, pastille, secondesRestantes,
-  confirmationValable, blocageCable, plageRelue, sousLigneBouton, rechercheAutomatique,
+  confirmationValable, blocageCable, plageRelue, sousLigneBouton, rechercheAutomatique, relectureEtat, relanceRecherche, RECHERCHE_TROP_RAPIDE_MS,
   decisionEnvoi, suiviWifiActif, LIBELLES_ATTENTE, ATTENTE_MAX_MS,
   plafondDepasse, ENVOI_PLAFOND_MS, sousLigneAttente, enteteAttente, memeDemande, titreAttente, lireEtatAttente,
 } from '../site/accueil.js';
@@ -161,6 +161,32 @@ describe('Recherche automatique du câble', () => {
   });
 });
 
+describe('Premier contact raté : seconde lecture et recherche relancée', () => {
+  test('câble connu muet : relu une seule fois', () => {
+    assert.equal(relectureEtat({ etat: 'muet', dejaRelu: false }), true);
+    assert.equal(relectureEtat({ etat: 'muet', dejaRelu: true }), false);
+  });
+  test('aucune seconde lecture pour les autres états', () => {
+    for (const e of ['pret', 'cle', 'hors_wifi', 'sans_adresse', 'erreur', 'a_relier', null]) {
+      assert.equal(relectureEtat({ etat: e, dejaRelu: false }), false, String(e));
+    }
+  });
+  test('recherche automatique « introuvable » trop rapide : relancée une fois', () => {
+    assert.equal(relanceRecherche({ auto: true, etat: 'introuvable', ms: 72, dejaRelancee: false }), true);
+    assert.equal(relanceRecherche({ auto: true, etat: 'introuvable', ms: 72, dejaRelancee: true }), false);
+  });
+  test('jamais pour une vraie fouille, un geste de l’utilisateur ou un autre état', () => {
+    assert.equal(relanceRecherche({ auto: true, etat: 'introuvable', ms: RECHERCHE_TROP_RAPIDE_MS, dejaRelancee: false }), false);
+    assert.equal(relanceRecherche({ auto: true, etat: 'introuvable', ms: 6520, dejaRelancee: false }), false);
+    assert.equal(relanceRecherche({ auto: false, etat: 'introuvable', ms: 72, dejaRelancee: false }), false);
+    assert.equal(relanceRecherche({ auto: undefined, etat: 'introuvable', ms: 72, dejaRelancee: false }), false);
+    for (const e of ['hors_wifi', 'a_relier', 'erreur', undefined]) {
+      assert.equal(relanceRecherche({ auto: true, etat: e, ms: 72, dejaRelancee: false }), false, String(e));
+    }
+    assert.equal(relanceRecherche({ auto: true, etat: 'introuvable', ms: NaN, dejaRelancee: false }), false);
+  });
+});
+
 // Source de la page : le curseur ne confirme que sur un geste (événement input), jamais au rendu.
 describe('Le curseur est un geste de confirmation', () => {
   test('socRange : setConfirme(true) seulement dans le gestionnaire « input »', () => {
@@ -284,7 +310,8 @@ describe('Attente du Wi-Fi de la maison', () => {
     assert.match(src, /function journal\(o\) \{ if \(debugPont\)/);
     for (const action of ['page-prete', 'page-duree', 'page-etat', 'page-chercher']) {
       const l = src.split('\n').find((x) => x.includes('journal({ action: "' + action + '"'));
-      assert.ok(l && /ms: Math\.round\(performance\.now\(\)/.test(l), action + ' porte une durée');
+      // Durée calculée sur place, ou dans « var ms = Math.round(performance.now() - t0) » juste avant.
+      assert.ok(l && /ms: (Math\.round\(performance\.now\(\)|ms \})/.test(l), action + ' porte une durée');
       assert.ok(!/(adresse|cle|trame|identifiant)\s*:/i.test(l), action + ' ne porte ni adresse ni clé');
     }
     // Une attente reprise après un rechargement n'est pas annulée par un changement de saisie.

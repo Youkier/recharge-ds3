@@ -1,7 +1,7 @@
 import { plan, hm, fmt, fdur, fr, eur, effAuto, nuitChangementHeure, soirDe, soirSimule, texteChangementHeure } from "./calc.js";
 import { lignesValides, marques, modeles, versions, trouver } from "./vehicules.js";
 import { validerAdresse, validerJeton, choisirDemande, libelleBouton, envoyer, resultatKo, lireEtatService, RAPPEL_REPROGRAMMER, heureManuelleDe, consigneManuelle, messageNonSuivie } from "./service.js";
-import { confirmationValable, confirmationAEnregistrer, confirmationRestauree, CLE_CONFIRMATION, blocageCable, plageRelue, plageDuCable, ligneCable, dejaProgramme, libelleDejaProgramme, contexteHoraire, LIBELLES_SOC, mentionProvisoire, sousLigneBouton, socValide, moyenEnvoi, boutonActif, programmerSelonMoyen, pastille, secondesRestantes, rechercheAutomatique, decisionEnvoi, suiviWifiActif, plafondDepasse, ENVOI_PLAFOND_MS, LIBELLES_ATTENTE, ATTENTE_SONDE_MS, SUIVI_PASTILLE_MS, enteteAttente, memeDemande, titreAttente, lireEtatAttente, ATTENTE_MAX_MS } from "./accueil.js";
+import { confirmationValable, confirmationAEnregistrer, confirmationRestauree, CLE_CONFIRMATION, blocageCable, plageRelue, plageDuCable, ligneCable, dejaProgramme, libelleDejaProgramme, contexteHoraire, LIBELLES_SOC, mentionProvisoire, sousLigneBouton, socValide, moyenEnvoi, boutonActif, programmerSelonMoyen, pastille, secondesRestantes, rechercheAutomatique, relectureEtat, relanceRecherche, DELAI_RELECTURE_MS, decisionEnvoi, suiviWifiActif, plafondDepasse, ENVOI_PLAFOND_MS, LIBELLES_ATTENTE, ATTENTE_SONDE_MS, SUIVI_PASTILLE_MS, enteteAttente, memeDemande, titreAttente, lireEtatAttente, ATTENTE_MAX_MS } from "./accueil.js";
 
 (function () {
   var DEFAULTS = { cap: 46, soh: 95, target: 80, dep: "07:30", hcStart: "22:00", hcEnd: "06:00", amp: 16, volt: 230, eff: 90, pHC: 0.146688, pHP: 0.196476, mode: "end", soc: 38 };
@@ -1036,20 +1036,30 @@ import { confirmationValable, confirmationAEnregistrer, confirmationRestauree, C
     if (!interactive) ouvrirPanneau(false);
     updateSend();
   }
-  function majEtatCable() {
+  function majEtatCable(relu) {
     if (!pontOk || cherche || opCable) return Promise.resolve();
     pastilleMontre("verification");
     var t0 = performance.now();
     return opCableLancer(function () { return localPret().then(function (l) { return l.etatCable(l.deps); }); }).then(function (r) {
-      journal({ action: "page-etat", etat: r.etat, ms: Math.round(performance.now() - t0) });
-      if (cherche) return;
+      var ms = Math.round(performance.now() - t0);
+      if (cherche) { journal({ action: "page-etat", etat: r.etat, relu: relu === true, ms: ms }); return; }
+      // Premier contact raté avec un câble connu : la pastille reste « vérification », une seconde lecture suit
+      // (journalisée à part : « page-etat » ne porte que le résultat montré).
+      if (relectureEtat({ etat: r.etat, dejaRelu: relu === true })) {
+        journal({ action: "page-etat-relecture", etat: r.etat, ms: ms });
+        return new Promise(function (ok) { setTimeout(ok, DELAI_RELECTURE_MS); }).then(function () {
+          if (cherche || opCable) return;
+          return majEtatCable(true);
+        });
+      }
+      journal({ action: "page-etat", etat: r.etat, relu: relu === true, ms: ms });
       pastilleMontre(r.etat);
       if (r.etat === "pret") majPlage(plageDuCable(r));
       // Aucune adresse connue (première ouverture, nouvelle clé) : une seule recherche automatique par chargement.
       if (rechercheAutomatique({ etat: r.etat, dejaFaite: rechercheAutoFaite, pont: pontOk })) { rechercheAutoFaite = true; lancerRecherche(true); }
     }).catch(function () { if (!cherche) pastilleMontre("erreur"); });
   }
-  function lancerRecherche(auto) {
+  function lancerRecherche(auto, relance) {
     if (cherche || opCable) return;
     cherche = true;
     var echeance = null, t0 = performance.now();
@@ -1063,8 +1073,16 @@ import { confirmationValable, confirmationAEnregistrer, confirmationRestauree, C
     texte();
     minuteurRecherche = setInterval(texte, 1000);
     var fin = function (r) {
+      var ms = Math.round(performance.now() - t0);
+      if (!(r && r.ok) && relanceRecherche({ auto: auto, etat: r && r.etat, ms: ms, dejaRelancee: relance === true })) {
+        // Réponse trop rapide pour une vraie fouille : la pastille reste « recherche » (cherche reste vrai, aucun autre geste
+        // ne passe), une seconde recherche suit.
+        journal({ action: "page-chercher-relance", etat: r && r.etat, ms: ms });
+        setTimeout(function () { clearInterval(minuteurRecherche); cherche = false; lancerRecherche(true, true); }, DELAI_RELECTURE_MS);
+        return;
+      }
       clearInterval(minuteurRecherche); cherche = false; $("pillSec").textContent = "";
-      journal({ action: "page-chercher", auto: auto === true, ok: !!(r && r.ok), etat: r && r.ok ? "pret" : r && r.etat, ms: Math.round(performance.now() - t0) });
+      journal({ action: "page-chercher", auto: auto === true, ok: !!(r && r.ok), etat: r && r.ok ? "pret" : r && r.etat, ms: ms });
       if (r && r.ok) { rechercheEchouee = false; pastilleMontre("pret"); majPlage(plageDuCable({ etat: "pret", plage: r.plage })); ouvrirPanneau(false); return; }
       rechercheEchouee = true;
       var e = r && r.etat;
