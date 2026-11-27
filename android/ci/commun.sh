@@ -749,13 +749,25 @@ taper_bouton() { # taper_bouton <libellé> <n>
 }
 # Amène la batterie à <cible> % ET la confirme (au moins un geste) : le calcul de la page vaut alors pour cette valeur.
 regler_soc() {
-  local cible="$1" delta lu
-  lu="$(soc_affiche)"
-  if [ -n "$lu" ]; then SOC_PAGE="$lu"; else echo "regler_soc : champ batterie illisible, valeur de départ supposée : $SOC_PAGE %"; fi
+  # Valeur réelle lue dans le journal de la page (ligne « page-soc » écrite à chaque −/+, version de mise au point) : « Ajouter » puis
+  # « Retirer » (aussi juste aux bornes 0 et 100), puis lecture. Plus de supposition : les données ne sont plus effacées entre deux scénarios.
+  # Le journal n'est pas vidé (une vérification en cours peut en dépendre) : on compte les lignes « page-soc » avant les deux touchers.
+  # Aux bornes, un bouton désactivé n'écrit rien : au moins une ligne nouvelle, puis la dernière vaut l'état après les deux touchers.
+  local cible="$1" delta lu L avant i
+  lignes_soc() { adb logcat -d -v raw -s "$TAG:I" | tr -d '' | grep '^ESSAI ' | grep '"action":"page-soc"' || true; }
+  avant="$(lignes_soc | wc -l)"
+  taper_bouton "Ajouter 1 %" 1
+  taper_bouton "Retirer 1 %" 1
+  for i in $(seq 1 15); do [ "$(lignes_soc | wc -l)" -gt "$avant" ] && break; sleep 1; done
+  sleep 1
+  L="$(lignes_soc | tail -1 | sed 's/^ESSAI //')"
+  [ "$(lignes_soc | wc -l)" -gt "$avant" ] || echec "regler_soc : aucune ligne « page-soc » après les touchers −/+"
+  lu="$(LIGNE="$L" node -e 'process.stdout.write(String(JSON.parse(process.env.LIGNE).soc))')"
+  [[ "$lu" =~ ^[0-9]+$ ]] || echec "regler_soc : valeur de la batterie illisible dans le journal ($L)"
+  SOC_PAGE="$lu"
   delta=$(( cible - SOC_PAGE ))
   if [ "$delta" -gt 0 ]; then taper_bouton "Ajouter 1 %" "$delta"
-  elif [ "$delta" -lt 0 ]; then taper_bouton "Retirer 1 %" "$(( -delta ))"
-  else taper_bouton "Ajouter 1 %" 1; taper_bouton "Retirer 1 %" 1; fi
+  elif [ "$delta" -lt 0 ]; then taper_bouton "Retirer 1 %" "$(( -delta ))"; fi
   SOC_PAGE="$cible"
 }
 

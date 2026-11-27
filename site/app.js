@@ -381,6 +381,7 @@ import { confirmationValable, confirmationAEnregistrer, confirmationRestauree, C
     if (raw === "" || !isFinite(v)) v = cur.soc;
     v = Math.min(100, Math.max(0, Math.round(v) + d));
     $("soc").value = v;
+    journal({ action: "page-soc", soc: v }); // mise au point : les scénarios lisent la valeur réelle (pas le WebView)
     setConfirme(true); render();
   }
   $("socMinus").addEventListener("click", function () { bump(-1); });
