@@ -107,7 +107,7 @@ export async function etatCable(deps) {
 /**
  * Recherche du câble sur le Wi-Fi, seulement à la demande. surProgres : reçoit { etape, appareils, lectures, echeance }
  * (sans adresse) pendant la fouille du réseau.
- * -> { ok:true, plage } | { ok:false, etat: 'a_relier' | 'hors_wifi' | 'introuvable' | 'erreur' }
+ * -> { ok:true, plage } | { ok:false, etat: 'a_relier' | 'hors_wifi' | 'reseau_pas_pret' | 'introuvable' | 'erreur' }
  */
 export async function chercherCable(deps, surProgres = null) {
   const { client } = deps;
@@ -127,7 +127,8 @@ export async function chercherCable(deps, surProgres = null) {
   const e = res && res.erreur;
   if (e === 'pas_wifi') return { ok: false, etat: 'hors_wifi' };
   if (e === 'pas_de_cle') return { ok: false, etat: 'a_relier' };
-  return { ok: false, etat: e === 'introuvable' ? 'introuvable' : 'erreur' };
+  // reseau_pas_pret : le natif n'a pu sonder aucune adresse (Wi-Fi pas encore lié), même après une nouvelle tentative.
+  return { ok: false, etat: e === 'introuvable' || e === 'reseau_pas_pret' ? e : 'erreur' };
 }
 
 /**

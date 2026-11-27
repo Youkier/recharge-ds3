@@ -1,7 +1,7 @@
 import { plan, hm, fmt, fdur, fr, eur, effAuto, nuitChangementHeure, soirDe, soirSimule, texteChangementHeure } from "./calc.js";
 import { lignesValides, marques, modeles, versions, trouver } from "./vehicules.js";
 import { validerAdresse, validerJeton, choisirDemande, libelleBouton, envoyer, resultatKo, lireEtatService, RAPPEL_REPROGRAMMER, heureManuelleDe, consigneManuelle, messageNonSuivie } from "./service.js";
-import { confirmationValable, confirmationAEnregistrer, confirmationRestauree, CLE_CONFIRMATION, blocageCable, plageRelue, plageDuCable, ligneCable, dejaProgramme, libelleDejaProgramme, contexteHoraire, LIBELLES_SOC, mentionProvisoire, sousLigneBouton, socValide, moyenEnvoi, boutonActif, programmerSelonMoyen, pastille, secondesRestantes, rechercheAutomatique, relectureEtat, relanceRecherche, DELAI_RELECTURE_MS, decisionEnvoi, suiviWifiActif, plafondDepasse, ENVOI_PLAFOND_MS, LIBELLES_ATTENTE, ATTENTE_SONDE_MS, SUIVI_PASTILLE_MS, enteteAttente, memeDemande, titreAttente, lireEtatAttente, ATTENTE_MAX_MS } from "./accueil.js";
+import { confirmationValable, confirmationAEnregistrer, confirmationRestauree, CLE_CONFIRMATION, blocageCable, plageRelue, plageDuCable, ligneCable, dejaProgramme, libelleDejaProgramme, contexteHoraire, LIBELLES_SOC, mentionProvisoire, sousLigneBouton, socValide, moyenEnvoi, boutonActif, programmerSelonMoyen, pastille, secondesRestantes, rechercheAutomatique, decisionEnvoi, suiviWifiActif, plafondDepasse, ENVOI_PLAFOND_MS, LIBELLES_ATTENTE, ATTENTE_SONDE_MS, SUIVI_PASTILLE_MS, enteteAttente, memeDemande, titreAttente, lireEtatAttente, ATTENTE_MAX_MS } from "./accueil.js";
 
 (function () {
   var DEFAULTS = { cap: 46, soh: 95, target: 80, dep: "07:30", hcStart: "22:00", hcEnd: "06:00", amp: 16, volt: 230, eff: 90, pHC: 0.146688, pHP: 0.196476, mode: "end", soc: 38 };
@@ -1036,33 +1036,21 @@ import { confirmationValable, confirmationAEnregistrer, confirmationRestauree, C
     if (!interactive) ouvrirPanneau(false);
     updateSend();
   }
-  function majEtatCable(relu) {
+  function majEtatCable() {
     if (!pontOk || cherche || opCable) return Promise.resolve();
     pastilleMontre("verification");
     var t0 = performance.now();
     return opCableLancer(function () { return localPret().then(function (l) { return l.etatCable(l.deps); }); }).then(function (r) {
       var ms = Math.round(performance.now() - t0);
-      if (cherche) { journal({ action: "page-etat", etat: r.etat, relu: relu === true, ms: ms }); return; }
-      // Premier contact raté avec un câble connu : la pastille reste « vérification », une seconde lecture suit
-      // (journalisée à part : « page-etat » ne porte que le résultat montré).
-      if (relectureEtat({ etat: r.etat, dejaRelu: relu === true })) {
-        journal({ action: "page-etat-relecture", etat: r.etat, ms: ms });
-        return new Promise(function (ok) { setTimeout(ok, DELAI_RELECTURE_MS); }).then(function () {
-          if (cherche) return; // la recherche a pris la pastille et la finira
-          // Un envoi, une attente ou une autre lecture a pris la main pendant le délai : pas de nouvelle connexion au câble
-          // (une seule à la fois) et la pastille ne reste pas sur « vérification » : on montre le premier résultat.
-          if (opCable || att || busy || localEnVol || controle) { pastilleMontre(r.etat); return; }
-          return majEtatCable(true);
-        });
-      }
-      journal({ action: "page-etat", etat: r.etat, relu: relu === true, ms: ms });
+      if (cherche) { journal({ action: "page-etat", etat: r.etat, ms: ms }); return; }
+      journal({ action: "page-etat", etat: r.etat, ms: ms });
       pastilleMontre(r.etat);
       if (r.etat === "pret") majPlage(plageDuCable(r));
       // Aucune adresse connue (première ouverture, nouvelle clé) : une seule recherche automatique par chargement.
       if (rechercheAutomatique({ etat: r.etat, dejaFaite: rechercheAutoFaite, pont: pontOk })) { rechercheAutoFaite = true; lancerRecherche(true); }
     }).catch(function () { if (!cherche) pastilleMontre("erreur"); });
   }
-  function lancerRecherche(auto, relance) {
+  function lancerRecherche(auto) {
     if (cherche || opCable) return;
     cherche = true;
     var echeance = null, t0 = performance.now();
@@ -1075,19 +1063,8 @@ import { confirmationValable, confirmationAEnregistrer, confirmationRestauree, C
     }
     texte();
     minuteurRecherche = setInterval(texte, 1000);
-    var fin = function (r, sansRelance) {
+    var fin = function (r) {
       var ms = Math.round(performance.now() - t0);
-      if (!(r && r.ok) && relanceRecherche({ auto: auto, etat: r && r.etat, ms: ms, dejaRelancee: relance === true || sansRelance === true })) {
-        // Réponse trop rapide pour une vraie fouille : la pastille reste « recherche » (cherche reste vrai, aucun autre geste
-        // ne passe), une seconde recherche suit.
-        journal({ action: "page-chercher-relance", etat: r && r.etat, ms: ms });
-        setTimeout(function () {
-          // Une opération a pris la main pendant le délai : pas de seconde recherche, l'échec est montré tel quel.
-          if (opCable || att || busy || localEnVol || controle) { fin(r, true); return; }
-          clearInterval(minuteurRecherche); cherche = false; lancerRecherche(true, true);
-        }, DELAI_RELECTURE_MS);
-        return;
-      }
       clearInterval(minuteurRecherche); cherche = false; $("pillSec").textContent = "";
       journal({ action: "page-chercher", auto: auto === true, ok: !!(r && r.ok), etat: r && r.ok ? "pret" : r && r.etat, ms: ms });
       if (r && r.ok) { rechercheEchouee = false; pastilleMontre("pret"); majPlage(plageDuCable({ etat: "pret", plage: r.plage })); ouvrirPanneau(false); return; }
@@ -1096,8 +1073,9 @@ import { confirmationValable, confirmationAEnregistrer, confirmationRestauree, C
       // Recherche ratée sans aucune adresse connue : le câble reste « à localiser » (Programmer ouvre le panneau,
       // aucun envoi possible) ; « muet » est réservé à un câble connu qui ne répond pas.
       var inconnu = etatCable === "sans_adresse";
-      pastilleMontre(e === "a_relier" ? "a_relier" : e === "hors_wifi" ? "hors_wifi" : e === "introuvable" ? (inconnu ? "sans_adresse" : "muet") : "erreur");
+      pastilleMontre(e === "a_relier" ? "a_relier" : e === "hors_wifi" ? "hors_wifi" : (e === "introuvable" || e === "reseau_pas_pret") ? (inconnu ? "sans_adresse" : "muet") : "erreur");
       if (e === "introuvable") $("cableMsg").textContent = "Aucun câble trouvé sur le Wi-Fi. Vérifiez qu'il est branché, fermez Smart Life s'il est ouvert, puis réessayez.";
+      if (e === "reseau_pas_pret") $("cableMsg").textContent = "Wi-Fi pas encore prêt. Réessayez dans quelques secondes avec « Chercher ».";
       $("pillSec").textContent = "";
       ouvrirPanneau(true);
     };

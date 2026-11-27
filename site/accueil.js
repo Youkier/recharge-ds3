@@ -94,22 +94,6 @@ export function rechercheAutomatique({ etat, dejaFaite, pont }) {
   return !!pont && !dejaFaite && etat === 'sans_adresse';
 }
 
-// Seconde lecture discrète de l'état : un câble connu qui ne répond pas au premier contact (« muet ») est relu une fois,
-// quelques secondes plus tard, avant d'afficher « Câble introuvable ». Premier contact raté vu sur le vrai câble (21/11)
-// et en CI (Wi-Fi qui se reconnecte). Jamais pour les autres états, jamais deux fois de suite.
-export const DELAI_RELECTURE_MS = 2500;
-export function relectureEtat({ etat, dejaRelu }) {
-  return !dejaRelu && etat === 'muet';
-}
-
-// Recherche automatique « introuvable » trop vite pour avoir sondé le réseau (réseau pas encore prêt juste après
-// l'ouverture : CI API 36 du 26/11, S14, 72 ms sans aucune connexion au câble) : relancée une fois, après DELAI_RELECTURE_MS.
-// Jamais pour une recherche demandée par l'utilisateur, jamais deux fois.
-export const RECHERCHE_TROP_RAPIDE_MS = 1500;
-export function relanceRecherche({ auto, etat, ms, dejaRelancee }) {
-  return auto === true && !dejaRelancee && etat === 'introuvable' && Number.isFinite(ms) && ms < RECHERCHE_TROP_RAPIDE_MS;
-}
-
 // Plage relue sur le câble, extraite d'un résultat « ok » de service.js : { debut, fin } (chaque champ peut manquer).
 export function plageRelue(res) {
   if (!res || res.etat !== 'ok') return {};

@@ -88,14 +88,16 @@ class TransportTcp private constructor(
         /** Tests seulement : filtre d'adresse remplacé (une socket de test écoute sur 127.0.0.1, que le vrai filtre refuse). */
         internal fun pourTest(lier: (Socket) -> Unit, adresse: (String) -> ByteArray?) = TransportTcp(lier, adresse)
 
-        /** Sonde de port : connexion puis fermeture, sans envoyer d'octet. Mêmes filtres que [ouvrir]. */
+        /** Sonde de port : connexion puis fermeture, sans envoyer d'octet. Mêmes filtres que [ouvrir]. [SondeImpossible] si la liaison au réseau échoue. */
         fun sonder(ip: String, delaiMs: Int, lier: (Socket) -> Unit): Boolean {
             val octets = FiltreReseau.adressePrivee(ip) ?: return false
             val s = Socket()
             return try {
-                lier(s)
+                try { lier(s) } catch (e: Exception) { throw SondeImpossible("liaison au Wi-Fi refusée") }
                 s.connect(InetSocketAddress(InetAddress.getByAddress(octets), FiltreReseau.PORT), delaiMs.coerceIn(50, 1000))
                 true
+            } catch (e: SondeImpossible) {
+                throw e
             } catch (e: IOException) {
                 false
             } catch (e: RuntimeException) {

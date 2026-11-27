@@ -19,7 +19,7 @@ class EnvironnementAndroid(private val wifi: ReseauWifi, private val coffre: Cof
     }
 
     override fun sonder(ip: String, delaiMs: Int): Boolean {
-        val reseau = wifi.courant() ?: return false
+        val reseau = wifi.courant() ?: throw SondeImpossible("pas de réseau Wi-Fi")
         return TransportTcp.sonder(ip, delaiMs) { s -> reseau.bindSocket(s) }
     }
 }

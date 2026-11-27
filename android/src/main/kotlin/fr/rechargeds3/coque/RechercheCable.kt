@@ -10,7 +10,14 @@ import java.util.concurrent.atomic.AtomicReference
 data class Progres(val etape: String, val appareils: Int, val lectures: Int, val echeanceMs: Long)
 
 /** [trouve] : vrai si le câble a été découvert par la fouille, faux s'il a répondu à l'une des adresses de départ. */
-class ResultatRecherche(val ok: Boolean, val ip: String? = null, val trouve: Boolean = false, val etat: Resultat? = null)
+class ResultatRecherche(
+    val ok: Boolean, val ip: String? = null, val trouve: Boolean = false, val etat: Resultat? = null,
+    /** Aucune sonde n'a pu être tentée (Wi-Fi pas encore lié, réseau absent) : « introuvable » serait faux. */
+    val reseauPasPret: Boolean = false,
+)
+
+/** Levée par une sonde qui n'a pas pu être TENTÉE (pas de réseau, liaison au Wi-Fi refusée) : distincte de « port fermé ». */
+class SondeImpossible(message: String? = null) : RuntimeException(message)
 
 /**
  * Recherche du câble sur le /24 du Wi-Fi (reprise de local/recherche.js). Kotlin pur : la sonde de port et la lecture sont
@@ -69,6 +76,8 @@ object RechercheCable {
         val liste = candidats(prefixe).filter { it !in essayees }
         val trouves = CopyOnWriteArrayList<Pair<String, Resultat>>()
         val appareils = AtomicInteger(0)
+        val tentees = AtomicInteger(0)
+        val impossibles = AtomicInteger(0)
         val lectures = AtomicInteger(0)
         val etape = AtomicReference("sondes")
         fun signaler() {
@@ -84,7 +93,9 @@ object RechercheCable {
                     val i = suivant.getAndIncrement()
                     if (i >= liste.size) break
                     val ip = liste[i]
-                    val ouvert = try { sonder(ip, DELAI_SONDE_MS) } catch (e: Exception) { false }
+                    val ouvert = try { sonder(ip, DELAI_SONDE_MS).also { tentees.incrementAndGet() } }
+                    catch (e: SondeImpossible) { impossibles.incrementAndGet(); false }
+                    catch (e: Exception) { tentees.incrementAndGet(); false }
                     if (!ouvert || arret()) continue
                     appareils.incrementAndGet()
                     signaler()
@@ -113,6 +124,7 @@ object RechercheCable {
             val (ip, r) = trouves[0]
             return ResultatRecherche(true, ip, trouve = true, etat = r)
         }
-        return ResultatRecherche(false)
+        // Des sondes n'ont pas pu partir et aucune n'a abouti : le réseau n'était pas prêt, ce n'est pas « introuvable ».
+        return ResultatRecherche(false, reseauPasPret = !annule() && impossibles.get() > 0 && tentees.get() == 0)
     }
 }

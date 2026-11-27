@@ -28,7 +28,7 @@
 //   ip : adresse IPv4 privée à utiliser à la place de l'adresse retenue (filtrée côté natif) ; delai : millisecondes
 //   (1000 à 30000, 20000 par défaut). L'adresse est retenue côté natif après une lecture, une écriture ou une recherche réussie.
 //   Erreurs : cle, hors_ligne, delai, format, relecture_differente, requete_invalide, trop_tard, pas_de_cle, pas_wifi, sans_adresse,
-//   refuse (adresse hors filtre), occupe, introuvable, pont_muet (pas de réponse du natif).
+//   refuse (adresse hors filtre), occupe, introuvable, reseau_pas_pret (chercher : aucune sonde n'a pu partir), pont_muet (pas de réponse du natif).
 // Configuration :
 //   demarrage                       -> { variante, auto }   coupe toute opération restée en cours (nouvelle page)
 //   variante                        -> { variante: "debug" | "release" }

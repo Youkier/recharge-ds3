@@ -5,7 +5,7 @@ import { readFileSync } from 'node:fs';
 import {
   socValide, moyenEnvoi, boutonActif,
   programmerSelonMoyen, pastille, secondesRestantes,
-  confirmationValable, blocageCable, plageRelue, sousLigneBouton, rechercheAutomatique, relectureEtat, relanceRecherche, RECHERCHE_TROP_RAPIDE_MS,
+  confirmationValable, blocageCable, plageRelue, sousLigneBouton, rechercheAutomatique,
   decisionEnvoi, suiviWifiActif, LIBELLES_ATTENTE, ATTENTE_MAX_MS,
   plafondDepasse, ENVOI_PLAFOND_MS, sousLigneAttente, enteteAttente, memeDemande, titreAttente, lireEtatAttente,
 } from '../site/accueil.js';
@@ -158,32 +158,6 @@ describe('Recherche automatique du câble', () => {
     for (const e of ['muet', 'hors_wifi', 'cle', 'erreur', 'a_relier', 'pret', 'verification', null]) {
       assert.equal(rechercheAutomatique({ etat: e, dejaFaite: false, pont: true }), false, String(e));
     }
-  });
-});
-
-describe('Premier contact raté : seconde lecture et recherche relancée', () => {
-  test('câble connu muet : relu une seule fois', () => {
-    assert.equal(relectureEtat({ etat: 'muet', dejaRelu: false }), true);
-    assert.equal(relectureEtat({ etat: 'muet', dejaRelu: true }), false);
-  });
-  test('aucune seconde lecture pour les autres états', () => {
-    for (const e of ['pret', 'cle', 'hors_wifi', 'sans_adresse', 'erreur', 'a_relier', null]) {
-      assert.equal(relectureEtat({ etat: e, dejaRelu: false }), false, String(e));
-    }
-  });
-  test('recherche automatique « introuvable » trop rapide : relancée une fois', () => {
-    assert.equal(relanceRecherche({ auto: true, etat: 'introuvable', ms: 72, dejaRelancee: false }), true);
-    assert.equal(relanceRecherche({ auto: true, etat: 'introuvable', ms: 72, dejaRelancee: true }), false);
-  });
-  test('jamais pour une vraie fouille, un geste de l’utilisateur ou un autre état', () => {
-    assert.equal(relanceRecherche({ auto: true, etat: 'introuvable', ms: RECHERCHE_TROP_RAPIDE_MS, dejaRelancee: false }), false);
-    assert.equal(relanceRecherche({ auto: true, etat: 'introuvable', ms: 6520, dejaRelancee: false }), false);
-    assert.equal(relanceRecherche({ auto: false, etat: 'introuvable', ms: 72, dejaRelancee: false }), false);
-    assert.equal(relanceRecherche({ auto: undefined, etat: 'introuvable', ms: 72, dejaRelancee: false }), false);
-    for (const e of ['hors_wifi', 'a_relier', 'erreur', undefined]) {
-      assert.equal(relanceRecherche({ auto: true, etat: e, ms: 72, dejaRelancee: false }), false, String(e));
-    }
-    assert.equal(relanceRecherche({ auto: true, etat: 'introuvable', ms: NaN, dejaRelancee: false }), false);
   });
 });
 

@@ -92,6 +92,8 @@ describe('Recherche à la demande', () => {
     const d = client({ chercher: { ok: false, erreur: 'occupe' } });
     assert.equal((await chercherCable({ client: d })).etat, 'erreur');
     assert.equal((await chercherCable({ client: client({ chercher: { ok: false, erreur: 'pas_wifi' } }) })).etat, 'hors_wifi');
+    // Aucune sonde n'a pu partir (Wi-Fi pas prêt) : état distinct d'« introuvable », jamais un échec muet.
+    assert.equal((await chercherCable({ client: client({ chercher: { ok: false, erreur: 'reseau_pas_pret' } }) })).etat, 'reseau_pas_pret');
   });
   test('trouvé : adresse de départ transmise, progression relayée, plage rendue', async () => {
     const c = client({ adresse: '192.168.1.48', chercher: (p, surProgres) => { surProgres({ etape: 'sondes', echeance: 123 }); return { ok: true, ip: '192.168.1.77', trouve: true, debut: '03:30', fin: '06:00', plage_active: true }; } });

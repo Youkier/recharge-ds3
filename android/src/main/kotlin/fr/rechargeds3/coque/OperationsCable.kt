@@ -189,7 +189,9 @@ class OperationsCable(
                 val t = nouveauTransport(op) ?: return@avecConfig causeSansTransport(op)
                 var r = ClientCable.lireEtat(cfg, t)
                 if (reessayer && retentable(r) && !annule(op)) {
-                    val t2 = nouveauTransport(op)
+                    // Pause : une seconde lecture immédiate échoue avec la première (Wi-Fi qui se reconnecte, CI du 25/11).
+                    pause(PAUSE_AVANT_NOUVELLE_TENTATIVE_MS)
+                    val t2 = if (annule(op)) null else nouveauTransport(op)
                     if (t2 != null) r = ClientCable.lireEtat(avecDelai(cfg, delaiSecondeLectureMs), t2)
                 }
                 reponse(r, cfg.ip)
@@ -243,8 +245,10 @@ class OperationsCable(
                 val depart = ip ?: env.adresse()
                 val departs = if (depart != null && prefixe24(depart) == prefixe) listOf(depart) else emptyList()
                 var res: ResultatRecherche? = null
-                val passages = if (reessayer) 2 else 1
-                for (passage in 1..passages) {
+                var passages = if (reessayer) 2 else 1
+                var passage = 0
+                while (passage < passages) {
+                    passage++
                     if (annule(op)) break
                     // Tant qu'un second passage est possible, l'échéance annoncée est celle du dernier passage possible.
                     val rallonge = if (passage < passages) RechercheCable.DELAI_TOTAL_MS else 0L
@@ -260,8 +264,13 @@ class OperationsCable(
                         annule = { annule(op) },
                     )
                     if (res.ok) break
+                    // Réseau pas prêt : un nouveau passage même sans « reessayer » (une fois), après la pause.
+                    if (res.reseauPasPret && passages == 1) passages = 2
+                    if (passage >= passages || annule(op)) break
+                    pause(PAUSE_AVANT_NOUVELLE_TENTATIVE_MS)
                 }
                 val etat = res?.etat
+                if (res != null && !res.ok && res.reseauPasPret) return@exclusif erreur("reseau_pas_pret")
                 if (res == null || !res.ok || res.ip == null || etat == null) return@exclusif erreur("introuvable")
                 val r = reponse(etat, res.ip).toMutableMap() // reponse() retient l'adresse
                 r["ip"] = res.ip
@@ -317,6 +326,8 @@ class OperationsCable(
         /** Échecs de contact (connexion refusée, lente, ou fermée pendant la négociation, que le protocole lit « cle »). */
         val ECHECS_A_RETENTER = setOf("hors_ligne", "delai", "cle")
         const val DELAI_SECONDE_LECTURE_MS = 8_000L
+        /** Pause avant une seconde lecture ou un second balayage (2026-11-27 : sans pause, la seconde tentative échoue avec la première). */
+        const val PAUSE_AVANT_NOUVELLE_TENTATIVE_MS = 2_000L
         const val BUDGET_ECRITURE_MS = 27_000L // sous le plafond de 30 s de site/app.js
         const val RESTE_MINI_SECONDE_ECRITURE_MS = 5_000L
 

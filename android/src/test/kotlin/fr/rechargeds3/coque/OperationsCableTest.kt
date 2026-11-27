@@ -427,6 +427,52 @@ class OperationsCableTest {
         }
     }
 
+    @Test fun pauseAvantLaSecondeLectureEtEntreLesBalayages() {
+        val pauses = ArrayList<Long>()
+        val s = Suite(listOf({ muet() }), { faux() })
+        val o = OperationsCable(Env(fabrique = s.fabrique), 900_000L, { System.currentTimeMillis() }, maintenant, pause = { pauses.add(it) })
+        assertEquals(true, o.lire(null, null, reessayer = true)["ok"])
+        assertEquals(listOf(OperationsCable.PAUSE_AVANT_NOUVELLE_TENTATIVE_MS), pauses)
+        // Pas de pause quand la première lecture réussit, ni sans la demande.
+        pauses.clear()
+        assertEquals(true, OperationsCable(Env(fabrique = { faux() }), pause = { pauses.add(it) }).lire(null, null, reessayer = true)["ok"])
+        assertTrue(pauses.isEmpty())
+        // Entre les deux balayages.
+        val sondes = AtomicInteger()
+        val env = Env(adresseRetenue = null, fabrique = { faux() })
+        env.surSonder = { ip -> ip == "192.168.1.48" && sondes.incrementAndGet() >= 2 }
+        pauses.clear()
+        val o2 = OperationsCable(env, 900_000L, { System.currentTimeMillis() }, maintenant, pause = { pauses.add(it) })
+        assertEquals(true, o2.chercher(null, true) { }["ok"])
+        assertEquals(listOf(OperationsCable.PAUSE_AVANT_NOUVELLE_TENTATIVE_MS), pauses)
+    }
+
+    @Test fun chercherReseauPasPretEstDistinctDIntrouvable() {
+        val pauses = ArrayList<Long>()
+        val appels = AtomicInteger()
+        val env = Env(adresseRetenue = null, fabrique = { faux() })
+        env.surSonder = { appels.incrementAndGet(); throw SondeImpossible("pas de réseau") }
+        val o = OperationsCable(env, 900_000L, { System.currentTimeMillis() }, maintenant, pause = { pauses.add(it) })
+        val r = o.chercher(null, false) { }
+        assertEquals("reseau_pas_pret", r["erreur"])
+        // Une attente courte puis UN nouveau passage, même sans « reessayer ».
+        assertEquals(1, pauses.size)
+        assertEquals(2 * 254, appels.get())
+    }
+
+    @Test fun chercherReseauPretMaisCableAbsentResteIntrouvable() {
+        val env = Env(adresseRetenue = null, fabrique = { faux() })
+        env.surSonder = { false }
+        assertEquals("introuvable", ops(env).chercher(null, true) { }["erreur"])
+    }
+
+    @Test fun chercherReseauQuiDevientPretTrouveAuSecondPassage() {
+        val appels = AtomicInteger()
+        val env = Env(adresseRetenue = null, fabrique = { faux() })
+        env.surSonder = { ip -> if (appels.incrementAndGet() <= 254) throw SondeImpossible() else ip == "192.168.1.48" }
+        assertEquals(true, ops(env).chercher(null, false) { }["ok"])
+    }
+
     // --- origines : annuler la page ne touche pas ce que le service a lancé ---
 
     private fun lancerBloquee(o: OperationsCable, origine: Origine): Thread {

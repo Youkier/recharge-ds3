@@ -140,4 +140,15 @@ class RechercheCableTest {
         )
         assertTrue(r.ok)
     }
+
+    @Test fun sondesImpossiblesRendentReseauPasPretMaisPasUneSondeAbouties() {
+        val r = RechercheCable.chercher(emptyList(), "10.0.2", sonder = { _, _ -> throw SondeImpossible() }, lire = { _, _ -> bon })
+        assertFalse(r.ok); assertTrue(r.reseauPasPret)
+        // Une seule sonde aboutie (même fermée) : le réseau était prêt, c'est « introuvable ».
+        val r2 = RechercheCable.chercher(
+            emptyList(), "10.0.2", sonder = { ip, _ -> if (ip == "10.0.2.1") false else throw SondeImpossible() }, lire = { _, _ -> bon },
+        )
+        assertFalse(r2.ok); assertFalse(r2.reseauPasPret)
+        assertFalse(RechercheCable.chercher(emptyList(), "10.0.2", sonder = { _, _ -> false }, lire = { _, _ -> bon }).reseauPasPret)
+    }
 }
