@@ -1048,7 +1048,10 @@ import { confirmationValable, confirmationAEnregistrer, confirmationRestauree, C
       if (relectureEtat({ etat: r.etat, dejaRelu: relu === true })) {
         journal({ action: "page-etat-relecture", etat: r.etat, ms: ms });
         return new Promise(function (ok) { setTimeout(ok, DELAI_RELECTURE_MS); }).then(function () {
-          if (cherche || opCable) return;
+          if (cherche) return; // la recherche a pris la pastille et la finira
+          // Un envoi, une attente ou une autre lecture a pris la main pendant le délai : pas de nouvelle connexion au câble
+          // (une seule à la fois) et la pastille ne reste pas sur « vérification » : on montre le premier résultat.
+          if (opCable || att || busy || localEnVol || controle) { pastilleMontre(r.etat); return; }
           return majEtatCable(true);
         });
       }
@@ -1072,13 +1075,17 @@ import { confirmationValable, confirmationAEnregistrer, confirmationRestauree, C
     }
     texte();
     minuteurRecherche = setInterval(texte, 1000);
-    var fin = function (r) {
+    var fin = function (r, sansRelance) {
       var ms = Math.round(performance.now() - t0);
-      if (!(r && r.ok) && relanceRecherche({ auto: auto, etat: r && r.etat, ms: ms, dejaRelancee: relance === true })) {
+      if (!(r && r.ok) && relanceRecherche({ auto: auto, etat: r && r.etat, ms: ms, dejaRelancee: relance === true || sansRelance === true })) {
         // Réponse trop rapide pour une vraie fouille : la pastille reste « recherche » (cherche reste vrai, aucun autre geste
         // ne passe), une seconde recherche suit.
         journal({ action: "page-chercher-relance", etat: r && r.etat, ms: ms });
-        setTimeout(function () { clearInterval(minuteurRecherche); cherche = false; lancerRecherche(true, true); }, DELAI_RELECTURE_MS);
+        setTimeout(function () {
+          // Une opération a pris la main pendant le délai : pas de seconde recherche, l'échec est montré tel quel.
+          if (opCable || att || busy || localEnVol || controle) { fin(r, true); return; }
+          clearInterval(minuteurRecherche); cherche = false; lancerRecherche(true, true);
+        }, DELAI_RELECTURE_MS);
         return;
       }
       clearInterval(minuteurRecherche); cherche = false; $("pillSec").textContent = "";
