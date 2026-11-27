@@ -88,7 +88,8 @@ async function actionLire() {
   const p = await preparer({ adresse: true });
   if (p.erreur) return { r: { ok: false, erreur: p.erreur }, ip: p.ip, texte: msg(p.erreur) };
   etat('Lecture du câble…');
-  const r = await client.lire({ ip: p.ip });
+  // Comme la vraie page (site/local.js etatCable) : seconde tentative native après une pause de 2 s, délai de 4 s.
+  const r = await client.lire({ ip: p.ip, reessayer: true }, 4000);
   if (r.ok) return { r, ip: p.ip, texte: `Câble connecté. Charge programmée ${plageTexte(r)}.` };
   return { r, ip: p.ip, texte: msg(r.erreur) };
 }
