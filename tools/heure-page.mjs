@@ -1,5 +1,5 @@
 // Heure d'allumage calculée par la page (site/calc.js) pour une batterie donnée, avec les réglages par défaut.
-// Sert aux scénarios d'émulateur (android/ci/scenarios.sh) : ils doivent connaître l'heure que la page va proposer
+// Sert aux scénarios d'émulateur (android/ci/scenarios-essentiels.sh et scenarios-atypiques.sh) : ils doivent connaître l'heure que la page va proposer
 // pour régler le faux câble en conséquence. Aucun accès réseau, aucun fichier de secrets.
 //
 //   node tools/heure-page.mjs heure <soc>     -> « HH:MM » (début de charge pour <soc> % à l'arrivée)
